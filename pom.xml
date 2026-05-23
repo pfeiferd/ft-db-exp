@@ -1,0 +1,142 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>org.metagene</groupId>
+	<artifactId>ft-db-exp</artifactId>
+	<version>1.6</version>
+
+
+	<properties>
+		<gs.project.name>${name}</gs.project.name>
+		<gs.project.goal>${goal}</gs.project.goal>
+		<gs.project.fqmap>${fqmap}</gs.project.fqmap>
+		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
+		<gs.project.minKMersForClass>${minKMersForClass}</gs.project.minKMersForClass>
+	</properties>
+	
+	<name>genestrip-db-exp</name>
+	<description>A selection of databases for Genestrip</description>
+	<url>https://github.com/pfeiferd/genestrip-db-exp</url>
+	<inceptionYear>2024</inceptionYear>
+
+	<organization>
+		<name>Progotec</name>
+		<url>http://www.progotec.de</url>
+	</organization>
+
+	<licenses>
+		<license>
+			<name>The Apache Software License, Version 2.0</name>
+			<url>https://raw.githubusercontent.com/pfeiferd/genestrip-db-exp/master/LICENSE.txt</url>
+		</license>
+	</licenses>
+
+	<scm>
+		<connection>scm:git:git://github.com/pfeiferd/genestrip-db-exp.git</connection>
+		<developerConnection>scm:git:ssh://github.com/pfeiferd/genestrip-db-exp.git</developerConnection>
+		<url>https://github.com/pfeiferd/genestrip-db-exp/tree/master</url>
+	</scm>
+	
+	<developers>
+		<developer>
+			<name>Daniel Pfeifer</name>
+			<email>daniel.pfeifer@progotec.de</email>
+		</developer>
+	</developers>
+	<dependencies>
+		<dependency>
+			<groupId>org.genestrip</groupId>
+			<artifactId>base</artifactId>
+			<version>2.7</version>
+		</dependency>
+		<dependency>
+			<groupId>org.genestrip</groupId>
+			<artifactId>core</artifactId>
+			<version>2.7</version>
+		</dependency>
+		<dependency>
+			<groupId>org.genestrip</groupId>
+			<artifactId>ft</artifactId>
+			<version>2.7</version>
+		</dependency>
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.13.2</version>
+			<scope>test</scope>
+		</dependency>
+	</dependencies>
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-compiler-plugin</artifactId>
+				<version>3.8.0</version>
+				<configuration>
+					<source>1.8</source>
+					<target>1.8</target>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>exec-maven-plugin</artifactId>
+				<version>3.1.0</version>
+				<executions>
+					<execution>
+						<id>db</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx32G</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.goal}</argument>
+								<argument>-C</argument>
+								<argument>threads=19</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<id>orthopox3</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx32G</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.goal}</argument>
+								<argument>-C</argument>
+								<argument>threads=19</argument>
+								<argument>-C</argument>
+								<argument>svgDistanceIndent=true</argument>
+								<argument>-C</argument>
+								<argument>svgMarkLongestPath=true</argument>
+								<argument>-C</argument>
+								<argument>svgShowDistancePortion=true</argument>
+								<argument>-C</argument>
+								<argument>svgShowDistance=true</argument>
+								<argument>-C</argument>
+								<argument>svgKmerNodeIndentFactor=200</argument>
+								<argument>-C</argument>
+								<argument>svgTooLargeDistance=0.8</argument>
+							</arguments>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
+</project>
