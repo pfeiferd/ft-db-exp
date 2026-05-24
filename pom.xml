@@ -129,7 +129,7 @@
 								<argument>-C</argument>
 								<argument>svgShowDistance=true</argument>
 								<argument>-C</argument>
-								<argument>svgKmerNodeIndentFactor=200</argument>
+								<argument>svgKmerNodeIndentFactor=1000</argument>
 								<argument>-C</argument>
 								<argument>svgTooLargeDistance=0.8</argument>
 							</arguments>
