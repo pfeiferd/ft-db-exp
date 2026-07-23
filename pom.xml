@@ -6,6 +6,7 @@
 
 
 	<properties>
+		<genestrip.version>3.0</genestrip.version>
 		<gs.project.name>${name}</gs.project.name>
 		<gs.project.goal>${goal}</gs.project.goal>
 		<gs.project.fqmap>${fqmap}</gs.project.fqmap>
@@ -46,17 +47,17 @@
 		<dependency>
 			<groupId>org.genestrip</groupId>
 			<artifactId>base</artifactId>
-			<version>2.7</version>
+			<version>${genestrip.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.genestrip</groupId>
 			<artifactId>core</artifactId>
-			<version>2.7</version>
+			<version>${genestrip.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.genestrip</groupId>
 			<artifactId>ft</artifactId>
-			<version>2.7</version>
+			<version>${genestrip.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>junit</groupId>

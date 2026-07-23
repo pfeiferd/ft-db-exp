@@ -24,3 +24,5 @@ mvn exec:exec@db -Dname=orthopox -Dgoal=ftsvgtaxtree
 
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=svgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=ftsvgtaxtree
+mvn exec:exec@db -Dname=borrelia -Dgoal=ftsvgtaxtree
+
