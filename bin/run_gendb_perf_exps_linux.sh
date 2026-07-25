@@ -5,6 +5,9 @@ scriptdir=$(dirname "$0")
 
 cd $scriptdir/..
 
+mkdir -p results
+mkdir -p results/logs
+
 res_path=./results
 
 for db in viral tick-borne protozoa parasites vineyard;
