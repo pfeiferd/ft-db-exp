@@ -1,0 +1,31 @@
+# From the book "Die Parasiten des Menschen" by Heinz Mehlhorn
+# Genera only for the sake of the paper's experiments.
+# Trypanosoma
+5690
+# Leishmania
+5658
+# Entamoeba
+5758
+# Acanthamoeba
+5754
+# Naegleria
+5761
+# Balamuthia
+66526
+# Cryptosporidium
+5806
+# Sarcocystis
+5812
+# Toxoplasma
+5810
+# Plasmodium
+5820
+# Babesia
+5864
+# Blastocystis
+12967
+
+
+
+
+

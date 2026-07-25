@@ -26,3 +26,9 @@ mvn exec:exec@db -Dname=orthopox2 -Dgoal=svgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=ftsvgtaxtree
 mvn exec:exec@db -Dname=borrelia -Dgoal=ftsvgtaxtree
 
+mvn exec:exec@db -Dname=tick-borne -Dgoal=kmerrankstatscsv
+mvn exec:exec@db -Dname=protozoa -Dgoal=kmerrankstatscsv
+mvn exec:exec@db -Dname=tick-borne -Dgoal=branchhistorankcsv
+mvn exec:exec@db -Dname=protozoa -Dgoal=branchhistorankcsv
+
+
