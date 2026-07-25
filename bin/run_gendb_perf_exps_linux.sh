@@ -20,7 +20,7 @@ for db in viral tick-borne protozoa parasites vineyard;
     # Performance for creating refined db on top:
     ./cgmemtime/cgmemtime mvn exec:exec@db -Dname=$db -Dgoal=ftdb  > ${res_path}/logs/ftdb_gen_${db}.log
     mvn exec:exec@db -Dname=$db -Dgoal=dbinfo
-    mvn exec:exec@db -Dname=$db -Dgoal=dbquality
+    #mvn exec:exec@db -Dname=$db -Dgoal=dbquality
     mvn exec:exec@db -Dname=$db -Dgoal=ftdbinfo
-    mvn exec:exec@db -Dname=$db -Dgoal=ftquality
+    #mvn exec:exec@db -Dname=$db -Dgoal=ftquality
   done
