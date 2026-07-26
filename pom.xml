@@ -92,7 +92,7 @@
 							<includeProjectDependencies>true</includeProjectDependencies>
 							<includePluginDependencies>true</includePluginDependencies>
 							<arguments>
-								<argument>-Xmx32G</argument>
+								<argument>-Xmx64G</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
@@ -113,7 +113,7 @@
 							<includeProjectDependencies>true</includeProjectDependencies>
 							<includePluginDependencies>true</includePluginDependencies>
 							<arguments>
-								<argument>-Xmx32G</argument>
+								<argument>-Xmx64G</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
