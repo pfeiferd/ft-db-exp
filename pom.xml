@@ -83,6 +83,26 @@
 				<version>3.1.0</version>
 				<executions>
 					<execution>
+						<id>cleanall</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.goal}</argument>
+								<argument>-t</argument>
+								<argument>cleanall</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
 						<id>db</id>
 						<goals>
 							<goal>exec</goal>
