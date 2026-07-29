@@ -6,7 +6,6 @@ scriptdir=$(dirname "$0")
 cd $scriptdir/..
 
 mkdir -p results
-mkdir -p results/logs
 
 res_path=./results
 
@@ -54,7 +53,7 @@ for db in viral tick-borne protozoa parasites vineyard;
     mvn exec:exec@db -Dname=$db -Dgoal=ftquality
   done
 
-find "data" -type f -name '*.csv' | while read -r file; do
+find "data" -type f \( -name "*.csv" -o -name "*.svg" -o -name "*.tex" \) | while read -r file; do
 	target="$res_path/$(basename "$file")"
 	if [ -e "$target" ]; then
 		echo "$0: overwriting $file, $target already exists" >&2
