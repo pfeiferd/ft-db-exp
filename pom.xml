@@ -153,6 +153,8 @@
 								<argument>svgKmerNodeIndentFactor=1000</argument>
 								<argument>-C</argument>
 								<argument>svgTooLargeDistance=0.8</argument>
+								<argument>-C</argument>
+								<argument>svgDistanceIndentBelowRank=acellular root</argument>
 							</arguments>
 						</configuration>
 					</execution>
