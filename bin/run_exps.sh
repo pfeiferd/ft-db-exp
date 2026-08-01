@@ -61,3 +61,8 @@ find "data" -type f \( -name "*.csv" -o -name "*.svg" -o -name "*.tex" \) | whil
 	cp "$file" "$target"
 	echo "$file -> $target"
 done
+
+# Disk sizes of the unrefined and the refined databases. This must run while the
+# databases still exist, i.e. before clean_all.sh removes them. The script writes
+# its CSV to ${res_path} by itself, so it comes after the copy loop above.
+./bin/db_disk_sizes.sh
