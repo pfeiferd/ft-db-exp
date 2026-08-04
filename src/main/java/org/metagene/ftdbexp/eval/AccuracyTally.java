@@ -1,0 +1,243 @@
+package org.metagene.ftdbexp.eval;
+
+import org.metagene.genestrip.tax.Rank;
+
+/**
+ * Read classification counts for one fastq file and one database variant, together with the
+ * precision, recall and F1 derived from them.
+ * <p>
+ * A read contributes to the tally as follows. If its ground truth cannot be resolved, it counts as
+ * {@link #getUnresolved() unresolved} and is ignored otherwise -- it can neither be right nor wrong
+ * if we do not know what it is. Every other read counts towards {@link #getTotal() total}, and if
+ * the classifier assigned it a taxon, towards {@link #getClassified() classified}. It counts as
+ * correct for a rank if the lowest common ancestor of its true and its assigned taxon lies at that
+ * rank or below, which is the usual reading of "classified correctly down to rank r".
+ * <p>
+ * Consequently, {@code correct <= classified <= total} does <em>not</em> hold in general:
+ * {@code classified} may exceed {@code total} once reads are counted that the classifier assigned a
+ * taxon to although their ground truth places them outside the scope under consideration.
+ */
+public final class AccuracyTally {
+    private long classified;
+    private long correctGenus;
+    private long correctSpecies;
+    private long correctStrain;
+    private long unresolved;
+    private long total;
+    private double speciesCandidateScore;
+
+    /**
+     * Records a read whose ground truth could not be resolved.
+     */
+    public void recordUnresolved() {
+        unresolved++;
+    }
+
+    /**
+     * Records a read that the classifier assigned a taxon to although its ground truth lies outside
+     * the scope under consideration. Such a read is a false positive for that scope, so it counts as
+     * classified but not towards the total.
+     */
+    public void recordOutOfScopeClassification() {
+        classified++;
+    }
+
+    /**
+     * Records a read whose ground truth is known and in scope.
+     *
+     * @param lcaRank      the rank of the lowest common ancestor of the read's true and assigned
+     *                     taxon, or {@code null} if the read was not classified at all
+     * @param speciesScore the reciprocal of the number of species the classification leaves in
+     *                     question, or {@code 0} if the classification says nothing about the read's
+     *                     true species; see {@link SpeciesCandidates}
+     */
+    public void record(Rank lcaRank, double speciesScore) {
+        total++;
+        speciesCandidateScore += speciesScore;
+        if (lcaRank == null) {
+            return;
+        }
+        classified++;
+        if (Rank.GENUS.equals(lcaRank) || lcaRank.isBelow(Rank.GENUS)) {
+            correctGenus++;
+        }
+        if (Rank.SPECIES.equals(lcaRank) || lcaRank.isBelow(Rank.SPECIES)) {
+            correctSpecies++;
+        }
+        if (Rank.STRAIN.equals(lcaRank) || lcaRank.isBelow(Rank.STRAIN)) {
+            correctStrain++;
+        }
+    }
+
+    /**
+     * Returns the number of correctly classified reads for the given rank.
+     *
+     * @param rank {@link Rank#GENUS}, {@link Rank#SPECIES} or {@link Rank#STRAIN}
+     * @return the number of reads whose assigned taxon agrees with their true taxon down to
+     * {@code rank}
+     * @throws IllegalArgumentException if the rank is not one of the three tracked ranks
+     */
+    public long getCorrect(Rank rank) {
+        if (Rank.GENUS.equals(rank)) {
+            return correctGenus;
+        }
+        if (Rank.SPECIES.equals(rank)) {
+            return correctSpecies;
+        }
+        if (Rank.STRAIN.equals(rank)) {
+            return correctStrain;
+        }
+        throw new IllegalArgumentException("No counts tracked for rank " + rank);
+    }
+
+    /**
+     * Returns the share of classified reads that are correct down to the given rank.
+     *
+     * @param rank the rank to report for
+     * @return the precision, or {@link Double#NaN} if no read was classified at all
+     */
+    public double getPrecision(Rank rank) {
+        return classified == 0 ? Double.NaN : ((double) getCorrect(rank)) / classified;
+    }
+
+    /**
+     * Returns the share of reads with known ground truth that are correct down to the given rank.
+     *
+     * @param rank the rank to report for
+     * @return the recall, or {@link Double#NaN} if no read has a known ground truth
+     */
+    public double getRecall(Rank rank) {
+        return total == 0 ? Double.NaN : ((double) getCorrect(rank)) / total;
+    }
+
+    /**
+     * Returns the harmonic mean of {@link #getPrecision(Rank)} and {@link #getRecall(Rank)}.
+     *
+     * @param rank the rank to report for
+     * @return the F1 score, or {@link Double#NaN} if either component is undefined or both are zero
+     */
+    public double getF1(Rank rank) {
+        double precision = getPrecision(rank);
+        double recall = getRecall(rank);
+        if (Double.isNaN(precision) || Double.isNaN(recall) || precision + recall == 0) {
+            return Double.NaN;
+        }
+        return 2 * precision * recall / (precision + recall);
+    }
+
+    /**
+     * Returns the share of classified reads that the classification pins down to a species, counting
+     * a classification that leaves n species in question as 1/n of a hit. Unlike the plain species
+     * precision it credits a classification that narrows the species down without reaching a single
+     * one, and unlike the plain genus precision it distinguishes a genus of three species from one
+     * of forty. This is the measure the refinement is meant to improve.
+     *
+     * @return the candidate-weighted species precision, or {@link Double#NaN} if no read was
+     * classified at all
+     */
+    public double getSpeciesCandidatePrecision() {
+        return classified == 0 ? Double.NaN : speciesCandidateScore / classified;
+    }
+
+    /**
+     * Returns the candidate-weighted counterpart of {@link #getRecall(Rank)} for the species rank.
+     *
+     * @return the candidate-weighted species recall, or {@link Double#NaN} if no read has a known
+     * ground truth
+     */
+    public double getSpeciesCandidateRecall() {
+        return total == 0 ? Double.NaN : speciesCandidateScore / total;
+    }
+
+    /**
+     * Returns the harmonic mean of {@link #getSpeciesCandidatePrecision()} and
+     * {@link #getSpeciesCandidateRecall()}.
+     *
+     * @return the candidate-weighted species F1, or {@link Double#NaN} if it is undefined
+     */
+    public double getSpeciesCandidateF1() {
+        double precision = getSpeciesCandidatePrecision();
+        double recall = getSpeciesCandidateRecall();
+        if (Double.isNaN(precision) || Double.isNaN(recall) || precision + recall == 0) {
+            return Double.NaN;
+        }
+        return 2 * precision * recall / (precision + recall);
+    }
+
+    /**
+     * Returns the accumulated candidate weights, i.e. the numerator of the candidate-weighted
+     * measures.
+     *
+     * @return the sum of the per-read species scores
+     */
+    public double getSpeciesCandidateScore() {
+        return speciesCandidateScore;
+    }
+
+    /**
+     * Returns the number of reads the classifier assigned a taxon to.
+     *
+     * @return the number of classified reads
+     */
+    public long getClassified() {
+        return classified;
+    }
+
+    /**
+     * Returns the number of reads whose ground truth is known and in scope.
+     *
+     * @return the number of reads the recall relates to
+     */
+    public long getTotal() {
+        return total;
+    }
+
+    /**
+     * Returns the number of reads whose ground truth could not be resolved. A number substantially
+     * above zero points at a mismatch between the simulated reads and the accession map, so it is
+     * worth reporting rather than hiding.
+     *
+     * @return the number of reads without resolvable ground truth
+     */
+    public long getUnresolved() {
+        return unresolved;
+    }
+
+    /**
+     * Returns an independent copy of this tally, used to snapshot the counts once a fastq file is
+     * done while the accumulating instance is reset for the next one.
+     *
+     * @return a copy holding the current counts
+     */
+    public AccuracyTally copy() {
+        AccuracyTally copy = new AccuracyTally();
+        copy.classified = classified;
+        copy.correctGenus = correctGenus;
+        copy.correctSpecies = correctSpecies;
+        copy.correctStrain = correctStrain;
+        copy.unresolved = unresolved;
+        copy.total = total;
+        copy.speciesCandidateScore = speciesCandidateScore;
+        return copy;
+    }
+
+    /**
+     * Resets all counts to zero.
+     */
+    public void reset() {
+        classified = 0;
+        correctGenus = 0;
+        correctSpecies = 0;
+        correctStrain = 0;
+        unresolved = 0;
+        total = 0;
+        speciesCandidateScore = 0;
+    }
+
+    @Override
+    public String toString() {
+        return "classified=" + classified + ", genus=" + correctGenus + ", species=" + correctSpecies
+                + ", strain=" + correctStrain + ", total=" + total + ", unresolved=" + unresolved
+                + ", speciesScore=" + speciesCandidateScore;
+    }
+}

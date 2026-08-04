@@ -11,6 +11,8 @@
 		<gs.project.goal>${goal}</gs.project.goal>
 		<gs.project.fqmap>${fqmap}</gs.project.fqmap>
 		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
+		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
+		<gs.project.simulator>${simulator}</gs.project.simulator>
 	</properties>
 	
 	<name>genestrip-db-exp</name>
@@ -119,6 +121,45 @@
 								<argument>${gs.project.goal}</argument>
 								<argument>-C</argument>
 								<argument>threads=19</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<id>accuracy</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx64G</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.FTExpMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.fqmap}</argument>
+								<argument>${gs.project.reportkey}</argument>
+								<argument>${gs.project.simulator}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<id>nanosimlist</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx8G</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.nanosim.NanoSimGenomeList</argument>
+								<argument>${gs.project.name}</argument>
 							</arguments>
 						</configuration>
 					</execution>
