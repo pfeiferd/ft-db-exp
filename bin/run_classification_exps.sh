@@ -27,14 +27,26 @@ what=${1:-all}
 res_path="${basedir}/results"
 mkdir -p "$res_path"
 
-run_viral() {
-  map="${basedir}/data/fastq/viral_sim.txt"
+# $1 = database project name. ERROR_FREE selects the reads generated without any sequencing error,
+# which are kept apart from the regular ones down to the name of the result file.
+run_iss() {
+  db=$1
+  if [ -n "${ERROR_FREE:-}" ]; then
+    mapname="${db}_sim_perfect.txt"
+    reportkey="iss_perfect"
+    what="error-free InSilicoSeq reads"
+  else
+    mapname="${db}_sim.txt"
+    reportkey="iss"
+    what="InSilicoSeq reads"
+  fi
+  map="${basedir}/data/fastq/${mapname}"
   if [ ! -f "$map" ]; then
-    echo "Missing ${map} - run 'sh ./bin/make_fastqs.sh viral' first." >&2
+    echo "Missing ${map} - run 'sh ./bin/make_fastqs.sh ${db}' first." >&2
     return 1
   fi
-  echo "############ viral: InSilicoSeq reads, unrefined vs. refined ############"
-  mvn exec:exec@accuracy -Dname=viral -Dfqmap=viral_sim.txt -Dreportkey=iss -Dsimulator=ISS
+  echo "############ ${db}: ${what}, unrefined vs. refined ############"
+  mvn exec:exec@accuracy -Dname="$db" -Dfqmap="$mapname" -Dreportkey="$reportkey" -Dsimulator=ISS
 }
 
 run_ticks() {
@@ -48,10 +60,12 @@ run_ticks() {
 }
 
 case "$what" in
-  viral)      run_viral ;;
+  viral)      run_iss viral ;;
+  protozoa)   run_iss protozoa ;;
+  gut-protozoa) run_iss gut-protozoa ;;
   tick-borne) run_ticks ;;
-  all)        run_viral; run_ticks ;;
-  *)          echo "Usage: $0 [viral|tick-borne|all]" >&2; exit 1 ;;
+  all)        run_iss viral; run_iss protozoa; run_ticks ;;
+  *)          echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|all]" >&2; exit 1 ;;
 esac
 
 echo

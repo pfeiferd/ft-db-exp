@@ -4,16 +4,23 @@
 # are based on, following the approach of the first Genestrip paper:
 #
 #   viral        InSilicoSeq applies its Illumina "MiSeq" and "HiSeq" error models to all RefSeq
-#                genomes of the category "Viral".
+#   protozoa     genomes of the corresponding RefSeq category.
 #   tick-borne   NanoSim trains an error model on the real Nanopore reads of a tick sample and
 #                applies it to the RefSeq genomes of the twelve tick-borne genera.
 #
-# Both parts skip whatever is already present, so the script can be re-run safely. Either part can
-# be run on its own:
+# Every part skips whatever is already present, so the script can be re-run safely. Each can be run
+# on its own:
 #
 #   sh ./bin/make_fastqs.sh viral
+#   sh ./bin/make_fastqs.sh protozoa
 #   sh ./bin/make_fastqs.sh tick-borne
 #   N_READS=10k sh ./bin/make_fastqs.sh viral      # quick smoke test instead of a full run
+#   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # error-free reads, see below
+#
+# ERROR_FREE uses InSilicoSeq's "perfect" mode, which fragments the genomes into reads of realistic
+# length but introduces no sequencing errors at all. The resulting figures are an upper bound: they
+# show what the refinement achieves when nothing but the taxonomy limits the classification, which
+# separates the effect of the refinement from the effect of read errors.
 #
 # Raw tick data:
 #   The real Nanopore runs come from the tick surveillance study the first paper builds on and are
@@ -39,16 +46,21 @@ cpus=${CPUS:-$(nproc 2>/dev/null || echo 4)}
 
 ############################## viral / InSilicoSeq ##############################
 
-make_viral() {
+# $1 = database project name, $2 = prefix of its RefSeq genomic files
+make_iss() {
+  db=$1
+  refseq_prefix=$2
+
   iss="${basedir}/tools/iss-venv/bin/iss"
   if [ ! -x "$iss" ]; then
     echo "InSilicoSeq is missing - run ./bin/install_tools.sh first." >&2
     exit 1
   fi
 
-  genomes_gz="${basedir}/data/common/refseq/viral.1.1.genomic.fna.gz"
-  if [ ! -f "$genomes_gz" ]; then
-    echo "Missing ${genomes_gz} - run 'mvn exec:exec@db -Dname=viral -Dgoal=refseqfna' first." >&2
+  set -- "${basedir}/data/common/refseq/${refseq_prefix}".*.genomic.fna.gz
+  if [ ! -f "$1" ]; then
+    echo "Missing ${basedir}/data/common/refseq/${refseq_prefix}.*.genomic.fna.gz" >&2
+    echo "Run 'mvn exec:exec@db -Dname=${db} -Dgoal=refseqfna' first." >&2
     exit 1
   fi
 
@@ -56,24 +68,40 @@ make_viral() {
   n_reads=${N_READS:-1M}
   mkdir -p "$workdir"
 
-  # InSilicoSeq needs the genomes uncompressed. The copy is removed again at the end.
-  genomes="${workdir}/viral.1.1.genomic.fna"
+  # InSilicoSeq needs the genomes uncompressed and in one file; a category may span several
+  # archives. The copy is removed again at the end, since it is large and easy to recreate.
+  genomes="${workdir}/${refseq_prefix}.genomic.fna"
   if [ ! -f "$genomes" ]; then
-    echo "Decompressing $(basename "$genomes_gz") ..."
-    gunzip -c "$genomes_gz" > "$genomes"
+    echo "Decompressing $# RefSeq file(s) of category ${refseq_prefix} ..."
+    gunzip -c "$@" > "$genomes"
   fi
 
-  for model in miseq hiseq; do
-    prefix="${fastqdir}/viral_iss_${model}_reads"
+  if [ -n "${ERROR_FREE:-}" ]; then
+    models="perfect"
+    # Own map name, so that an error-free run does not clobber the map of the regular one.
+    mapfile="${fastqdir}/${db}_sim_perfect.txt"
+  else
+    models="miseq hiseq"
+    mapfile="${fastqdir}/${db}_sim.txt"
+  fi
+
+  for model in $models; do
+    prefix="${fastqdir}/${db}_iss_${model}_reads"
     if [ -f "${prefix}_R1.fastq.gz" ]; then
       echo "SKIP  ${prefix}_R1.fastq.gz exists"
       continue
     fi
-    echo "=== viral: generating ${n_reads} ${model} reads ==="
-    "$iss" generate --genomes "$genomes" --model "$model" --n_reads "$n_reads" \
-      --cpus "$cpus" --compress --output "$prefix"
-    # The per-genome abundance file is not part of the ground truth.
-    rm -f "${prefix}_abundance.txt"
+    echo "=== ${db}: generating ${n_reads} ${model} reads ==="
+    if [ "$model" = perfect ]; then
+      # No error model at all: the reads differ from the reference only by where they were cut.
+      "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$n_reads" \
+        --cpus "$cpus" --compress --output "$prefix"
+    else
+      "$iss" generate --genomes "$genomes" --model "$model" --n_reads "$n_reads" \
+        --cpus "$cpus" --compress --output "$prefix"
+    fi
+    # Neither the abundance table nor the VCF scratch files are part of the ground truth.
+    rm -f "${prefix}_abundance.txt" "${prefix}".iss.tmp.*.vcf
   done
 
   rm -f "$genomes"
@@ -83,13 +111,13 @@ make_viral() {
   # The map goes next to the fastq files: Genestrip resolves a map file name against the literal
   # path, the project's fastq directory and data/fastq -- but not against the project's txt folder.
   {
-    for model in miseq hiseq; do
+    for model in $models; do
       for mate in 1 2; do
-        echo "iss_${model} ${fastqdir}/viral_iss_${model}_reads_R${mate}.fastq.gz"
+        echo "iss_${model} ${fastqdir}/${db}_iss_${model}_reads_R${mate}.fastq.gz"
       done
     done
-  } > "${fastqdir}/viral_sim.txt"
-  echo "Wrote ${fastqdir}/viral_sim.txt"
+  } > "$mapfile"
+  echo "Wrote ${mapfile}"
 }
 
 ############################## tick-borne / NanoSim ##############################
@@ -159,10 +187,14 @@ make_ticks() {
 }
 
 case "$what" in
-  viral)      make_viral ;;
-  tick-borne) make_ticks ;;
-  all)        make_viral; make_ticks ;;
-  *)          echo "Usage: $0 [viral|tick-borne|all]" >&2; exit 1 ;;
+  viral)         make_iss viral viral ;;
+  protozoa)      make_iss protozoa protozoa ;;
+  # Draws from the same RefSeq category; the database covers only a few of its genera, and the
+  # evaluation counts reads outside that scope separately.
+  gut-protozoa)  make_iss gut-protozoa protozoa ;;
+  tick-borne)    make_ticks ;;
+  all)           make_iss viral viral; make_iss protozoa protozoa; make_ticks ;;
+  *)             echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|all]" >&2; exit 1 ;;
 esac
 
 echo

@@ -43,7 +43,7 @@ public class FTExpMain {
 
         RefinementAccuracyReport report =
                 new RefinementAccuracyReport(BASE_DIR, RESULTS_DIR, db, simulator);
-        // No scope restriction: the simulated reads stem from the very genomes the database covers.
+        // A null scope means: count exactly the reads whose organism the database covers.
         report.write(db, fqMapFile, reportKey, null);
     }
 

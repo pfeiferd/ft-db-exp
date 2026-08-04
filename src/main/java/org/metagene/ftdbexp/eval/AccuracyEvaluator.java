@@ -78,8 +78,9 @@ public class AccuracyEvaluator {
      * @param loadDbGoalKey the goal loading that variant's database, whose taxonomy supplies the
      *                      candidate species counts
      * @param scope         restricts the reads that count towards recall to those whose true taxon
-     *                      lies at or below a requested node of this tree; may be {@code null} to
-     *                      count every read whose ground truth can be resolved
+     *                      lies at or below a requested node of this tree; pass {@code null} to use
+     *                      the database's own taxonomy, i.e. to count exactly the reads the database
+     *                      was built to cover
      * @return the tallies keyed by fastq key, in the order the files were processed
      * @throws IOException if the database or the fastq files cannot be read
      */
@@ -96,6 +97,12 @@ public class AccuracyEvaluator {
                     (ObjectGoal<Database, FTProject>) maker.getGoal(loadDbGoalKey);
             SmallTaxTree dbTree = dbGoal.get().getTaxTree();
             SpeciesCandidates candidates = new SpeciesCandidates();
+            // Without an explicit scope the database's own taxonomy is the right one. A project that
+            // requests only some genera of a RefSeq category - as the protozoa ones do - is fed reads
+            // from the whole category, and a read whose organism the database never covered must not
+            // count against its recall. Where a project requests an entire category, as the viral one
+            // does, every read is in scope anyway and this changes nothing.
+            SmallTaxTree effectiveScope = scope != null ? scope : dbTree;
 
             MatchResultGoal<?> matchResGoal = (MatchResultGoal<?>) maker.getGoal(matchGoalKey);
             matchResGoal.setAfterMatchCallback(new MatchResultGoal.AfterMatchCallback() {
@@ -103,7 +110,7 @@ public class AccuracyEvaluator {
                 public void afterMatch(FastqKMerMatcher.MatcherReadEntry entry, boolean found) {
                     // The matcher calls this from several threads, so the tally needs guarding.
                     synchronized (tally) {
-                        record(tally, entry, dbTree, candidates, scope);
+                        record(tally, entry, dbTree, candidates, effectiveScope);
                     }
                 }
 
