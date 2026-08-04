@@ -45,19 +45,24 @@ public final class AccuracyTally {
     /**
      * Records a read whose ground truth is known and in scope.
      *
+     * @param classified   whether the analysis assigned a taxon to the read at all
      * @param lcaRank      the rank of the lowest common ancestor of the read's true and assigned
-     *                     taxon, or {@code null} if the read was not classified at all
+     *                     taxon, or {@code null} if there is none with a rank of its own -- which is
+     *                     not the same as the read being unclassified
      * @param speciesScore the reciprocal of the number of species the classification leaves in
      *                     question, or {@code 0} if the classification says nothing about the read's
      *                     true species; see {@link SpeciesCandidates}
      */
-    public void record(Rank lcaRank, double speciesScore) {
+    public void record(boolean classified, Rank lcaRank, double speciesScore) {
         total++;
+        if (!classified) {
+            return;
+        }
+        this.classified++;
         speciesCandidateScore += speciesScore;
         if (lcaRank == null) {
             return;
         }
-        classified++;
         if (Rank.GENUS.equals(lcaRank) || lcaRank.isBelow(Rank.GENUS)) {
             correctGenus++;
         }

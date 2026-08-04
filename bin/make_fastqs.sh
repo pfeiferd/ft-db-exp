@@ -80,16 +80,16 @@ make_viral() {
   rmdir "$workdir" 2>/dev/null || true
 
   # Reads sharing a key are reported together, so each model forms one key over both mates.
-  mapdir="${basedir}/data/projects/viral/txt"
-  mkdir -p "$mapdir"
+  # The map goes next to the fastq files: Genestrip resolves a map file name against the literal
+  # path, the project's fastq directory and data/fastq -- but not against the project's txt folder.
   {
     for model in miseq hiseq; do
       for mate in 1 2; do
         echo "iss_${model} ${fastqdir}/viral_iss_${model}_reads_R${mate}.fastq.gz"
       done
     done
-  } > "${mapdir}/viral_sim.txt"
-  echo "Wrote ${mapdir}/viral_sim.txt"
+  } > "${fastqdir}/viral_sim.txt"
+  echo "Wrote ${fastqdir}/viral_sim.txt"
 }
 
 ############################## tick-borne / NanoSim ##############################
@@ -149,15 +149,13 @@ make_ticks() {
     echo "OK    ${out}"
   done
 
-  # One key per sample, as in the first paper's ticks_sim.txt.
-  mapdir="${basedir}/data/projects/tick-borne/txt"
-  mkdir -p "$mapdir"
+  # One key per sample, as in the first paper's ticks_sim.txt, and again next to the fastq files.
   {
     for sample in $samples; do
       [ -s "${fastqdir}/${sample}_sim.fastq" ] && echo "${sample} ${fastqdir}/${sample}_sim.fastq"
     done
-  } > "${mapdir}/ticks_sim.txt"
-  echo "Wrote ${mapdir}/ticks_sim.txt"
+  } > "${fastqdir}/ticks_sim.txt"
+  echo "Wrote ${fastqdir}/ticks_sim.txt"
 }
 
 case "$what" in

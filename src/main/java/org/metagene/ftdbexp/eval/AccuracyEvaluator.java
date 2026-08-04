@@ -139,38 +139,23 @@ public class AccuracyEvaluator {
             tally.recordUnresolved();
             return;
         }
-        TaxTree.TaxIdNode classNode = entry.classNode == null
-                ? null : taxTree.getNodeByTaxId(entry.classNode.getTaxId());
+        // Everything below is compared inside the database's own taxonomy, never against the NCBI
+        // taxonomy: a database contains synthetic nodes - the data nodes and, after a refinement,
+        // the refined ones - whose tax ids do not exist in NCBI at all. Looking those up in the NCBI
+        // tree yields nothing and would silently drop every read classified to one of them.
+        SmallTaxTree.SmallTaxIdNode classNode = entry.classNode;
         if (inScope(trueNode, scope)) {
-            Rank lcaRank = classNode == null ? null : lowestRankedCommonAncestor(trueNode, classNode);
-            tally.record(lcaRank, speciesScore(entry.classNode, trueNode, dbTree, candidates));
-        } else if (classNode != null && inScope(classNode, scope)) {
+            SmallTaxTree.SmallTaxIdNode trueInDb = inDbTree(trueNode, dbTree);
+            Rank lcaRank = classNode == null || trueInDb == null
+                    ? null : lowestRankedCommonAncestor(dbTree, trueInDb, classNode);
+            double score = classNode != null && trueInDb != null
+                    && SpeciesCandidates.areComparable(classNode, trueInDb)
+                    ? candidates.weightFor(classNode) : 0;
+            tally.record(classNode != null, lcaRank, score);
+        } else if (classNode != null && inScope(taxTree.getNodeByTaxId(classNode.getTaxId()), scope)) {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();
         }
-    }
-
-    /**
-     * Returns how much a classification narrows down the read's species, i.e. the reciprocal of the
-     * number of species that remain in question. A classification saying nothing about the read's
-     * true species scores zero.
-     *
-     * @param classNode  the node the read was classified to, may be {@code null}
-     * @param trueNode   the taxon the read was generated from
-     * @param dbTree     the taxonomy of the database variant being evaluated
-     * @param candidates the candidate species counter for that taxonomy
-     * @return the read's contribution to the candidate-weighted species measures
-     */
-    private double speciesScore(SmallTaxTree.SmallTaxIdNode classNode, TaxTree.TaxIdNode trueNode,
-                                SmallTaxTree dbTree, SpeciesCandidates candidates) {
-        if (classNode == null) {
-            return 0;
-        }
-        SmallTaxTree.SmallTaxIdNode trueInDb = inDbTree(trueNode, dbTree);
-        if (trueInDb == null || !SpeciesCandidates.areComparable(classNode, trueInDb)) {
-            return 0;
-        }
-        return candidates.weightFor(classNode);
     }
 
     /**
@@ -198,13 +183,15 @@ public class AccuracyEvaluator {
      * Ancestors without a rank of their own are skipped upwards, since they carry no information
      * about how specific the agreement is.
      *
-     * @param trueNode  the taxon the read was generated from
+     * @param dbTree    the taxonomy of the database variant being evaluated
+     * @param trueNode  the taxon the read was generated from, mapped into that taxonomy
      * @param classNode the taxon the read was classified to
      * @return the rank the two taxa agree at, or {@code null} if their common ancestor has no rank
      * up to the root
      */
-    private Rank lowestRankedCommonAncestor(TaxTree.TaxIdNode trueNode, TaxTree.TaxIdNode classNode) {
-        TaxTree.TaxIdNode lca = taxTree.getLowestCommonAncestor(trueNode, classNode);
+    private Rank lowestRankedCommonAncestor(SmallTaxTree dbTree, SmallTaxTree.SmallTaxIdNode trueNode,
+                                            SmallTaxTree.SmallTaxIdNode classNode) {
+        SmallTaxTree.SmallTaxIdNode lca = dbTree.getLowestCommonAncestor(trueNode, classNode);
         while (lca != null && Rank.NO_RANK.equals(lca.getRank())) {
             lca = lca.getParent();
         }
@@ -221,6 +208,9 @@ public class AccuracyEvaluator {
     private boolean inScope(TaxTree.TaxIdNode node, SmallTaxTree scope) {
         if (scope == null) {
             return true;
+        }
+        if (node == null) {
+            return false;
         }
         SmallTaxTree.SmallTaxIdNode scopeNode = scope.getNodeByTaxId(node.getTaxId());
         while (scopeNode != null) {

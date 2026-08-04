@@ -58,7 +58,9 @@ fi
 
 echo "############ 3/4  InSilicoSeq ############"
 issvenv="${toolsdir}/iss-venv"
-if [ -x "${issvenv}/bin/iss" ]; then
+# A venv records absolute paths, so a moved or renamed one is broken even though its files look
+# fine. Test that iss actually runs rather than that the file exists.
+if "${issvenv}/bin/iss" --version >/dev/null 2>&1; then
   echo "  already installed: $("${issvenv}/bin/iss" --version 2>&1 | head -1)"
 else
   python3 -m venv "$issvenv"

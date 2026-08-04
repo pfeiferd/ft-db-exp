@@ -28,7 +28,7 @@ res_path="${basedir}/results"
 mkdir -p "$res_path"
 
 run_viral() {
-  map="${basedir}/data/projects/viral/txt/viral_sim.txt"
+  map="${basedir}/data/fastq/viral_sim.txt"
   if [ ! -f "$map" ]; then
     echo "Missing ${map} - run 'sh ./bin/make_fastqs.sh viral' first." >&2
     return 1
@@ -38,7 +38,7 @@ run_viral() {
 }
 
 run_ticks() {
-  map="${basedir}/data/projects/tick-borne/txt/ticks_sim.txt"
+  map="${basedir}/data/fastq/ticks_sim.txt"
   if [ ! -f "$map" ]; then
     echo "Missing ${map} - run 'sh ./bin/make_fastqs.sh tick-borne' first." >&2
     return 1
