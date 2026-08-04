@@ -192,10 +192,35 @@ public class AccuracyEvaluator {
     private Rank lowestRankedCommonAncestor(SmallTaxTree dbTree, SmallTaxTree.SmallTaxIdNode trueNode,
                                             SmallTaxTree.SmallTaxIdNode classNode) {
         SmallTaxTree.SmallTaxIdNode lca = dbTree.getLowestCommonAncestor(trueNode, classNode);
-        while (lca != null && Rank.NO_RANK.equals(lca.getRank())) {
+        while (lca != null && !isTaxonomicRank(lca.getRank())) {
             lca = lca.getParent();
         }
         return lca == null ? null : lca.getRank();
+    }
+
+    /**
+     * Returns whether a rank says something about the taxonomic specificity of a node.
+     * <p>
+     * Besides the nodes without a rank of their own, this excludes the artificial ranks Genestrip
+     * uses to mark where a k-mer originates from. Those are ordered at the very bottom of
+     * {@link Rank}, so {@code Rank.REFINED.isBelow(Rank.SPECIES)} holds -- which is true of a data
+     * node, sitting underneath its species, but decidedly false of a refined node: a refined node
+     * lies <em>between</em> a genus and its species and groups several of them. Comparing ranks
+     * naively would therefore count a read assigned to a refined node as a species-level hit even
+     * though that assignment is precisely what leaves the species open. Skipping the artificial
+     * ranks upwards resolves both cases correctly: a data node yields the species above it, a
+     * refined node the genus.
+     *
+     * @param rank the rank to test, may be {@code null}
+     * @return whether the rank is a genuine taxonomic rank
+     */
+    private static boolean isTaxonomicRank(Rank rank) {
+        return rank != null
+                && !Rank.NO_RANK.equals(rank)
+                && !Rank.REFINED.equals(rank)
+                && !Rank.DATA.equals(rank)
+                && !Rank.FILE.equals(rank)
+                && !Rank.ID.equals(rank);
     }
 
     /**
