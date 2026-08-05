@@ -460,6 +460,12 @@ def sysCpuGHz       "${cpu_ghz:-}"
 def sysCores        "${cores:-}"
 def sysThreads      "${threads:-}"
 def sysWorkers      "${workers:-}"
+# A flag rather than a second number: the paper derives the total thread count from \sysWorkers by
+# LaTeX arithmetic, which needs to know whether the value is one it can compute with.
+if [ -n "${workers:-}" ]; then
+  printf '\\ifdefined\\ifsysWorkersKnown\\else\\newif\\ifsysWorkersKnown\\fi\n' >>"$TEXOUT"
+  printf '\\sysWorkersKnowntrue\n' >>"$TEXOUT"
+fi
 def sysRamGB        "${ram_nominal:-}"
 def sysRamGiB       "${ram_gib:-}"
 def sysSwap         "${swap_state:-}"

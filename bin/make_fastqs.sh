@@ -93,11 +93,15 @@ make_iss() {
   # One million reads per model, as in the first paper.
   n_reads=${N_READS:-1M}
   # The first Genestrip paper puts the per-base error of Nanopore devices at 5 % to 15 %; ten is
-  # the middle of that range, and its worked example of 6 % lies within it too. It also reports a
-  # mean read length of 3,926 bp for its NanoSim-simulated Nanopore data, which is what makes the
-  # long-read side of the comparison realistic rather than arbitrary.
+  # the middle of that range, and its worked example of 6 % lies within it too.
   nanopore_error=${NANOPORE_ERROR_PCT:-10}
-  nanopore_read_length=${NANOPORE_READ_LENGTH:-3926}
+  # The same paper reports a mean read length of 3,926 bp for its NanoSim data, and this regime was
+  # first run that way. One million reads of that length are 7.9 Gbp, some thirty times the other
+  # regimes, which costs hours in generation and again in classification for a result that differs
+  # from the short-read one mainly in how *few* reads are left for a refinement to improve. The
+  # default is therefore the short read length, which isolates the error rate at a fraction of the
+  # cost; set NANOPORE_READ_LENGTH=3926 to reproduce the long-read variant.
+  nanopore_read_length=${NANOPORE_READ_LENGTH:-125}
   mkdir -p "$workdir"
 
   # InSilicoSeq wants one uncompressed multi-FASTA. The concatenation is removed again at the end,

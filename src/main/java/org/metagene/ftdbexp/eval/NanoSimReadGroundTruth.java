@@ -1,8 +1,9 @@
 package org.metagene.ftdbexp.eval;
 
-import org.metagene.genestrip.refseq.AccessionMap;
 import org.metagene.genestrip.tax.TaxTree;
 import org.metagene.genestrip.util.ByteArrayUtil;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Ground truth for reads simulated by <a href="https://github.com/bcgsc/NanoSim">NanoSim</a>.
@@ -11,78 +12,72 @@ import org.metagene.genestrip.util.ByteArrayUtil;
  * <pre>
  *   &#64;119857x137145-NZ-PKBC01000002_8514_aligned_11841_R_45_6436_373
  * </pre>
- * The part before the first dash is the label from the genome list, which the experiments of the
- * first Genestrip paper chose to be {@code <taxid>x<index>}. What follows up to the next underscore
- * is the accession of the source sequence -- but mangled twice: NanoSim replaces the accession's own
- * underscore by a dash ({@code NZ_PKBC01000002} becomes {@code NZ-PKBC01000002}) and it drops the
- * version suffix.
+ * The part before the first dash is the label from the genome list, {@code <taxid>x<index>}, and
+ * the taxon is read straight out of it. What follows is the accession of the source sequence, but
+ * mangled twice: NanoSim replaces the accession's own underscore by a dash ({@code NZ_PKBC01000002}
+ * becomes {@code NZ-PKBC01000002}) and drops the version suffix.
  * <p>
- * Both mutilations have to be undone before the {@link AccessionMap} can be consulted. The dash is
- * simply turned back into an underscore; the version, being lost for good, is guessed by trying
- * {@code .1} through {@code .9} and taking the first one the map knows. That is what the original
- * experiment did as well, and in practice the first or second attempt hits.
- * <p>
- * Note that the read identifier also carries the taxon directly, in the label before the dash. That
- * would avoid the guessing entirely, but it only works for reads generated from a genome list that
- * follows the {@code <taxid>x<index>} convention, whereas the accession is always present. The
- * accession route is therefore the more robust one and the one implemented here.
+ * Resolving via that accession would mean undoing both mutilations and then guessing the lost
+ * version by trying {@code .1} through {@code .9} against Genestrip's accession map -- and it would
+ * fail outright for every genome taken from Genbank, which the map does not know because Genestrip
+ * attaches such a file to its taxon by file rather than by accession. For a database drawing on
+ * Genbank that is most of the reads. The label carries the answer already, exactly and without
+ * guessing, and {@code NanoSimGenomeList} in this project is what writes it -- so the convention is
+ * guaranteed here rather than assumed.
  */
 public class NanoSimReadGroundTruth implements ReadGroundTruth {
-    /** Highest version suffix tried when reconstructing the accession. */
-    private static final int MAX_VERSION = 9;
-
-    private final AccessionMap accessionMap;
+    private final TaxTree taxTree;
+    /** Guards the warning below, so that a systematic mismatch is reported once and not per read. */
+    private boolean warned;
 
     /**
      * Creates the ground truth resolver.
      *
-     * @param accessionMap the accession-to-taxon map of the database the reads are matched against
+     * @param taxTree the taxonomy the label's tax id is looked up in
      */
-    public NanoSimReadGroundTruth(AccessionMap accessionMap) {
-        this.accessionMap = accessionMap;
+    public NanoSimReadGroundTruth(TaxTree taxTree) {
+        this.taxTree = taxTree;
     }
 
     @Override
     public TaxTree.TaxIdNode resolve(byte[] descriptor, int length) {
-        int labelEnd = ByteArrayUtil.indexOf(descriptor, 0, length, '-');
+        int start = length > 0 && descriptor[0] == '@' ? 1 : 0;
+        int labelEnd = ByteArrayUtil.indexOf(descriptor, start, length, '-');
         if (labelEnd < 0) {
+            warnOnce("no label before a dash", descriptor, start, length);
             return null;
         }
-        // The underscore ending the accession; the search starts behind the label so that a dash
-        // inside it cannot be mistaken for the separator.
-        int accessionEnd = ByteArrayUtil.indexOf(descriptor, labelEnd + 1, length, '_');
-        if (accessionEnd < 0 || accessionEnd + 1 >= length) {
+        // The label is "<taxid>x<index>"; everything before the 'x' is the taxon.
+        int x = ByteArrayUtil.indexOf(descriptor, start, labelEnd, 'x');
+        if (x <= start) {
+            warnOnce("label is not of the form <taxid>x<index>", descriptor, start, length);
             return null;
         }
+        String taxId = new String(descriptor, start, x - start, StandardCharsets.UTF_8);
+        TaxTree.TaxIdNode node = taxTree.getNodeByTaxId(taxId);
+        if (node == null) {
+            warnOnce("tax id " + taxId + " is not in the taxonomy", descriptor, start, length);
+        }
+        return node;
+    }
 
-        // Repair the accession in place: the dash NanoSim introduced becomes an underscore again,
-        // and the trailing underscore becomes the dot of the version suffix.
-        int innerDash = ByteArrayUtil.indexOf(descriptor, labelEnd + 1, accessionEnd, '-');
-        byte savedDash = 0;
-        if (innerDash >= 0) {
-            savedDash = descriptor[innerDash];
-            descriptor[innerDash] = '_';
+    /**
+     * Reports the first read whose label yields no taxon, then counts the rest silently.
+     *
+     * @param reason     what went wrong, for the message
+     * @param descriptor the raw read descriptor
+     * @param start      the index the label starts at
+     * @param length     the number of valid bytes in {@code descriptor}
+     */
+    private void warnOnce(String reason, byte[] descriptor, int start, int length) {
+        if (warned) {
+            return;
         }
-        byte savedEnd = descriptor[accessionEnd];
-        byte savedVersion = descriptor[accessionEnd + 1];
-        descriptor[accessionEnd] = '.';
-        try {
-            for (int version = 1; version <= MAX_VERSION; version++) {
-                descriptor[accessionEnd + 1] = (byte) ('0' + version);
-                TaxTree.TaxIdNode node =
-                        accessionMap.get(descriptor, labelEnd + 1, accessionEnd + 2, false);
-                if (node != null) {
-                    return node;
-                }
-            }
-            return null;
-        } finally {
-            // Leave the caller's buffer as we found it - it is reused for the next read.
-            descriptor[accessionEnd] = savedEnd;
-            descriptor[accessionEnd + 1] = savedVersion;
-            if (innerDash >= 0) {
-                descriptor[innerDash] = savedDash;
-            }
-        }
+        warned = true;
+        System.err.println("WARNING: cannot resolve the ground truth of read '"
+                + new String(descriptor, start, length - start, StandardCharsets.UTF_8).trim() + "': " + reason
+                + ". Such reads are counted as unresolved and excluded from every measure."
+                + " Was the genome list written by NanoSimGenomeList?"
+                + " Further occurrences are counted but not reported.");
     }
 }

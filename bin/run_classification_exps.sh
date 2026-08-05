@@ -115,11 +115,19 @@ run_perf() {
     echo "Missing ${basedir}/data/fastq/${map} - run 'sh ./bin/make_fastqs.sh ${db}' first." >&2
     return 1
   fi
+  # A warning rather than an error in both cases below: the quality results above are complete and
+  # worth keeping, and only the performance part of Section "Performance" would be missing.
   if [ ! -x ./tools/cgmemtime/cgmemtime ]; then
-    # A warning rather than an error: the quality results above are complete and worth keeping,
-    # and only the performance part of Section "Performance" is missing.
     echo "WARNING: cgmemtime is missing - skipping the classification performance of ${db}." >&2
     echo "         Run ./bin/install_tools.sh to enable it." >&2
+    return 0
+  fi
+  # Being present is not enough: cgmemtime needs a cgroup it may create, which it cannot do without
+  # a systemd user session. Probing it once here beats discovering it after the measured run, where
+  # the failure would be indistinguishable from a failure of the goal itself.
+  if ! ./tools/cgmemtime/cgmemtime true >/dev/null 2>&1; then
+    echo "WARNING: cgmemtime is installed but cannot run here - skipping the classification" >&2
+    echo "         performance of ${db}. It needs a systemd user scope to create its cgroup." >&2
     return 0
   fi
   # goal name -> log file prefix; `match' uses the unrefined database, `ftmatch' the refined one.

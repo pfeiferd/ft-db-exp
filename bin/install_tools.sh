@@ -143,6 +143,32 @@ else
   echo "  unpacked ${nanosimdir}"
 fi
 
+# The pre-trained error models are removed rather than kept, because they cannot be used with the
+# unpinned dependencies installed below and failing to notice that is easy. They were pickled under
+# scikit-learn 0.22, and loading them under a current one runs into four successive incompatibilities:
+#
+#   sklearn.neighbors.kde              renamed to sklearn.neighbors._kde        (0.22)
+#   sklearn.neighbors._dist_metrics    moved to sklearn.metrics._dist_metrics   (1.3)
+#   EuclideanDistance                  split into 32- and 64-bit variants       (1.3)
+#   KernelDensity.bandwidth_           fitted-attribute contract changed
+#
+# The first three can be aliased away, and doing so is what makes this dangerous: the model then
+# unpickles into a structurally invalid state, and `simulator.py' reports "Finished!" while writing
+# zero-byte fastq files. A run that fails this way is indistinguishable from a successful one by
+# exit status alone. Checked on 2026-08-05 against scikit-learn 1.9.0.
+#
+# Two ways to get Nanopore reads regardless, neither of which needs these files:
+#   - train a model with `read_analysis.py', which *creates* the pickles under the scikit-learn that
+#     is actually installed, so no version skew arises. This is what make_fastqs.sh does for the
+#     tick-borne data, and it is the route the first Genestrip paper took.
+#   - run the simulation on a machine with the original conda environment of that paper
+#     (Python 3.7, scikit-learn 0.22.1), where the shipped models load as intended.
+if [ -d "${nanosimdir}/pre-trained_models" ]; then
+  echo "  removing NanoSim's pre-trained models - unusable with current scikit-learn, see the"
+  echo "  comment in this script; train a model with read_analysis.py instead"
+  rm -rf "${nanosimdir}/pre-trained_models"
+fi
+
 if [ ! -x "${nsvenv}/bin/python" ]; then
   python3 -m venv "$nsvenv"
 fi

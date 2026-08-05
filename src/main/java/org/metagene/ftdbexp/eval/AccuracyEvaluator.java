@@ -11,7 +11,6 @@ import org.metagene.genestrip.make.GoalKey;
 import org.metagene.genestrip.make.ObjectGoal;
 import org.metagene.genestrip.match.FastqKMerMatcher;
 import org.metagene.genestrip.match.MatchingResult;
-import org.metagene.genestrip.refseq.AccessionMap;
 import org.metagene.genestrip.store.Database;
 import org.metagene.genestrip.tax.Rank;
 import org.metagene.genestrip.tax.SmallTaxTree;
@@ -63,16 +62,7 @@ public class AccuracyEvaluator {
             // simulated from them, and the only source that covers the ones taken from Genbank.
             Map<String, String> extractedTaxIds = ExtractedTaxIds.load(
                     project.getOutputFile(GSGoalKey.EXTRACT_REFSEQ_CSV.getName(), GSProject.GSFileType.CSV, false));
-            // Building the accession map costs minutes, so it is only made where a resolver needs it.
-            AccessionMap accessionMap = null;
-            if (simulator.needsAccessionMap()) {
-                @SuppressWarnings("unchecked")
-                ObjectGoal<AccessionMap, FTProject> accessionMapGoal =
-                        (ObjectGoal<AccessionMap, FTProject>) maker.getGoal(GSGoalKey.ACCMAP);
-                accessionMap = accessionMapGoal.get();
-                accessionMapGoal.cleanThis();
-            }
-            groundTruth = simulator.groundTruth(taxTree, accessionMap, extractedTaxIds);
+            groundTruth = simulator.groundTruth(taxTree, extractedTaxIds);
         } finally {
             maker.dumpAll();
         }
