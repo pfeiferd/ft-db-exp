@@ -69,6 +69,29 @@ else
   echo "  installed $("${issvenv}/bin/iss" --version 2>&1 | head -1)"
 fi
 
+# InSilicoSeq 2.0.1 cannot generate error-free reads: PerfectErrorModel does not set
+# `store_mutations', unlike BasicErrorModel and KDErrorModel, so the base class raises an
+# AttributeError while writing the reads. `iss' catches it, prints its own help and exits 0 -- the
+# run leaves scratch files behind, no output, and a zero exit status that hides the failure. The
+# patch adds the missing attribute; it is idempotent and a no-op once upstream fixes this.
+perfectmodel=$(ls -d "${issvenv}"/lib/python*/site-packages/iss/error_models/perfect.py 2>/dev/null | head -1)
+if [ -n "$perfectmodel" ] && ! grep -q "store_mutations" "$perfectmodel"; then
+  echo "  patching InSilicoSeq: PerfectErrorModel is missing store_mutations"
+  python3 - "$perfectmodel" <<'PATCH'
+import sys
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+src = src.replace(
+    "    def __init__(self, fragment_length=None, fragment_sd=None):",
+    "    def __init__(self, fragment_length=None, fragment_sd=None, store_mutations=False):", 1)
+src = src.replace(
+    "        self.fragment_sd = fragment_sd\n        self.quality_forward",
+    "        self.fragment_sd = fragment_sd\n        self.store_mutations = store_mutations\n"
+    "        self.quality_forward", 1)
+open(path, 'w', encoding='utf-8').write(src)
+PATCH
+fi
+
 echo "############ 4/4  NanoSim ############"
 nsvenv="${toolsdir}/nanosim-venv"
 nanosimdir="${toolsdir}/NanoSim"

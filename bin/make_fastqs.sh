@@ -19,6 +19,9 @@
 #   N_READS=10k sh ./bin/make_fastqs.sh viral      # quick smoke test instead of a full run
 #   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # error-free reads, see below
 #
+# A single project follows ERROR_FREE; `all' ignores it and generates both read sets of every
+# InSilicoSeq project, since the paper reports them side by side.
+#
 # ERROR_FREE uses InSilicoSeq's "perfect" mode, which fragments the genomes into reads of realistic
 # length but introduces no sequencing errors at all. The resulting figures are an upper bound: they
 # show what the refinement achieves when nothing but the taxonomy limits the classification, which
@@ -130,8 +133,9 @@ make_iss() {
       "$iss" generate --genomes "$genomes" --model "$model" --n_reads "$n_reads" \
         --cpus "$cpus" --compress --output "$prefix"
     fi
-    # Neither the abundance table nor the VCF scratch files are part of the ground truth.
-    rm -f "${prefix}_abundance.txt" "${prefix}".iss.tmp.*.vcf
+    # None of InSilicoSeq's scratch output is part of the ground truth: the abundance table, the
+    # per-thread VCFs and, when a run is interrupted, the partial fastq files it leaves behind.
+    rm -f "${prefix}_abundance.txt" "${prefix}".iss.tmp.*
   done
 
   rm -f "$genomes"
@@ -148,6 +152,18 @@ make_iss() {
     done
   } > "$mapfile"
   echo "Wrote ${mapfile}"
+}
+
+# Both read sets of a database: with an Illumina error model and error-free. A comprehensive run
+# needs both, since the paper reports them side by side -- the error-free figures bound what the
+# refinement can achieve when nothing but the taxonomy limits the classification.
+make_iss_both() {
+  saved_error_free=${ERROR_FREE:-}
+  ERROR_FREE=""
+  make_iss "$1"
+  ERROR_FREE=1
+  make_iss "$1"
+  ERROR_FREE=$saved_error_free
 }
 
 ############################## tick-borne / NanoSim ##############################
@@ -221,7 +237,8 @@ case "$what" in
   protozoa)      make_iss protozoa ;;
   gut-protozoa)  make_iss gut-protozoa ;;
   tick-borne)    make_ticks ;;
-  all)           make_iss viral; make_iss protozoa; make_iss gut-protozoa; make_ticks ;;
+  all)           make_iss_both viral; make_iss_both protozoa; make_iss_both gut-protozoa
+                 make_ticks ;;
   *)             echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|all]" >&2; exit 1 ;;
 esac
 
