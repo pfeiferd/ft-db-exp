@@ -7,8 +7,6 @@
 6182
 # Schistosoma intercalatum
 6187
-# Schistosoma haematobium
-6185
 632765
 3054441
 2905979
@@ -67,8 +65,6 @@
 796506
 # Bertiella
 578851
-# Taenia solium
-6204
 # Enterobius vermicularis
 51028
 # Ascaris lumbricoides

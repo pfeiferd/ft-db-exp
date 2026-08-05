@@ -186,6 +186,19 @@ All experiments write to `./results`. Those files are consumed directly by the p
 its own `results` folder, i.e. `genestrip-docs2/ft-paper/results`, from where the LaTeX sources
 include the CSV, SVG and LaTeX fragments by name.
 
+Among them is `dbstats.tex`, written by `./bin/paper_stats.sh` as the last step of `run_exps.sh`. It
+holds the numbers of the paper's database tables -- stored *k*-mers, taxa at the species rank and
+below, and the subtree precision per genus -- as LaTeX macros, so that they are read from the CSVs
+instead of being copied by hand. Run the script on its own after regenerating individual CSVs:
+
+```sh
+sh ./bin/paper_stats.sh
+```
+
+Copy it over **together with** the CSVs it was derived from. A `dbstats.tex` beside a different set
+of CSVs is the one inconsistency it cannot detect itself; a missing or incomplete one is harmless,
+since the paper renders every value it cannot find as a bold `??`.
+
 ## Cleaning up
 
 ```sh
