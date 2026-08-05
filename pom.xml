@@ -13,6 +13,9 @@
 		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
+		<!-- Heap for the database goals. The original experiments used a 64 GB machine;
+		     override on a smaller one, e.g. -Dgs.xmx=10G . -->
+		<gs.xmx>64G</gs.xmx>
 	</properties>
 	
 	<name>genestrip-db-exp</name>
@@ -113,7 +116,7 @@
 							<includeProjectDependencies>true</includeProjectDependencies>
 							<includePluginDependencies>true</includePluginDependencies>
 							<arguments>
-								<argument>-Xmx64G</argument>
+								<argument>-Xmx${gs.xmx}</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
@@ -134,7 +137,7 @@
 							<includeProjectDependencies>true</includeProjectDependencies>
 							<includePluginDependencies>true</includePluginDependencies>
 							<arguments>
-								<argument>-Xmx64G</argument>
+								<argument>-Xmx${gs.xmx}</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.ftdbexp.FTExpMain</argument>
@@ -173,7 +176,7 @@
 							<includeProjectDependencies>true</includeProjectDependencies>
 							<includePluginDependencies>true</includePluginDependencies>
 							<arguments>
-								<argument>-Xmx64G</argument>
+								<argument>-Xmx${gs.xmx}</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>

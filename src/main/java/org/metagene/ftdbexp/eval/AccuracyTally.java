@@ -25,6 +25,9 @@ public final class AccuracyTally {
     private long unresolved;
     private long total;
     private double speciesCandidateScore;
+    private long genusOnlyTotal;
+    private double genusOnlyScore;
+    private long genusOnlyCorrectSpecies;
 
     /**
      * Records a read whose ground truth could not be resolved.
@@ -54,7 +57,27 @@ public final class AccuracyTally {
      *                     true species; see {@link SpeciesCandidates}
      */
     public void record(boolean classified, Rank lcaRank, double speciesScore) {
+        record(classified, lcaRank, speciesScore, false);
+    }
+
+    /**
+     * Records a read, additionally noting whether it belongs to the subset of reads the unrefined
+     * database left at their genus -- the only reads a refinement can improve on at all.
+     *
+     * @param classified   whether the analysis assigned a taxon to the read
+     * @param lcaRank      the rank the read's true and assigned taxon agree at, may be {@code null}
+     * @param speciesScore the read's candidate-weighted species score
+     * @param genusOnly    whether the read is in the genus-only subset
+     */
+    public void record(boolean classified, Rank lcaRank, double speciesScore, boolean genusOnly) {
         total++;
+        if (genusOnly) {
+            genusOnlyTotal++;
+            genusOnlyScore += speciesScore;
+            if (lcaRank != null && (Rank.SPECIES.equals(lcaRank) || lcaRank.isBelow(Rank.SPECIES))) {
+                genusOnlyCorrectSpecies++;
+            }
+        }
         if (!classified) {
             return;
         }
@@ -180,6 +203,46 @@ public final class AccuracyTally {
     }
 
     /**
+     * Returns the number of reads that the unrefined database classified no further than to their
+     * genus. This is the subset a refinement can improve on: everything else was either already
+     * pinned to a species or was wrong at the genus rank to begin with.
+     *
+     * @return the size of the genus-only subset
+     */
+    public long getGenusOnlyTotal() {
+        return genusOnlyTotal;
+    }
+
+    /**
+     * Returns the candidate-weighted species precision restricted to the genus-only subset. Compared
+     * between the unrefined and the refined variant, the difference states the gain where a gain was
+     * possible, undiluted by the reads that were already at their species.
+     *
+     * @return the restricted precision, or {@link Double#NaN} if the subset is empty
+     */
+    public double getGenusOnlyPrecision() {
+        return genusOnlyTotal == 0 ? Double.NaN : genusOnlyScore / genusOnlyTotal;
+    }
+
+    /**
+     * Returns the share of the genus-only subset that this variant pins down to the species.
+     *
+     * @return the share in {@code [0, 1]}, or {@link Double#NaN} if the subset is empty
+     */
+    public double getGenusOnlySpeciesShare() {
+        return genusOnlyTotal == 0 ? Double.NaN : ((double) genusOnlyCorrectSpecies) / genusOnlyTotal;
+    }
+
+    /**
+     * Returns the accumulated candidate weights over the genus-only subset.
+     *
+     * @return the sum of the per-read species scores within the subset
+     */
+    public double getGenusOnlyScore() {
+        return genusOnlyScore;
+    }
+
+    /**
      * Returns the number of reads the classifier assigned a taxon to.
      *
      * @return the number of classified reads
@@ -223,6 +286,9 @@ public final class AccuracyTally {
         copy.unresolved = unresolved;
         copy.total = total;
         copy.speciesCandidateScore = speciesCandidateScore;
+        copy.genusOnlyTotal = genusOnlyTotal;
+        copy.genusOnlyScore = genusOnlyScore;
+        copy.genusOnlyCorrectSpecies = genusOnlyCorrectSpecies;
         return copy;
     }
 
@@ -237,6 +303,9 @@ public final class AccuracyTally {
         unresolved = 0;
         total = 0;
         speciesCandidateScore = 0;
+        genusOnlyTotal = 0;
+        genusOnlyScore = 0;
+        genusOnlyCorrectSpecies = 0;
     }
 
     @Override

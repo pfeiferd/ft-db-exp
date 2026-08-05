@@ -104,10 +104,13 @@ public class RefinementAccuracyReport {
     public File write(String db, String fqMapFile, String reportKey, SmallTaxTree scope) throws IOException {
         Map<Variant, Map<String, AccuracyTally>> byVariant =
                 new LinkedHashMap<Variant, Map<String, AccuracyTally>>();
+        // The unrefined run fills the baseline of reads it left at their genus, the refined one is
+        // then measured on exactly those. Hence the order of Variant.values() matters here.
+        GenusOnlyBaseline baseline = new GenusOnlyBaseline();
         for (Variant variant : Variant.values()) {
             System.out.println("Evaluating " + variant.getLabel() + " database " + db + " on " + fqMapFile);
             byVariant.put(variant, evaluator.evaluate(db, fqMapFile, variant.getMatchGoalKey(),
-                    variant.getLoadDbGoalKey(), scope));
+                    variant.getLoadDbGoalKey(), scope, baseline, variant == Variant.UNREFINED));
         }
 
         if (!resultsDir.exists() && !resultsDir.mkdirs()) {
@@ -142,7 +145,11 @@ public class RefinementAccuracyReport {
         }
         // The candidate-weighted species measures: a classification leaving n species in question
         // counts as 1/n of a hit, so narrowing the species down pays off even short of pinning it.
-        ps.println(";species score;precision species cand;recall species cand;f1 species cand;");
+        ps.print(";species score;precision species cand;recall species cand;f1 species cand");
+        // Restricted to the reads the unrefined database left at their genus: the only ones a
+        // refinement can improve on. The delta between the two variants of "genus only precision
+        // species cand" is the gain where a gain was possible.
+        ps.println(";genus only;genus only score;genus only precision species cand;genus only species share;");
     }
 
     /**
@@ -181,6 +188,14 @@ public class RefinementAccuracyReport {
         ps.print(format(tally.getSpeciesCandidateRecall()));
         ps.print(';');
         ps.print(format(tally.getSpeciesCandidateF1()));
+        ps.print(';');
+        ps.print(tally.getGenusOnlyTotal());
+        ps.print(';');
+        ps.print(format(tally.getGenusOnlyScore()));
+        ps.print(';');
+        ps.print(format(tally.getGenusOnlyPrecision()));
+        ps.print(';');
+        ps.print(format(tally.getGenusOnlySpeciesShare()));
         ps.println(';');
     }
 

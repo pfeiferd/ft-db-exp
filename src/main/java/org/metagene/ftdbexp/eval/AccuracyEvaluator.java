@@ -18,6 +18,7 @@ import org.metagene.genestrip.tax.TaxTree;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -81,11 +82,16 @@ public class AccuracyEvaluator {
      *                      lies at or below a requested node of this tree; pass {@code null} to use
      *                      the database's own taxonomy, i.e. to count exactly the reads the database
      *                      was built to cover
+     * @param baseline        records which reads were left at their genus, so that the gain can be
+     *                        related to exactly those; may be {@code null} to skip that measurement
+     * @param collectBaseline whether this run fills the baseline (the unrefined one) or consults it
      * @return the tallies keyed by fastq key, in the order the files were processed
      * @throws IOException if the database or the fastq files cannot be read
      */
     public Map<String, AccuracyTally> evaluate(String db, String fqMapFile, GoalKey matchGoalKey,
-                                               GoalKey loadDbGoalKey, SmallTaxTree scope) throws IOException {
+                                               GoalKey loadDbGoalKey, SmallTaxTree scope,
+                                               GenusOnlyBaseline baseline, boolean collectBaseline)
+            throws IOException {
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
         Map<String, AccuracyTally> result = new LinkedHashMap<String, AccuracyTally>();
@@ -110,13 +116,20 @@ public class AccuracyEvaluator {
                 public void afterMatch(FastqKMerMatcher.MatcherReadEntry entry, boolean found) {
                     // The matcher calls this from several threads, so the tally needs guarding.
                     synchronized (tally) {
-                        record(tally, entry, dbTree, candidates, effectiveScope);
+                        record(tally, entry, dbTree, candidates, effectiveScope, baseline, collectBaseline);
                     }
                 }
 
                 @Override
                 public void afterKey(String key, MatchingResult res) {
                     synchronized (tally) {
+                        if (baseline != null) {
+                            if (collectBaseline) {
+                                baseline.endCollecting(key);
+                            } else {
+                                baseline.endConsulting(key);
+                            }
+                        }
                         System.out.println(key + ": " + tally);
                         result.put(key, tally.copy());
                         tally.reset();
@@ -140,7 +153,8 @@ public class AccuracyEvaluator {
      * @param scope      the scope restricting which reads count towards recall, may be {@code null}
      */
     private void record(AccuracyTally tally, FastqKMerMatcher.MatcherReadEntry entry, SmallTaxTree dbTree,
-                        SpeciesCandidates candidates, SmallTaxTree scope) {
+                        SpeciesCandidates candidates, SmallTaxTree scope, GenusOnlyBaseline baseline,
+                        boolean collectBaseline) {
         TaxTree.TaxIdNode trueNode = groundTruth.resolve(entry.readDescriptor, entry.readDescriptorSize);
         if (trueNode == null) {
             tally.recordUnresolved();
@@ -158,7 +172,21 @@ public class AccuracyEvaluator {
             double score = classNode != null && trueInDb != null
                     && SpeciesCandidates.areComparable(classNode, trueInDb)
                     ? candidates.weightFor(classNode) : 0;
-            tally.record(classNode != null, lcaRank, score);
+            boolean genusOnly = false;
+            if (baseline != null) {
+                String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
+                        StandardCharsets.UTF_8);
+                if (collectBaseline) {
+                    // Correct down to the genus but no further: the refinement's only opportunity.
+                    genusOnly = isAtLeast(lcaRank, Rank.GENUS) && !isAtLeast(lcaRank, Rank.SPECIES);
+                    if (genusOnly) {
+                        baseline.collect(descriptor);
+                    }
+                } else {
+                    genusOnly = baseline.contains(descriptor);
+                }
+            }
+            tally.record(classNode != null, lcaRank, score, genusOnly);
         } else if (classNode != null && inScope(taxTree.getNodeByTaxId(classNode.getTaxId()), scope)) {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();
@@ -203,6 +231,17 @@ public class AccuracyEvaluator {
             lca = lca.getParent();
         }
         return lca == null ? null : lca.getRank();
+    }
+
+    /**
+     * Returns whether a rank is at or below the given one.
+     *
+     * @param rank      the rank to test, may be {@code null}
+     * @param threshold the rank to compare against
+     * @return whether {@code rank} is as specific as {@code threshold} or more so
+     */
+    private static boolean isAtLeast(Rank rank, Rank threshold) {
+        return rank != null && (threshold.equals(rank) || rank.isBelow(threshold));
     }
 
     /**
