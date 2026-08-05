@@ -16,6 +16,17 @@
 		<!-- Heap for the database goals. The original experiments used a 64 GB machine;
 		     override on a smaller one, e.g. -Dgs.xmx=10G . -->
 		<gs.xmx>64G</gs.xmx>
+		<!-- Worker threads for the Genestrip goals. A negative value means one thread per
+		     available processor less one, which is Genestrip's own default. The classification
+		     experiments use exactly that, since AccuracyEvaluator sets it in code and the
+		     `accuracy' execution below takes no thread option, so keeping it here means every
+		     experiment of the paper runs with the same thread count. Pin it to reproduce a
+		     specific run, e.g. -Dgs.threads=19 . -->
+		<gs.threads>-1</gs.threads>
+		<!-- Generation target of the `match' execution. The performance measurement sets
+		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
+		     finding its result files already in place and reporting a runtime of zero. -->
+		<gs.target>make</gs.target>
 	</properties>
 	
 	<name>genestrip-db-exp</name>
@@ -123,7 +134,36 @@
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.project.goal}</argument>
 								<argument>-C</argument>
-								<argument>threads=19</argument>
+								<argument>threads=${gs.threads}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<!-- Plain read classification against one database variant, used to measure
+						     classification performance. Kept apart from `accuracy', which runs both
+						     variants in one JVM and scores every read against its ground truth on
+						     top - neither of which belongs in a classification timing. -->
+						<id>match</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.goal}</argument>
+								<argument>-t</argument>
+								<argument>${gs.target}</argument>
+								<argument>-m</argument>
+								<argument>${gs.project.fqmap}</argument>
+								<argument>-C</argument>
+								<argument>threads=${gs.threads}</argument>
 							</arguments>
 						</configuration>
 					</execution>
@@ -183,7 +223,7 @@
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.project.goal}</argument>
 								<argument>-C</argument>
-								<argument>threads=19</argument>
+								<argument>threads=${gs.threads}</argument>
 								<argument>-C</argument>
 								<argument>svgDistanceIndent=true</argument>
 								<argument>-C</argument>

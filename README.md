@@ -135,6 +135,51 @@ The column `unresolved` counts reads whose ground truth could not be recovered f
 should be small; a large value means the read identifiers do not fit the accession map, and the
 remaining figures then rest on a fraction of the data.
 
+## 5. Machine description
+
+The paper states what hardware the experiments ran on, mirroring the corresponding paragraph of the
+first Genestrip paper. Run this **on the machine that executed the experiments**, ideally right
+after a full run:
+
+```sh
+sudo sh ./bin/sysinfo.sh
+```
+
+It writes two files:
+
+| File | Purpose |
+| --- | --- |
+| `results/sysinfo.txt` | The full report -- CPU, memory, DMI/BIOS, storage, PCI, OS, every installed JVM. For the record and for answering reviewer questions. |
+| `results/sysinfo.tex` | Just the facts the paper quotes, as LaTeX macros. |
+
+`sudo` only affects the report: DMI, memory-slot and SMART details are root-only. Everything in the
+LaTeX file comes from `lscpu`, `/proc`, `lsblk` and `java`, so it is complete without it.
+
+`paper.tex` inputs `results/sysinfo.tex` and uses `\sysRamGB`, `\sysCores`, `\sysWorkers`,
+`\sysDiskSize`, `\sysDiskType`, `\sysCpuModel`, `\sysOs`, `\sysJavaVendor`, `\sysJavaVersion` and
+`\sysJavaVm` in Section "Database refinement performance".
+
+`\sysWorkers` is the number of worker threads the goals actually run with. `pom.xml` sets
+`gs.threads` to `-1`, which Genestrip reads as one thread per available processor less one, so the
+macro is simply `\sysThreads - 1`. That is also what the classification experiments use, since
+`AccuracyEvaluator` sets the same value in code and the `accuracy` execution passes no thread
+option -- keeping the property at `-1` is what makes every experiment of the paper run with the
+same thread count. Pin it with `-Dgs.threads=19` to reproduce a specific run; the paper's figure
+then has to be set by hand, since the macro follows the hardware rather than the override.
+
+Two safeguards make a missing or incomplete file obvious instead of silent:
+
+* Anything the script cannot determine becomes `\sysUnknown`, which typesets as a bold **??**.
+* If the file is absent altogether, `paper.tex` falls back to the same marker, so it still compiles.
+
+So if the PDF shows **??** anywhere in that paragraph, the script has not been run on the right
+machine yet, or a value needs to be filled in by hand. The script also lists what it could not
+determine, both on the terminal and at the end of `sysinfo.txt`.
+
+Note that the JVM reported is the one on `PATH` at the time the script runs, which is only the one
+that executed the goals if the environment is the same -- so run it from the same shell as the
+experiments.
+
 ## Results
 
 All experiments write to `./results`. Those files are consumed directly by the paper: copy them into

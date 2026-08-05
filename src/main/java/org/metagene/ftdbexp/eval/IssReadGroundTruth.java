@@ -18,6 +18,17 @@ import org.metagene.genestrip.util.ByteArrayUtil;
  * Note that RefSeq accessions contain an underscore themselves ({@code NC_001422.1}), so the
  * separator cannot be found by simply looking for the first one. Since every accession prefix is at
  * most four characters long, the search starts behind that prefix instead.
+ * <p>
+ * Reads generated from the output of the goal {@code extractrefseqfasta} carry a longer name,
+ * because that goal appends the taxon to every fasta header to please Kraken 2 during library
+ * building:
+ * <pre>
+ *   &#64;NC_001422.1|kraken:taxid|10847_1234/1
+ * </pre>
+ * Here the accession ends at the first {@code '|'} rather than at an underscore -- searching for the
+ * underscore would run past the taxon and yield {@code NC_001422.1|kraken:taxid|10847}, which no
+ * accession map resolves. Both forms are therefore accepted: whichever of the two delimiters comes
+ * first ends the accession.
  */
 public class IssReadGroundTruth implements ReadGroundTruth {
     /**
@@ -43,11 +54,35 @@ public class IssReadGroundTruth implements ReadGroundTruth {
         if (start < 0) {
             return null;
         }
-        int end = ByteArrayUtil.indexOf(descriptor, ACCESSION_PREFIX_END, length, '_');
+        int end = accessionEnd(descriptor, start, length);
         if (end < 0) {
             return null;
         }
         return accessionMap.get(descriptor, start, end, false);
+    }
+
+    /**
+     * Determines where the accession ends, i.e. the first delimiter behind it.
+     * <p>
+     * Two delimiters are possible. A plain fasta header leaves only the underscore that InSilicoSeq
+     * puts before the running read number; a header written by {@code extractrefseqfasta} carries
+     * the taxon behind a {@code '|'}, which then comes first. Taking whichever occurs earlier
+     * handles both, and it stays correct if the suffix is ever extended, since the {@code '|'}
+     * remains the first character that cannot belong to an accession.
+     *
+     * @param descriptor the raw read descriptor
+     * @param start      the index the accession starts at
+     * @param length     the number of valid bytes in {@code descriptor}
+     * @return the index behind the accession, or {@code -1} if no delimiter follows it
+     */
+    private static int accessionEnd(byte[] descriptor, int start, int length) {
+        // The underscore search skips the accession prefix, which contains one itself ("NC_").
+        int underscore = ByteArrayUtil.indexOf(descriptor, ACCESSION_PREFIX_END, length, '_');
+        int bar = ByteArrayUtil.indexOf(descriptor, start, length, '|');
+        if (bar < 0) {
+            return underscore;
+        }
+        return underscore < 0 || bar < underscore ? bar : underscore;
     }
 
     /**

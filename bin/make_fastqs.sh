@@ -3,8 +3,9 @@
 # Generates the simulated fastq files with known ground truth that the classification experiments
 # are based on, following the approach of the first Genestrip paper:
 #
-#   viral        InSilicoSeq applies its Illumina "MiSeq" and "HiSeq" error models to all RefSeq
-#   protozoa     genomes of the corresponding RefSeq category.
+#   viral        InSilicoSeq applies its Illumina "MiSeq" and "HiSeq" error models to exactly
+#   protozoa     those genomes the database was built from, extracted by the goal
+#   gut-protozoa `extractrefseqfasta' (see make_iss below).
 #   tick-borne   NanoSim trains an error model on the real Nanopore reads of a tick sample and
 #                applies it to the RefSeq genomes of the twelve tick-borne genera.
 #
@@ -13,6 +14,7 @@
 #
 #   sh ./bin/make_fastqs.sh viral
 #   sh ./bin/make_fastqs.sh protozoa
+#   sh ./bin/make_fastqs.sh gut-protozoa
 #   sh ./bin/make_fastqs.sh tick-borne
 #   N_READS=10k sh ./bin/make_fastqs.sh viral      # quick smoke test instead of a full run
 #   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # error-free reads, see below
@@ -46,10 +48,19 @@ cpus=${CPUS:-$(nproc 2>/dev/null || echo 4)}
 
 ############################## viral / InSilicoSeq ##############################
 
-# $1 = database project name, $2 = prefix of its RefSeq genomic files
+# $1 = database project name
+#
+# The reads are drawn from exactly the genomes the database was built from, which the goal
+# `extractrefseqfasta' writes out one FASTA per region. That goal applies the same selection as the
+# database fill -- the same completeness setting, the same caps per taxon -- so every read has a
+# counterpart in the database.
+#
+# Drawing them from the whole RefSeq category instead, as this script did before, meant that most
+# reads came from organisms the database never covered: for a project requesting ten genera out of
+# the category `protozoa', about seven of eight reads were unusable, and they had to be excluded
+# from the evaluation as out of scope. Extracting first keeps the full million reads in play.
 make_iss() {
   db=$1
-  refseq_prefix=$2
 
   iss="${basedir}/tools/iss-venv/bin/iss"
   if [ ! -x "$iss" ]; then
@@ -57,10 +68,19 @@ make_iss() {
     exit 1
   fi
 
-  set -- "${basedir}/data/common/refseq/${refseq_prefix}".*.genomic.fna.gz
-  if [ ! -f "$1" ]; then
-    echo "Missing ${basedir}/data/common/refseq/${refseq_prefix}.*.genomic.fna.gz" >&2
-    echo "Run 'mvn exec:exec@db -Dname=${db} -Dgoal=refseqfna' first." >&2
+  fastadir="${basedir}/data/projects/${db}/fasta"
+  if [ -z "$(ls -A "$fastadir" 2>/dev/null)" ]; then
+    echo "=== ${db}: extracting the genomes the database was built from ==="
+    # Via `extractrefseqcsv', not `extractrefseqfasta'. The latter is an object goal, and Genestrip
+    # treats object goals as weak dependencies: asking for one on the command line makes the
+    # internal wrapper goal but never the object goal itself, so it silently does nothing. The CSV
+    # goal is an ordinary file goal that reads the object goal's value, which makes it run and write
+    # the per-accession FASTA files as a side effect.
+    ( cd "$basedir" && mvn exec:exec@db -Dname="$db" -Dgoal=extractrefseqcsv )
+  fi
+  if [ -z "$(ls -A "$fastadir" 2>/dev/null)" ]; then
+    echo "Goal extractrefseqcsv produced no files in ${fastadir}." >&2
+    echo "Build the database first: mvn exec:exec@db -Dname=${db} -Dgoal=db" >&2
     exit 1
   fi
 
@@ -68,12 +88,22 @@ make_iss() {
   n_reads=${N_READS:-1M}
   mkdir -p "$workdir"
 
-  # InSilicoSeq needs the genomes uncompressed and in one file; a category may span several
-  # archives. The copy is removed again at the end, since it is large and easy to recreate.
-  genomes="${workdir}/${refseq_prefix}.genomic.fna"
+  # InSilicoSeq wants one uncompressed multi-FASTA. The concatenation is removed again at the end,
+  # since it is large and quick to recreate from the extracted files.
+  genomes="${workdir}/${db}.genomic.fna"
   if [ ! -f "$genomes" ]; then
-    echo "Decompressing $# RefSeq file(s) of category ${refseq_prefix} ..."
-    gunzip -c "$@" > "$genomes"
+    echo "Collecting the extracted genomes of ${db} ..."
+    # The headers keep the form extractrefseqfasta writes them in, ">ACCESSION|kraken:taxid|TAXID",
+    # so the extracted files stay usable for Kraken 2 library building as well. InSilicoSeq names
+    # every read after the whole header; IssReadGroundTruth cuts the accession out of it.
+    : > "$genomes"
+    for f in "$fastadir"/*; do
+      case "$f" in
+        *.gz) gunzip -c "$f" >> "$genomes" ;;
+        *)    cat "$f" >> "$genomes" ;;
+      esac
+    done
+    echo "  $(grep -c '^>' "$genomes") sequence(s), $(du -h "$genomes" | cut -f1)"
   fi
 
   if [ -n "${ERROR_FREE:-}" ]; then
@@ -187,13 +217,11 @@ make_ticks() {
 }
 
 case "$what" in
-  viral)         make_iss viral viral ;;
-  protozoa)      make_iss protozoa protozoa ;;
-  # Draws from the same RefSeq category; the database covers only a few of its genera, and the
-  # evaluation counts reads outside that scope separately.
-  gut-protozoa)  make_iss gut-protozoa protozoa ;;
+  viral)         make_iss viral ;;
+  protozoa)      make_iss protozoa ;;
+  gut-protozoa)  make_iss gut-protozoa ;;
   tick-borne)    make_ticks ;;
-  all)           make_iss viral viral; make_iss protozoa protozoa; make_ticks ;;
+  all)           make_iss viral; make_iss protozoa; make_iss gut-protozoa; make_ticks ;;
   *)             echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|all]" >&2; exit 1 ;;
 esac
 
