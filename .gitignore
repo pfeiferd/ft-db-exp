@@ -1,0 +1,24 @@
+# Generated and downloaded data. None of it belongs in the repository: the FASTA files are
+# reproduced by the goal `extractrefseqcsv' from the project's configuration, and everything under
+# data/common is downloaded from the NCBI. Both run to tens of thousands of files and many
+# gigabytes, and both are derived from what *is* tracked -- the taxids, categories and config files
+# of each project.
+
+# Per-accession FASTA files written by `extractrefseqcsv' (through the goal extractrefseqfasta).
+/data/projects/*/fasta/
+
+# Simulated and downloaded reads, together with the fastq mapping files that make_fastqs.sh writes
+# next to them. Those maps are generated from the reads they point at and hold absolute paths, so
+# they are valid only on the machine that produced them.
+/data/fastq/*
+# The accession list of the real Nanopore tick runs is input, not generated.
+!/data/fastq/seventicks.txt
+
+# RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
+/data/common/*
+# Re-include the directory itself before excluding its contents, since git cannot re-include a file
+# whose parent directory is excluded.
+!/data/common/fasta/
+/data/common/fasta/*
+# The list of extra genomes to download is project setup, not downloaded data.
+!/data/common/fasta/downloads.txt

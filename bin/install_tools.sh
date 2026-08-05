@@ -92,6 +92,30 @@ open(path, 'w', encoding='utf-8').write(src)
 PATCH
 fi
 
+# The `basic' error model hardcodes a mean phred score of 30 (a per-base error of 0.1 %) and a read
+# length of 125. The experiments also need a far higher, Nanopore-like error rate and read length,
+# so both are made configurable through ISS_BASIC_PHRED and ISS_BASIC_READ_LENGTH. mut_sequence()
+# substitutes a base with probability 10^(-q/10), hence q = -10*log10(e) for a target error e.
+# Without the variables the model behaves exactly as before.
+basicmodel=$(ls -d "${issvenv}"/lib/python*/site-packages/iss/error_models/basic.py 2>/dev/null | head -1)
+if [ -n "$basicmodel" ] && ! grep -q "ISS_BASIC_READ_LENGTH" "$basicmodel"; then
+  echo "  patching InSilicoSeq: making the basic model's phred score and read length configurable"
+  python3 - "$basicmodel" <<'PATCH'
+import sys
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+src = src.replace(
+    "        self.quality_forward = self.quality_reverse = 30",
+    '        self.quality_forward = self.quality_reverse = int(os.environ.get("ISS_BASIC_PHRED", "30"))', 1)
+src = src.replace(
+    "        self.read_length = 125",
+    '        self.read_length = int(os.environ.get("ISS_BASIC_READ_LENGTH", "125"))', 1)
+if "import os" not in src:
+    src = src.replace("import numpy as np", "import os\n\nimport numpy as np", 1)
+open(path, 'w', encoding='utf-8').write(src)
+PATCH
+fi
+
 echo "############ 4/4  NanoSim ############"
 nsvenv="${toolsdir}/nanosim-venv"
 nanosimdir="${toolsdir}/NanoSim"

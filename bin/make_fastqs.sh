@@ -18,6 +18,9 @@
 #   sh ./bin/make_fastqs.sh tick-borne
 #   N_READS=10k sh ./bin/make_fastqs.sh viral      # quick smoke test instead of a full run
 #   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # error-free reads, see below
+#   ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa      # Nanopore-level per-base error
+#   NANOPORE_ERROR_PCT=15 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa   # ... at 15 %
+#   NANOPORE_READ_LENGTH=1000 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa  # ... 1 kb reads
 #
 # A single project follows ERROR_FREE; `all' ignores it and generates both read sets of every
 # InSilicoSeq project, since the paper reports them side by side.
@@ -89,6 +92,12 @@ make_iss() {
 
   # One million reads per model, as in the first paper.
   n_reads=${N_READS:-1M}
+  # The first Genestrip paper puts the per-base error of Nanopore devices at 5 % to 15 %; ten is
+  # the middle of that range, and its worked example of 6 % lies within it too. It also reports a
+  # mean read length of 3,926 bp for its NanoSim-simulated Nanopore data, which is what makes the
+  # long-read side of the comparison realistic rather than arbitrary.
+  nanopore_error=${NANOPORE_ERROR_PCT:-10}
+  nanopore_read_length=${NANOPORE_READ_LENGTH:-3926}
   mkdir -p "$workdir"
 
   # InSilicoSeq wants one uncompressed multi-FASTA. The concatenation is removed again at the end,
@@ -111,8 +120,11 @@ make_iss() {
 
   if [ -n "${ERROR_FREE:-}" ]; then
     models="perfect"
-    # Own map name, so that an error-free run does not clobber the map of the regular one.
+    # Own map name, so that a run does not clobber the map of another error regime.
     mapfile="${fastqdir}/${db}_sim_perfect.txt"
+  elif [ -n "${ERROR_NANOPORE:-}" ]; then
+    models="nanopore"
+    mapfile="${fastqdir}/${db}_sim_nanopore.txt"
   else
     models="miseq hiseq"
     mapfile="${fastqdir}/${db}_sim.txt"
@@ -129,6 +141,19 @@ make_iss() {
       # No error model at all: the reads differ from the reference only by where they were cut.
       "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$n_reads" \
         --cpus "$cpus" --compress --output "$prefix"
+    elif [ "$model" = nanopore ]; then
+      # InSilicoSeq's `basic' model substitutes a base with probability 10^(-q/10), so a phred
+      # value of q gives a uniform per-base error rate of choice; ISS_BASIC_PHRED is honoured by
+      # the patch install_tools.sh applies. Note that these are substitutions only, whereas real
+      # Nanopore error is indel-heavy -- what carries over is how many k-mers survive a read,
+      # which is what the classification depends on.
+      phred=$(awk -v e="$nanopore_error" 'BEGIN{printf "%d", -10*log(e/100)/log(10) + 0.5}')
+      echo "  per-base error ${nanopore_error} % -> phred ${phred}, read length ${nanopore_read_length} bp"
+      # Records shorter than the read length are skipped by InSilicoSeq, so a long read length
+      # restricts the simulation to the longer contigs of the extracted genomes.
+      ISS_BASIC_PHRED="$phred" ISS_BASIC_READ_LENGTH="$nanopore_read_length" \
+        "$iss" generate --genomes "$genomes" --mode basic \
+        --n_reads "$n_reads" --cpus "$cpus" --compress --output "$prefix"
     else
       "$iss" generate --genomes "$genomes" --model "$model" --n_reads "$n_reads" \
         --cpus "$cpus" --compress --output "$prefix"
@@ -144,26 +169,38 @@ make_iss() {
   # Reads sharing a key are reported together, so each model forms one key over both mates.
   # The map goes next to the fastq files: Genestrip resolves a map file name against the literal
   # path, the project's fastq directory and data/fastq -- but not against the project's txt folder.
+  # The entries themselves are bare file names, which GSProject.fastqFilesFromPath() resolves the
+  # same way and finds in data/fastq. Absolute paths would work too but would tie the map to the
+  # machine that wrote it, and the maps are regenerated with the reads anyway.
   {
     for model in $models; do
       for mate in 1 2; do
-        echo "iss_${model} ${fastqdir}/${db}_iss_${model}_reads_R${mate}.fastq.gz"
+        echo "iss_${model} ${db}_iss_${model}_reads_R${mate}.fastq.gz"
       done
     done
   } > "$mapfile"
   echo "Wrote ${mapfile}"
 }
 
-# Both read sets of a database: with an Illumina error model and error-free. A comprehensive run
-# needs both, since the paper reports them side by side -- the error-free figures bound what the
-# refinement can achieve when nothing but the taxonomy limits the classification.
-make_iss_both() {
+# All three error regimes of a database, which the paper reports side by side:
+#
+#   error-free   bounds what the refinement can achieve when nothing but the taxonomy limits the
+#                classification
+#   MiSeq/HiSeq  the Illumina error models, at 301 bp and 126 bp per mate respectively
+#   Nanopore     long reads at a uniform per-base error, both in the range the first Genestrip
+#                paper reports for Nanopore devices, which tests whether the effect survives a far
+#                higher error rate and a far greater read length at once
+make_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
-  ERROR_FREE=""
+  saved_nanopore=${ERROR_NANOPORE:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""
   make_iss "$1"
-  ERROR_FREE=1
+  ERROR_FREE=1; ERROR_NANOPORE=""
+  make_iss "$1"
+  ERROR_FREE=""; ERROR_NANOPORE=1
   make_iss "$1"
   ERROR_FREE=$saved_error_free
+  ERROR_NANOPORE=$saved_nanopore
 }
 
 ############################## tick-borne / NanoSim ##############################
@@ -226,7 +263,7 @@ make_ticks() {
   # One key per sample, as in the first paper's ticks_sim.txt, and again next to the fastq files.
   {
     for sample in $samples; do
-      [ -s "${fastqdir}/${sample}_sim.fastq" ] && echo "${sample} ${fastqdir}/${sample}_sim.fastq"
+      [ -s "${fastqdir}/${sample}_sim.fastq" ] && echo "${sample} ${sample}_sim.fastq"
     done
   } > "${fastqdir}/ticks_sim.txt"
   echo "Wrote ${fastqdir}/ticks_sim.txt"
@@ -237,7 +274,8 @@ case "$what" in
   protozoa)      make_iss protozoa ;;
   gut-protozoa)  make_iss gut-protozoa ;;
   tick-borne)    make_ticks ;;
-  all)           make_iss_both viral; make_iss_both protozoa; make_iss_both gut-protozoa
+  all)           make_iss_all_regimes viral; make_iss_all_regimes protozoa
+                 make_iss_all_regimes gut-protozoa
                  make_ticks ;;
   *)             echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|all]" >&2; exit 1 ;;
 esac

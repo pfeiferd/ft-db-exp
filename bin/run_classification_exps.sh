@@ -18,8 +18,8 @@
 #   sh ./bin/run_classification_exps.sh [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|all]
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
-#   part for every database, and `accuracy' and `all' evaluate the error-containing *and* the
-#   error-free reads of every InSilicoSeq project.
+#   part for every database, and `accuracy' and `all' evaluate all three error regimes of every
+#   InSilicoSeq project: Illumina, error-free and Nanopore-level per-base error.
 #
 # Prerequisites:
 #   sh ./bin/install_tools.sh     installs InSilicoSeq, NanoSim and cgmemtime
@@ -48,6 +48,10 @@ run_iss() {
     mapname="${db}_sim_perfect.txt"
     reportkey="iss_perfect"
     what="error-free InSilicoSeq reads"
+  elif [ -n "${ERROR_NANOPORE:-}" ]; then
+    mapname="${db}_sim_nanopore.txt"
+    reportkey="iss_nanopore"
+    what="InSilicoSeq reads at a Nanopore-level per-base error"
   else
     mapname="${db}_sim.txt"
     reportkey="iss"
@@ -62,15 +66,19 @@ run_iss() {
   mvn exec:exec@accuracy -Dname="$db" -Dfqmap="$mapname" -Dreportkey="$reportkey" -Dsimulator=ISS
 }
 
-# Both evaluations of a database: on the error-containing reads and on the error-free ones. See
-# make_fastqs.sh for why a comprehensive run needs both.
-run_iss_both() {
+# All three error regimes of a database -- Illumina, error-free and Nanopore-level per-base error.
+# See make_fastqs.sh for what each of them is for.
+run_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
-  ERROR_FREE=""
+  saved_nanopore=${ERROR_NANOPORE:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""
   run_iss "$1"
-  ERROR_FREE=1
+  ERROR_FREE=1; ERROR_NANOPORE=""
+  run_iss "$1"
+  ERROR_FREE=""; ERROR_NANOPORE=1
   run_iss "$1"
   ERROR_FREE=$saved_error_free
+  ERROR_NANOPORE=$saved_nanopore
 }
 
 run_ticks() {
@@ -133,10 +141,10 @@ case "$what" in
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
   gut-protozoa) run_iss gut-protozoa; run_perf gut-protozoa gut-protozoa_sim.txt ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
-  accuracy)     run_iss_both viral; run_iss_both protozoa; run_iss_both gut-protozoa; run_ticks ;;
+  accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt ;;
-  all)          run_iss_both viral; run_iss_both protozoa; run_iss_both gut-protozoa; run_ticks
+  all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt ;;
   *)          echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|all]" >&2; exit 1 ;;
