@@ -3,6 +3,7 @@ package org.metagene.ftdbexp.eval;
 import org.metagene.genestrip.GSCommon;
 import org.metagene.genestrip.GSConfigKey;
 import org.metagene.genestrip.GSGoalKey;
+import org.metagene.genestrip.GSProject;
 import org.metagene.genestrip.finertree.FTProject;
 import org.metagene.genestrip.finertree.FinerTreeMaker;
 import org.metagene.genestrip.goals.MatchResultGoal;
@@ -58,11 +59,20 @@ public class AccuracyEvaluator {
                     (ObjectGoal<TaxTree, FTProject>) maker.getGoal(GSGoalKey.TAXTREE);
             taxTree = taxTreeGoal.get();
 
-            @SuppressWarnings("unchecked")
-            ObjectGoal<AccessionMap, FTProject> accessionMapGoal =
-                    (ObjectGoal<AccessionMap, FTProject>) maker.getGoal(GSGoalKey.ACCMAP);
-            groundTruth = simulator.groundTruth(accessionMapGoal.get());
-            accessionMapGoal.cleanThis();
+            // The table written next to the extracted genomes is the ground truth for reads
+            // simulated from them, and the only source that covers the ones taken from Genbank.
+            Map<String, String> extractedTaxIds = ExtractedTaxIds.load(
+                    project.getOutputFile(GSGoalKey.EXTRACT_REFSEQ_CSV.getName(), GSProject.GSFileType.CSV, false));
+            // Building the accession map costs minutes, so it is only made where a resolver needs it.
+            AccessionMap accessionMap = null;
+            if (simulator.needsAccessionMap()) {
+                @SuppressWarnings("unchecked")
+                ObjectGoal<AccessionMap, FTProject> accessionMapGoal =
+                        (ObjectGoal<AccessionMap, FTProject>) maker.getGoal(GSGoalKey.ACCMAP);
+                accessionMap = accessionMapGoal.get();
+                accessionMapGoal.cleanThis();
+            }
+            groundTruth = simulator.groundTruth(taxTree, accessionMap, extractedTaxIds);
         } finally {
             maker.dumpAll();
         }
@@ -131,6 +141,7 @@ public class AccuracyEvaluator {
                             }
                         }
                         System.out.println(key + ": " + tally);
+                        warnIfUnresolved(key, tally);
                         result.put(key, tally.copy());
                         tally.reset();
                     }
@@ -141,6 +152,27 @@ public class AccuracyEvaluator {
             maker.dumpAll();
         }
         return result;
+    }
+
+    /**
+     * Reports how many reads of a fastq file had no resolvable ground truth.
+     * <p>
+     * Such reads are excluded from every count, so a substantial number means the figures rest on
+     * only part of the data. The count also lands in the result CSV, but a run is long enough that
+     * nobody should have to go looking for it afterwards.
+     *
+     * @param key   the fastq key just finished
+     * @param tally its counts
+     */
+    private static void warnIfUnresolved(String key, AccuracyTally tally) {
+        long unresolved = tally.getUnresolved();
+        if (unresolved == 0) {
+            return;
+        }
+        long considered = tally.getTotal() + unresolved;
+        System.err.printf("WARNING: %s: %,d of %,d reads (%.1f %%) have no resolvable ground truth"
+                        + " and are excluded from every measure.%n",
+                key, unresolved, considered, considered == 0 ? 0.0 : 100.0 * unresolved / considered);
     }
 
     /**

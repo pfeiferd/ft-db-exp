@@ -1,8 +1,10 @@
 package org.metagene.ftdbexp.eval;
 
-import org.metagene.genestrip.refseq.AccessionMap;
 import org.metagene.genestrip.tax.TaxTree;
 import org.metagene.genestrip.util.ByteArrayUtil;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 /**
  * Ground truth for reads simulated by <a href="https://insilicoseq.readthedocs.io">InSilicoSeq</a>.
@@ -13,7 +15,7 @@ import org.metagene.genestrip.util.ByteArrayUtil;
  *   &#64;NC_001422.1_1234/1
  * </pre>
  * The leading part up to the <em>last</em> underscore before the running number is the accession of
- * the source sequence, which the {@link AccessionMap} maps to a taxon.
+ * the source sequence, which {@link ExtractedTaxIds} maps to a taxon.
  * <p>
  * Note that RefSeq accessions contain an underscore themselves ({@code NC_001422.1}), so the
  * separator cannot be found by simply looking for the first one. Since every accession prefix is at
@@ -25,10 +27,12 @@ import org.metagene.genestrip.util.ByteArrayUtil;
  * <pre>
  *   &#64;NC_001422.1|kraken:taxid|10847_1234/1
  * </pre>
- * Here the accession ends at the first {@code '|'} rather than at an underscore -- searching for the
- * underscore would run past the taxon and yield {@code NC_001422.1|kraken:taxid|10847}, which no
- * accession map resolves. Both forms are therefore accepted: whichever of the two delimiters comes
- * first ends the accession.
+ * The taxon comes from {@link ExtractedTaxIds}, the table the same goal writes for exactly this
+ * purpose, and from nowhere else. Genestrip's accession map is deliberately not consulted: for a
+ * genome taken from Genbank it attaches the file to its taxon rather than resolving the accession
+ * -- {@code ignoreAccessionMap} in {@code FastaReaderGoal} -- so it does not know the sequence at
+ * all. Falling back to it would leave every such read unresolved, which for a database drawing
+ * substantially on Genbank is most of them, while looking like an ordinary result.
  */
 public class IssReadGroundTruth implements ReadGroundTruth {
     /**
@@ -37,15 +41,28 @@ public class IssReadGroundTruth implements ReadGroundTruth {
      */
     private static final int ACCESSION_PREFIX_END = 5;
 
-    private final AccessionMap accessionMap;
+    private final TaxTree taxTree;
+    private final Map<String, String> extractedTaxIds;
+    /** Guards the warning below, so that a systematic mismatch is reported once and not per read. */
+    private boolean warned;
 
     /**
      * Creates the ground truth resolver.
      *
-     * @param accessionMap the accession-to-taxon map of the database the reads are matched against
+     * @param taxTree         the taxonomy, used to look up the taxa named by the extraction table
+     * @param extractedTaxIds the sequence-to-taxon table of {@link ExtractedTaxIds}
+     * @throws IllegalArgumentException if the table is empty, since every read would then be
+     *                                  unresolved -- a missing table is a setup error worth failing
+     *                                  on rather than a result worth reporting
      */
-    public IssReadGroundTruth(AccessionMap accessionMap) {
-        this.accessionMap = accessionMap;
+    public IssReadGroundTruth(TaxTree taxTree, Map<String, String> extractedTaxIds) {
+        if (extractedTaxIds.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No extracted genomes to resolve the ground truth against. Run the goal "
+                            + "'extractrefseqcsv' for this project and regenerate the reads from its output.");
+        }
+        this.taxTree = taxTree;
+        this.extractedTaxIds = extractedTaxIds;
     }
 
     @Override
@@ -58,8 +75,47 @@ public class IssReadGroundTruth implements ReadGroundTruth {
         if (end < 0) {
             return null;
         }
-        return accessionMap.get(descriptor, start, end, false);
+        String descr = new String(descriptor, start, end - start, StandardCharsets.UTF_8);
+        String taxId = extractedTaxIds.get(descr);
+        if (taxId == null) {
+            warnOnce("no entry for '" + descr + "'", descriptor, start, length);
+            return null;
+        }
+        TaxTree.TaxIdNode node = taxTree.getNodeByTaxId(taxId);
+        if (node == null) {
+            // The table names a taxon the taxonomy does not have - a stale extraction against a
+            // newer NCBI dump, for instance. Worth distinguishing from an unknown sequence.
+            warnOnce("tax id " + taxId + " of '" + descr + "' is not in the taxonomy", descriptor, start, length);
+        }
+        return node;
     }
+
+    /**
+     * Reports the first read that could not be resolved, with the reason and the offending name.
+     * <p>
+     * Every further one is only counted, by {@link AccuracyTally#recordUnresolved()}, whose total is
+     * reported per fastq file and written to the result CSV. One read failing may be an oddity; a
+     * substantial count means the reads and the extraction table do not belong together, and the
+     * figures then rest on whatever fraction did resolve.
+     *
+     * @param reason     what went wrong, for the message
+     * @param descriptor the raw read descriptor
+     * @param start      the index the accession starts at
+     * @param length     the number of valid bytes in {@code descriptor}
+     */
+    private void warnOnce(String reason, byte[] descriptor, int start, int length) {
+        if (warned) {
+            return;
+        }
+        warned = true;
+        System.err.println("WARNING: cannot resolve the ground truth of read '"
+                + new String(descriptor, start, length - start, StandardCharsets.UTF_8).trim() + "': " + reason
+                + ". Such reads are counted as unresolved and excluded from every measure."
+                + " Were these reads generated from this project's extracted genomes?"
+                + " Further occurrences are counted but not reported.");
+    }
+
+
 
     /**
      * Determines where the accession ends, i.e. the first delimiter behind it.
