@@ -187,6 +187,34 @@ fi
 "${nsvenv}/bin/pip" install --quiet \
   numpy scipy scikit-learn pysam HTSeq joblib six pybedtools piecewise-regression regex
 
+# NanoSim always simulates the "unaligned" reads too -- the share of a real run that maps to nothing,
+# which it reproduces from the aligned/unaligned ratio it measured while training. They are of no use
+# here: they are drawn from a flat error table and from no genome at all, so they carry no taxon in
+# their name and no ground truth can be recovered from them, and make_fastqs.sh discards the file
+# straight away. Generating them is not free either -- simulation_unaligned() walks base by base in
+# Python -- and metagenome mode offers no option to skip it.
+#
+# The patch adds one: with NANOSIM_NO_UNALIGNED set, the block that simulates and merges them is
+# skipped entirely, so neither the per-process subfiles nor the merged file are written. Without the
+# variable NanoSim behaves exactly as before, and `perfect' mode already skipped the block anyway.
+nosim_sim="${nanosimdir}/src/simulator.py"
+if [ -f "$nosim_sim" ] && ! grep -q 'NANOSIM_NO_UNALIGNED' "$nosim_sim"; then
+  echo "  patching NanoSim: making the simulation of unaligned reads skippable"
+  python3 - "$nosim_sim" <<'PATCH'
+import sys
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+old = """    # Simulate unaligned reads, if per, number_unaligned = 0, taken care of in read_ecdf
+    if not per:"""
+new = """    # Simulate unaligned reads, if per, number_unaligned = 0, taken care of in read_ecdf
+    # NANOSIM_NO_UNALIGNED skips them entirely; see bin/install_tools.sh of genestrip's ft-db-exp.
+    if not per and not os.environ.get("NANOSIM_NO_UNALIGNED"):"""
+if old not in src:
+    sys.exit("simulator.py does not look as expected - not patching")
+open(path, 'w', encoding='utf-8').write(src.replace(old, new, 1))
+PATCH
+fi
+
 # Optional patch, off by default. With a reference larger than minimap2's default index batch size
 # of 4G the index gets split, which slows NanoSim's training down considerably. The experiments of
 # the first paper therefore raised it to 24G -- but minimap2 then holds the whole index in memory,

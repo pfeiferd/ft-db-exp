@@ -355,7 +355,12 @@ make_ticks() {
 
     echo "=== ${sample}: simulating ${reads} reads ==="
     sed -i "s/Abundance/${reads}/g" "${nswork}/training_quantification.tsv"
-    ( cd "$nswork" && "$python" "${nanosimdir}/src/simulator.py" metagenome \
+    # NANOSIM_NO_UNALIGNED skips the simulation of the unaligned reads, which install_tools.sh
+    # patches NanoSim to honour. They model the share of a real run that maps to nothing, are drawn
+    # from a flat error table and from no genome, and therefore carry no taxon to score against --
+    # this script discarded them anyway. Generating them is slow, since simulation_unaligned() walks
+    # base by base in Python. Unset the variable to get NanoSim's stock behaviour back.
+    ( cd "$nswork" && NANOSIM_NO_UNALIGNED=1 "$python" "${nanosimdir}/src/simulator.py" metagenome \
         --seed 42 --fastq -gl "$genomes" -t "$cpus" -a training_quantification.tsv )
 
     mv "${nswork}/simulated_sample0_aligned_reads.fastq" "$out"
