@@ -105,6 +105,15 @@ run_real() {
   mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3"
 }
 
+# Wall time and maximum RAM of classifying the *real* reads, measured the same way as for the
+# simulated ones and for the same reason kept apart from the quality run above -- see the comment on
+# run_perf(). The log key distinguishes these from the simulated runs of the same database.
+#
+# $1 = database project name, $2 = fastq mapping file, $3 = report key
+run_real_perf() {
+  run_perf "$1" "$2" "$3"
+}
+
 run_ticks() {
   map="${basedir}/data/fastq/ticks_sim.txt"
   if [ ! -f "$map" ]; then
@@ -125,10 +134,13 @@ run_ticks() {
 # JVM, under cgmemtime. The goal is cleaned first: Genestrip skips a goal whose result files are
 # already in place, which would otherwise be measured as a runtime of nearly zero.
 #
-# $1 = database project name, $2 = fastq mapping file
+# $1 = database project name, $2 = fastq mapping file, $3 = key for the log file name (optional,
+# defaults to the database name). The key exists because a database is timed on more than one read
+# collection -- the simulated one and the real one -- and the logs must not overwrite each other.
 run_perf() {
   db=$1
   map=$2
+  logkey=${3:-$db}
   # The error-free reads exist to bound what the refinement can achieve, not to time it: they are
   # the same volume of data through the same code path, so timing them again adds nothing.
   if [ -n "${ERROR_FREE:-}" ]; then
@@ -156,10 +168,10 @@ run_perf() {
   fi
   # goal name -> log file prefix; `match' uses the unrefined database, `ftmatch' the refined one.
   for goal in match ftmatch; do
-    echo "############ ${db}: classification performance, goal ${goal} ############"
+    echo "############ ${logkey}: classification performance, goal ${goal} ############"
     mvn exec:exec@match -Dname="$db" -Dgoal="$goal" -Dfqmap="$map" -Dgs.target=clean
     ./tools/cgmemtime/cgmemtime mvn exec:exec@match -Dname="$db" -Dgoal="$goal" -Dfqmap="$map" \
-        > "${res_path}/${goal}_${db}.log"
+        > "${res_path}/${goal}_${logkey}.log"
   done
 }
 
@@ -174,12 +186,21 @@ case "$what" in
   gut-protozoa) run_iss gut-protozoa; run_perf gut-protozoa gut-protozoa_sim.txt ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks ;;
-  real)         run_real viral saliva_real.txt saliva; run_real tick-borne seventicks.txt ticks ;;
+  real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real tick-borne seventicks.txt ticks
+                run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
-                run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt ;;
+                run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt
+                run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real_perf tick-borne seventicks.txt ticks ;;
   all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
-                run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt ;;
+                run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt
+                run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real tick-borne seventicks.txt ticks
+                run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real_perf tick-borne seventicks.txt ticks ;;
   *)          echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 

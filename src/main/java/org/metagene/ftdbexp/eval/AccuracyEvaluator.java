@@ -21,6 +21,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Runs a Genestrip read-matching goal over a set of simulated fastq files and tallies how well the
@@ -100,7 +102,22 @@ public class AccuracyEvaluator {
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
         Map<String, AccuracyTally> result = new LinkedHashMap<String, AccuracyTally>();
-        AccuracyTally tally = new AccuracyTally();
+        // One tally per matcher thread instead of one shared tally behind a lock. The callback below
+        // runs for every single read, and guarding it globally serialised the whole evaluation: the
+        // matcher's worker threads spent their time queueing for that monitor rather than matching,
+        // so the JVM sat at roughly one busy core no matter how many threads were configured. Each
+        // thread now accumulates on its own and the results are summed once per fastq file, which is
+        // exact -- every counter is a sum or a count, so the merged tally equals what a single
+        // thread would have produced.
+        final Queue<AccuracyTally> threadTallies = new ConcurrentLinkedQueue<AccuracyTally>();
+        final ThreadLocal<AccuracyTally> localTally = new ThreadLocal<AccuracyTally>() {
+            @Override
+            protected AccuracyTally initialValue() {
+                AccuracyTally fresh = new AccuracyTally();
+                threadTallies.add(fresh);
+                return fresh;
+            }
+        };
 
         try {
             @SuppressWarnings("unchecked")
@@ -119,16 +136,32 @@ public class AccuracyEvaluator {
             matchResGoal.setAfterMatchCallback(new MatchResultGoal.AfterMatchCallback() {
                 @Override
                 public void afterMatch(FastqKMerMatcher.MatcherReadEntry entry, boolean found) {
-                    // The matcher calls this from several threads, so the tally needs guarding.
-                    synchronized (tally) {
-                        record(tally, entry, dbTree, candidates, effectiveScope, baseline, obsBaseline,
-                                collectBaseline, groundTruthFree);
-                    }
+                    // Deliberately unsynchronised. The tally belongs to this thread alone, and the
+                    // two structures shared with the other threads -- the candidate counter and the
+                    // baseline sets -- are concurrent by construction.
+                    //
+                    // That the merge in afterKey() sees these writes is guaranteed by Genestrip
+                    // rather than by a lock here: a consumer thread of AbstractFastqReader calls
+                    // this callback from nextEntry() and only then writes the volatile
+                    // ReadEntry.pooled, and the producer polls every entry of the pool for that flag
+                    // before it finishes the file. The volatile write and the matching read
+                    // establish a happens-before edge covering everything the consumer did first,
+                    // and afterKey() runs on that same producer thread. Should the reader ever stop
+                    // handing entries back through `pooled', this reasoning has to be redone.
+                    record(localTally.get(), entry, dbTree, candidates, effectiveScope, baseline,
+                            obsBaseline, collectBaseline, groundTruthFree);
                 }
 
                 @Override
                 public void afterKey(String key, MatchingResult res) {
-                    synchronized (tally) {
+                    // Called once the file is done, i.e. after the worker threads have finished with
+                    // it, so the per-thread tallies are complete and can be summed.
+                    AccuracyTally merged = new AccuracyTally();
+                    for (AccuracyTally threadTally : threadTallies) {
+                        merged.add(threadTally);
+                        threadTally.reset();
+                    }
+                    {
                         if (baseline != null) {
                             if (collectBaseline) {
                                 baseline.endCollecting(key);
@@ -138,10 +171,9 @@ public class AccuracyEvaluator {
                                 obsBaseline.endConsulting(key);
                             }
                         }
-                        System.out.println(key + ": " + tally);
-                        warnIfUnresolved(key, tally);
-                        result.put(key, tally.copy());
-                        tally.reset();
+                        System.out.println(key + ": " + merged);
+                        warnIfUnresolved(key, merged);
+                        result.put(key, merged);
                     }
                 }
             });
@@ -222,10 +254,10 @@ public class AccuracyEvaluator {
                     if (genusOnly) {
                         baseline.collect(descriptor);
                     }
-                    // The observable substitute for that subset: the unrefined database assigned the
-                    // read to a node at genus rank. Whether that genus is the right one is exactly
+                    // The observable substitute for that subset: the unrefined database placed the
+                    // read no further than the genus. Whether that genus is the right one is exactly
                     // what cannot be checked without ground truth, so it is not checked here either.
-                    obsGenusOnly = classNode != null && Rank.GENUS.equals(classNode.getRank());
+                    obsGenusOnly = isGenusOnlyNode(classNode);
                     if (obsGenusOnly) {
                         obsBaseline.collect(descriptor);
                     }
@@ -268,7 +300,7 @@ public class AccuracyEvaluator {
         String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
                 StandardCharsets.UTF_8);
         if (collectBaseline) {
-            obsGenusOnly = classNode != null && Rank.GENUS.equals(classNode.getRank());
+            obsGenusOnly = isGenusOnlyNode(classNode);
             if (obsGenusOnly) {
                 obsBaseline.collect(descriptor);
             }
@@ -325,6 +357,44 @@ public class AccuracyEvaluator {
      * @param threshold the rank to compare against
      * @return whether {@code rank} is as specific as {@code threshold} or more so
      */
+    /**
+     * Returns whether the node a read was assigned to leaves it in the window a refinement can act
+     * on: at or below a genus, but still above the species.
+     * <p>
+     * A node carrying no taxonomic rank of its own is resolved to its nearest ranked ancestor first,
+     * exactly as {@link #lowestRankedCommonAncestor} does for the genus-only subset, so that the two
+     * subsets are formed by the same rule. That is what makes unranked nodes count: a read placed on
+     * an unranked node beneath a genus is a genus-level answer and a refinement moves it, while one
+     * placed beneath a species resolves to that species and is already as specific as it can be.
+     * <p>
+     * Testing the node's own rank against the genus alone would be too narrow twice over.
+     * {@link Rank} places {@link Rank#SUBGENUS} and {@link Rank#SPECIES_GROUP} between genus and
+     * species, and a read left at either has several species in question just as one left at the
+     * genus has; and {@link Rank#NO_RANK} nodes abound -- 13,458 of them in the viral database
+     * alone. Excluding the ranked ones cost 13 % of the improvable reads of the tick-borne database,
+     * whose six species-group nodes carry the Rickettsia spotted fever, typhus, canis, belli and
+     * phagocytophilum groups, which is precisely where close relatives accumulate.
+     * <p>
+     * The artificial ranks Genestrip marks its own nodes with are not taxonomic ranks either, so a
+     * data node resolves to the species above it and drops out, which is right. A refined node would
+     * resolve to the genus above it and count -- but cannot occur here, because this subset is only
+     * ever determined from the unrefined run.
+     *
+     * @param node the node a read was assigned to, may be {@code null} for an unclassified read
+     * @return whether the read was placed no further than a genus
+     */
+    private static boolean isGenusOnlyNode(SmallTaxTree.SmallTaxIdNode node) {
+        SmallTaxTree.SmallTaxIdNode ranked = node;
+        while (ranked != null && !isTaxonomicRank(ranked.getRank())) {
+            ranked = ranked.getParent();
+        }
+        if (ranked == null) {
+            return false;
+        }
+        Rank rank = ranked.getRank();
+        return isAtLeast(rank, Rank.GENUS) && !isAtLeast(rank, Rank.SPECIES);
+    }
+
     private static boolean isAtLeast(Rank rank, Rank threshold) {
         return rank != null && (threshold.equals(rank) || rank.isBelow(threshold));
     }

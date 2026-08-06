@@ -422,6 +422,38 @@ public final class AccuracyTally {
     }
 
     /**
+     * Adds another tally's counts to this one.
+     * <p>
+     * Used to merge the per-thread tallies of one fastq file into a single result. Every counter
+     * here is a plain sum or a plain count, so merging is exact and independent of the order the
+     * reads were distributed over the threads -- the merged tally is identical to what a single
+     * thread recording all reads in sequence would have produced. The two derived averages,
+     * {@link #getGenusOnlyPrecision()} and its relatives, divide sums by counts and are therefore
+     * correct on the merged tally as well, which they would not be if they were averaged per thread
+     * and then averaged again.
+     *
+     * @param other the tally to add
+     */
+    public void add(AccuracyTally other) {
+        classified += other.classified;
+        correctGenus += other.correctGenus;
+        correctSpecies += other.correctSpecies;
+        correctStrain += other.correctStrain;
+        unresolved += other.unresolved;
+        total += other.total;
+        speciesCandidateScore += other.speciesCandidateScore;
+        genusOnlyTotal += other.genusOnlyTotal;
+        genusOnlyScore += other.genusOnlyScore;
+        genusOnlyCorrectSpecies += other.genusOnlyCorrectSpecies;
+        genusOnlyUngatedScore += other.genusOnlyUngatedScore;
+        genusOnlyGateMissed += other.genusOnlyGateMissed;
+        obsGenusOnlyTotal += other.obsGenusOnlyTotal;
+        obsGenusOnlyScore += other.obsGenusOnlyScore;
+        obsGenusOnlyUngatedScore += other.obsGenusOnlyUngatedScore;
+        obsGenusOnlyAlsoTrue += other.obsGenusOnlyAlsoTrue;
+    }
+
+    /**
      * Resets all counts to zero.
      */
     public void reset() {

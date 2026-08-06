@@ -1,9 +1,10 @@
 package org.metagene.ftdbexp.eval;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Remembers which reads the unrefined database classified no further than to their genus, so that
@@ -26,8 +27,12 @@ public class GenusOnlyBaseline {
     private final List<String> fastqKeys = new ArrayList<String>();
     private final List<Set<String>> subsets = new ArrayList<Set<String>>();
 
-    /** Reads collected for the file currently being processed. */
-    private Set<String> collecting = new HashSet<String>();
+    /**
+     * Reads collected for the file currently being processed. Concurrent, because the matcher
+     * reports its reads from every worker thread at once; the finished per-file sets below are only
+     * ever read afterwards and need no synchronisation of their own.
+     */
+    private Set<String> collecting = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     /** Index of the file the consulting run is currently processing. */
     private int cursor = 0;
 
@@ -49,7 +54,7 @@ public class GenusOnlyBaseline {
     public void endCollecting(String fastqKey) {
         fastqKeys.add(fastqKey);
         subsets.add(collecting);
-        collecting = new HashSet<String>();
+        collecting = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
     }
 
     /**

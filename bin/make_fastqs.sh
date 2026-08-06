@@ -359,7 +359,35 @@ make_ticks() {
         --seed 42 --fastq -gl "$genomes" -t "$cpus" -a training_quantification.tsv )
 
     mv "${nswork}/simulated_sample0_aligned_reads.fastq" "$out"
-    rm -f "${nswork}"/training* "${nswork}/reference_metagenome.fasta"
+    # Keep the error rate NanoSim learned for this sample. It is derived from the alignment of the
+    # real reads against the reference genomes -- mismatches, insertions and deletions counted from
+    # minimap2's output -- and is therefore the honest per-base error of the simulated reads.
+    #
+    # It has to be kept because it cannot be recovered afterwards: the quality strings of these runs
+    # are placeholders (the SRA copies carry two distinct values, Q3 for 90 % of bases and Q30 for
+    # the rest), NanoSim trains its base-quality model on them and emits equally meaningless
+    # qualities, so reading an error rate off the simulated fastq gives nonsense. The alignment-based
+    # figure here is the one to quote.
+    if [ -f "${nswork}/training_error_rate.tsv" ]; then
+      cp "${nswork}/training_error_rate.tsv" "${fastqdir}/${sample}_sim_error_rate.tsv"
+    fi
+    # Everything else NanoSim leaves behind, removed per sample rather than at the end: it writes
+    # every sample under the same `simulated_sample0' prefix, so without this the next tick's run
+    # sits on top of the previous one's debris and the folder never reveals what belongs to what.
+    #
+    #   _unaligned_reads      the ~8 % of reads NanoSim invents to match the aligned/unaligned ratio
+    #                         it measured while training. They are drawn from a flat error table and
+    #                         from no genome at all, so they carry no taxon in their name and no
+    #                         ground truth can be recovered from them -- which is exactly why only
+    #                         the aligned file above is kept. There is no option to skip generating
+    #                         them; metagenome mode has no such switch.
+    #   _aligned_error_profile  a per-read log of the errors that were applied. Diagnostic only, and
+    #                         very large -- a single earlier run left 2.0 GB of it here.
+    #   _unaligned_reads<N>   per-process subfiles. NanoSim merges and deletes these itself, so any
+    #                         that survive mean the simulation was interrupted; removing them keeps
+    #                         a half-finished run from looking like a finished one.
+    rm -f "${nswork}"/training* "${nswork}/reference_metagenome.fasta" \
+          "${nswork}"/simulated_sample0_*
     echo "OK    ${out}"
   done
 

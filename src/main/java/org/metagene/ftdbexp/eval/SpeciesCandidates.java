@@ -3,7 +3,7 @@ package org.metagene.ftdbexp.eval;
 import org.metagene.genestrip.tax.Rank;
 import org.metagene.genestrip.tax.SmallTaxTree;
 
-import java.util.IdentityHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 /**
@@ -24,8 +24,12 @@ import java.util.Map;
  * between a genus and its species. The counts are memoized per node, so the tree is walked once.
  */
 public class SpeciesCandidates {
+    // Concurrent, because the matcher calls into this from every worker thread at once. The nodes
+    // override neither equals nor hashCode, so a ConcurrentHashMap keys on identity exactly as the
+    // IdentityHashMap this replaces did. A race can compute the same subtree twice; that is harmless,
+    // since the count depends only on the tree and both threads arrive at the same number.
     private final Map<SmallTaxTree.SmallTaxIdNode, Integer> speciesBelowCache =
-            new IdentityHashMap<SmallTaxTree.SmallTaxIdNode, Integer>();
+            new ConcurrentHashMap<SmallTaxTree.SmallTaxIdNode, Integer>();
 
     /**
      * Returns how many species taxa a classification to the given node leaves in question.

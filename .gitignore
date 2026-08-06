@@ -18,6 +18,10 @@
 !/data/fastq/ticks_real.txt
 # ... and the same for the human saliva runs the first paper used.
 !/data/fastq/saliva_real.txt
+# Single-sample maps, written by hand to score one file at a time. Like the two above they name
+# files rather than absolute paths, so they are valid anywhere.
+!/data/fastq/ticks_sim_tick1.txt
+!/data/fastq/saliva_mate1.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*
