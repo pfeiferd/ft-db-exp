@@ -31,3 +31,33 @@
 /data/common/fasta/*
 # The list of extra genomes to download is project setup, not downloaded data.
 !/data/common/fasta/downloads.txt
+
+# Everything a project produces. Only its four configuration files -- taxids.txt, categories.txt,
+# additional.txt and config.properties -- are input and belong in the repository; the rest is
+# rebuilt from them by Genestrip's goals and runs to many gigabytes.
+/data/projects/*/db/
+/data/projects/*/csv/
+/data/projects/*/fastq/
+/data/projects/*/txt/
+/data/projects/*/tex/
+/data/projects/*/log/
+/data/projects/*/krakenout/
+
+# Experiment output. `run_exps.sh' and the classification runs write here, and the files are copied
+# from here into the paper's own results folder, which is where the version that the paper builds
+# from lives. Regenerating them means re-running the experiments, so keep a copy with the paper
+# rather than relying on this directory.
+/results/
+
+# Tools installed by install_tools.sh, and Maven's build output. Both are reproducible.
+/tools/
+/target/
+
+# Crash and scratch files that land in the project root.
+hs_err_pid*.log
+texput.log
+
+# Editor and platform noise.
+.idea/
+.DS_Store
+*.versionsBackup
