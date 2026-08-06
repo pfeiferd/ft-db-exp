@@ -108,19 +108,23 @@ For `tick-borne`, NanoSim trains an error model on the real Nanopore reads of a 
 applies it to the RefSeq genomes of the twelve tick-borne genera -- one simulated fastq file per
 real one, for all eight ticks of the first paper. This needs two things beforehand.
 
-The real reads, downloaded from the SRA study PRJNA790938 into `data/fastq` as
-`tick1.fastq.gz` .. `tick8.fastq.gz` (about 3.2 GB in total):
+The real reads, from the SRA study PRJNA790938. They are declared by URL in the Genestrip fastq map
+`data/fastq/ticks_real.txt`, so Genestrip's own goal `fastqdownload` fetches them -- no download
+script of ours is involved:
 
 ```sh
-sh ./bin/fetch_tick_reads.sh              # all eight
-sh ./bin/fetch_tick_reads.sh tick3 tick7  # single samples
+mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt
 ```
 
-`make_fastqs.sh tick-borne` calls this itself for whatever is missing, so it is only worth running
-separately to get the download out of the way first. Set `SKIP_FETCH=1` to suppress it, e.g. when
-the reads were copied over from another machine. The script tries NCBI's own fastq endpoint first
-and falls back to ENA, which mirrors the same runs; it verifies every file against its expected size
-and as a complete gzip stream, since a truncated training input would otherwise go unnoticed.
+`-ll` puts them in the common fastq directory, `data/fastq`, named after their key in the map:
+`tick1.fastq.gz` .. `tick8.fastq.gz`, about 3.2 GB in total. Genestrip skips whatever is already in
+place and verifies an MD5 where the map states one, so the command is safe to repeat.
+`make_fastqs.sh tick-borne` runs it itself for whatever is missing; set `SKIP_FETCH=1` to suppress
+that, e.g. when the reads were copied over from another machine.
+
+The map points at ENA rather than at NCBI's own fastq endpoint, which serves the same runs but is
+not reachable from every network. Either form works -- Genestrip names the download after the key,
+not after the URL -- and `ticks_real.txt` states the accessions and the alternative URL form.
 
 And the genome list
 

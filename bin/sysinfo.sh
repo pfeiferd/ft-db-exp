@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 #
 # sysinfo.sh — collect hardware configuration and Java runtime information.
 #
@@ -20,7 +20,10 @@
 # numbers) and SMART disk details are root-only. The LaTeX file does not need
 # root: everything it states comes from lscpu, /proc, lsblk and java.
 #
-set -u -o pipefail
+# Plain POSIX sh, like the other scripts here, so that it runs under dash and busybox ash as well as
+# bash. That rules out `-o pipefail', which run() below relied on to notice a failing command in a
+# pipeline; see the comment there for what replaces it.
+set -u
 
 # Values are parsed from tool output below, so keep it in the C locale.
 export LC_ALL=C
@@ -48,6 +51,11 @@ if [ -z "$OUT" ]; then
 fi
 TEXOUT="${OUT%.*}.tex"
 
+# Scratch file for run() below, which collects a command's output before indenting it.
+TMPRUN=$(mktemp "${TMPDIR:-/tmp}/sysinfo.XXXXXX") || { echo "cannot create a temporary file" >&2; exit 1; }
+trap 'rm -f "$TMPRUN"' EXIT
+trap 'rm -f "$TMPRUN"; exit 130' INT TERM
+
 # ---------------------------------------------------------------- helpers ---
 
 progress() { [ "$QUIET" -eq 1 ] || printf '  %s\n' "$*" >&2; }
@@ -66,9 +74,9 @@ section() {
 # Executes the command, appending a labelled block to the report. If the binary
 # is missing the block records that instead of failing the whole run.
 run() {
-  local label="$1"; shift
+  run_label="$1"; shift
   {
-    printf '\n--- %s\n' "$label"
+    printf '\n--- %s\n' "$run_label"
     printf -- '$ %s\n' "$*"
   } >>"$OUT"
 
@@ -78,25 +86,32 @@ run() {
     return 0
   fi
 
-  # Indent output; capture stderr so tool warnings land in the report too.
-  if ! "$@" 2>&1 | sed 's/^/    /' >>"$OUT"; then
-    printf '    [command exited non-zero]\n' >>"$OUT"
+  # Capture first and indent afterwards, rather than piping the command straight into sed. A
+  # pipeline reports only its *last* command's status in POSIX sh, so piped through sed a failing
+  # tool would always look successful; bash's `pipefail' used to cover that, and this replaces it.
+  # stderr is captured too, so tool warnings land in the report.
+  if "$@" >"$TMPRUN" 2>&1; then
+    run_status=0
+  else
+    run_status=1
   fi
+  sed 's/^/    /' "$TMPRUN" >>"$OUT"
+  [ "$run_status" -eq 0 ] || printf '    [command exited non-zero]\n' >>"$OUT"
 }
 
 # show <label> <file...> — dump file contents if readable
 show() {
-  local label="$1"; shift
-  printf '\n--- %s\n' "$label" >>"$OUT"
-  local f found=0
-  for f in "$@"; do
-    if [ -r "$f" ]; then
-      found=1
-      printf '$ cat %s\n' "$f" >>"$OUT"
-      sed 's/^/    /' "$f" >>"$OUT" 2>/dev/null
+  show_label="$1"; shift
+  printf '\n--- %s\n' "$show_label" >>"$OUT"
+  show_found=0
+  for show_f in "$@"; do
+    if [ -r "$show_f" ]; then
+      show_found=1
+      printf '$ cat %s\n' "$show_f" >>"$OUT"
+      sed 's/^/    /' "$show_f" >>"$OUT" 2>/dev/null
     fi
   done
-  [ "$found" -eq 1 ] || printf '    [not readable: %s]\n' "$*" >>"$OUT"
+  [ "$show_found" -eq 1 ] || printf '    [not readable: %s]\n' "$*" >>"$OUT"
 }
 
 MISSING=""
