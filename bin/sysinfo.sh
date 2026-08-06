@@ -460,12 +460,18 @@ def sysCpuGHz       "${cpu_ghz:-}"
 def sysCores        "${cores:-}"
 def sysThreads      "${threads:-}"
 def sysWorkers      "${workers:-}"
-# A flag rather than a second number: the paper derives the total thread count from \sysWorkers by
-# LaTeX arithmetic, which needs to know whether the value is one it can compute with.
+# The threads actually doing work: the workers plus the one thread that reads and parses the input.
+# Emitted as a finished number rather than left to LaTeX arithmetic in the paper. The earlier
+# version passed a \newif flag instead, so that the paper could tell whether \sysWorkers was a value
+# it could compute with -- and that broke the document: TeX counts the \if... token of a
+# `\newif\ifX' while it skips the branch that \newif sits in, once \ifX is defined, so the guard
+# `\ifdefined\ifX\else\newif\ifX\fi' swallowed its own \fi and the run ended in "Incomplete
+# \ifdefined". Nothing here needs a flag; an unknown value simply becomes \sysUnknown like any other.
+total_threads=""
 if [ -n "${workers:-}" ]; then
-  printf '\\ifdefined\\ifsysWorkersKnown\\else\\newif\\ifsysWorkersKnown\\fi\n' >>"$TEXOUT"
-  printf '\\sysWorkersKnowntrue\n' >>"$TEXOUT"
+  total_threads=$((workers + 1))
 fi
+def sysTotalThreads "${total_threads:-}"
 def sysRamGB        "${ram_nominal:-}"
 def sysRamGiB       "${ram_gib:-}"
 def sysSwap         "${swap_state:-}"

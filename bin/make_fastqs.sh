@@ -31,13 +31,15 @@
 # separates the effect of the refinement from the effect of read errors.
 #
 # Raw tick data:
-#   The real Nanopore runs come from the tick surveillance study the first paper builds on and are
-#   available from the SRA as tick1=SRR17281117, tick2=SRR17281105, tick3=SRR17281103,
-#   tick4=SRR17281101, tick5=SRR17281100, tick6=SRR17281099, tick7=SRR17281116, tick8=SRR17281115:
+#   The real Nanopore runs NanoSim trains on come from the tick surveillance study the first paper
+#   builds on (SRA study PRJNA790938). They are declared by URL in the Genestrip fastq map
+#   data/fastq/ticks_real.txt, and Genestrip's own goal `fastqdownload' fetches them into data/fastq
+#   as tick1.fastq.gz .. tick8.fastq.gz:
 #
-#     wget "https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=<acc>" -O tickN.fastq.gz
+#     mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt
 #
-#   Place them in data/fastq. That NCBI host is not reachable from every network.
+#   The tick-borne part below runs that for whatever is missing, so there is nothing to do by hand.
+#   Set SKIP_FETCH=1 to suppress it, e.g. when the reads were copied over from another machine.
 #
 set -e
 
@@ -236,7 +238,35 @@ make_ticks() {
   # NanoSim undershoots the requested read count by roughly two orders of magnitude, so the first
   # paper asked for ten million to end up at a few hundred thousand. Kept for comparability.
   reads=${READS:-10000000}
-  samples=${SAMPLES:-"tick1 tick2 tick3 tick4 tick5 tick6 tick7"}
+  # Eight samples, as in the first paper, which generated one simulated fastq file per real one.
+  samples=${SAMPLES:-"tick1 tick2 tick3 tick4 tick5 tick6 tick7 tick8"}
+
+  # The real reads are the training input, so a missing one silently changes what is simulated
+  # rather than causing a visible failure. Fetch whatever is absent before starting, and stop if
+  # any is still missing afterwards -- a run of several hours is a bad place to discover it.
+  #
+  # The download is Genestrip's own goal `fastqdownload' rather than a script of ours: the map
+  # data/fastq/ticks_real.txt declares the eight runs by URL, and Genestrip resolves, downloads and
+  # names them, skipping whatever is already there. See that file for the accessions.
+  if [ -z "${SKIP_FETCH:-}" ]; then
+    missing=""
+    for sample in $samples; do
+      [ -s "${fastqdir}/${sample}.fastq.gz" ] || missing="${missing} ${sample}"
+    done
+    if [ -n "$missing" ]; then
+      echo "=== downloading the real tick reads:${missing} ==="
+      ( cd "$basedir" && mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt )
+    fi
+  fi
+  absent=""
+  for sample in $samples; do
+    [ -s "${fastqdir}/${sample}.fastq.gz" ] || absent="${absent} ${sample}"
+  done
+  if [ -n "$absent" ]; then
+    echo "Missing real tick reads:${absent}" >&2
+    echo "Run 'sh ./bin/fetch_tick_reads.sh' first, or set SAMPLES to the ones actually present." >&2
+    exit 1
+  fi
 
   for sample in $samples; do
     out="${fastqdir}/${sample}_sim.fastq"
@@ -245,10 +275,6 @@ make_ticks() {
       continue
     fi
     input="${fastqdir}/${sample}.fastq.gz"
-    if [ ! -f "$input" ]; then
-      echo "WARN  ${input} missing - skipping ${sample}" >&2
-      continue
-    fi
 
     echo "=== ${sample}: training the error model on the real reads ==="
     ( cd "$nswork" && "$python" "${nanosimdir}/src/read_analysis.py" metagenome \

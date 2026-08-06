@@ -168,6 +168,35 @@
 						</configuration>
 					</execution>
 					<execution>
+						<!-- Downloads the fastq input files a map declares by URL, through Genestrip's
+						     own goal `fastqdownload'. -ll stores them in the common fastq directory
+						     (data/fastq) rather than per project, named after their key in the map,
+						     so several projects share one copy. Genestrip skips whatever is already
+						     in place and verifies an MD5 where the map states one, which is why this
+						     needs no download script of its own. A download needs no heap to speak
+						     of, hence the small -Xmx. -->
+						<id>fastqdl</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx2G</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>fastqdownload</argument>
+								<argument>-ll</argument>
+								<argument>-m</argument>
+								<argument>${gs.project.fqmap}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
 						<id>accuracy</id>
 						<goals>
 							<goal>exec</goal>

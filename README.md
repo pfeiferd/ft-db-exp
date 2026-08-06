@@ -105,15 +105,33 @@ of the category "Viral", one million reads each as in the first paper. `N_READS=
 smaller set for a quick smoke test.
 
 For `tick-borne`, NanoSim trains an error model on the real Nanopore reads of a tick sample and
-applies it to the RefSeq genomes of the twelve tick-borne genera. This needs two things beforehand:
-the real reads in `data/fastq` (the script's header lists the SRA accessions) and the genome list
+applies it to the RefSeq genomes of the twelve tick-borne genera -- one simulated fastq file per
+real one, for all eight ticks of the first paper. This needs two things beforehand.
+
+The real reads, downloaded from the SRA study PRJNA790938 into `data/fastq` as
+`tick1.fastq.gz` .. `tick8.fastq.gz` (about 3.2 GB in total):
+
+```sh
+sh ./bin/fetch_tick_reads.sh              # all eight
+sh ./bin/fetch_tick_reads.sh tick3 tick7  # single samples
+```
+
+`make_fastqs.sh tick-borne` calls this itself for whatever is missing, so it is only worth running
+separately to get the download out of the way first. Set `SKIP_FETCH=1` to suppress it, e.g. when
+the reads were copied over from another machine. The script tries NCBI's own fastq endpoint first
+and falls back to ENA, which mirrors the same runs; it verifies every file against its expected size
+and as a complete gzip stream, since a truncated training input would otherwise go unnoticed.
+
+And the genome list
 
 ```sh
 mvn exec:exec@nanosimlist -Dname=tick-borne
 ```
 
 which labels every reference genome `<taxid>x<index>`. That label becomes the prefix of every
-simulated read's name and is what keeps the read's origin recoverable afterwards.
+simulated read's name and is what keeps the read's origin recoverable afterwards. It is derived from
+the per-accession FASTA files of the goal `extractrefseqfasta`, so the `tick-borne` database must be
+built before it can be created.
 
 Both parts skip whatever is already present and write the fastq mapping files the next step needs.
 
