@@ -16,6 +16,8 @@
 # So is the map that declares those runs by URL for the goal `fastqdownload'. It holds URLs rather
 # than absolute paths, so unlike the generated maps above it is valid on any machine.
 !/data/fastq/ticks_real.txt
+# ... and the same for the human saliva runs the first paper used.
+!/data/fastq/saliva_real.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*

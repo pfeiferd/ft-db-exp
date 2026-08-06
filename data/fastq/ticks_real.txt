@@ -18,24 +18,25 @@
 # *classifying* the real reads, as the first paper did, and leaves tick5 out because KrakenUniq hung
 # on it. This map declares all eight, since the simulation trains on each of them in turn.
 #
-# The URLs are NCBI's own SRA fastq endpoint. It serves gzip, despite the URL not saying so, which is
+# The URLs are NCBI's own SRA fastq endpoint, under the host the original genestrip-db-exp project
+# used for exactly these eight runs. It serves gzip, despite the URL not saying so, which is
 # what makes the .fastq.gz naming correct -- Genestrip assumes gzip by default (alwaysAssumeGzip) and
 # names the download after the key rather than the URL, so the file names do not depend on the form
 # of the URL at all. Two alternatives, should this host be unreachable from a given network:
 #
-#   www.be-md.ncbi.nlm.nih.gov   the same endpoint under NCBI's other host name; substitute it for
-#                                trace.ncbi.nlm.nih.gov below and nothing else changes
+#   trace.ncbi.nlm.nih.gov       the same endpoint under NCBI's public host name; substitute it for
+#                                www.be-md.ncbi.nlm.nih.gov below and nothing else changes
 #   ftp.sra.ebi.ac.uk            ENA, which mirrors the identical SRA runs as
 #                                https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/0NN/<acc>/<acc>_1.fastq.gz
 #                                where NN is the last two digits of the accession. Verified to serve
 #                                the correct read counts, but not reachable from every network.
 #
 # key   URL
-tick1 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281117
-tick2 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281105
-tick3 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281103
-tick4 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281101
-tick5 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281100
-tick6 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281099
-tick7 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281116
-tick8 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281115
+tick1 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281117
+tick2 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281105
+tick3 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281103
+tick4 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281101
+tick5 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281100
+tick6 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281099
+tick7 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281116
+tick8 https://www.be-md.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281115

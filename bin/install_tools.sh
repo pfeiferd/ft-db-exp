@@ -6,6 +6,7 @@
 #   cgmemtime      measures wall time and peak RAM of the database generation
 #   InSilicoSeq    simulates the Illumina reads for the viral experiments
 #   NanoSim        simulates the Nanopore reads for the tick-borne experiments
+#   sra-toolkit    downloads the real sequencing runs (prefetch, fasterq-dump)
 #
 # The script is idempotent: anything already in place is skipped, so it is cheap to re-run after a
 # partial failure.
@@ -32,13 +33,21 @@ echo "############ 1/4  Distribution packages ############"
 # minimap2 and LAST align reads during NanoSim's training, samtools and genometools handle the
 # sequences. python3-dev supplies the headers pybedtools compiles its C extension against, bedtools
 # the binary it drives. All of this is what the conda recipe would have pulled from bioconda.
+#
+# sra-toolkit supplies prefetch and fasterq-dump, which fetch the real sequencing runs of the
+# experiments without ground truth -- see fetch_saliva.sh. The distribution package is preferred over
+# NCBI's own tarball because the latter is not reachable from every network; should it be too old,
+# install https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/current/sratoolkit.current-ubuntu64.tar.gz by
+# hand and put its `bin' on the PATH instead. pigz parallelises the compression of the dumped fastq
+# files, which matters at these volumes; gzip is used if it is absent.
 sudo apt-get install -y -q \
-  minimap2 samtools last-align genometools bedtools \
+  minimap2 samtools last-align genometools bedtools sra-toolkit pigz \
   build-essential python3-dev python3-venv >/dev/null
 echo "  minimap2:    $(minimap2 --version 2>&1 | head -1)"
 echo "  samtools:    $(samtools --version 2>&1 | head -1)"
 echo "  lastal:      $(lastal --version 2>&1 | head -1)"
 echo "  genometools: $(gt --version 2>&1 | head -1)"
+echo "  sra-toolkit: $(fasterq-dump --version 2>&1 | tr -d '\n' | sed 's/^ *//')"
 
 echo "############ 2/4  cgmemtime ############"
 if [ -x "${toolsdir}/cgmemtime/cgmemtime" ]; then

@@ -87,13 +87,15 @@ public class AccuracyEvaluator {
      * @param obsBaseline     records the observable substitute for that subset -- the reads assigned
      *                        to a node at genus rank, which needs no ground truth
      * @param collectBaseline whether this run fills the baselines (the unrefined one) or consults them
+     * @param groundTruthFree whether the reads have no known ground truth, in which case only the
+     *                        ungated measures are tallied and no accession map is consulted
      * @return the tallies keyed by fastq key, in the order the files were processed
      * @throws IOException if the database or the fastq files cannot be read
      */
     public Map<String, AccuracyTally> evaluate(String db, String fqMapFile, GoalKey matchGoalKey,
                                                GoalKey loadDbGoalKey, SmallTaxTree scope,
                                                GenusOnlyBaseline baseline, GenusOnlyBaseline obsBaseline,
-                                               boolean collectBaseline)
+                                               boolean collectBaseline, boolean groundTruthFree)
             throws IOException {
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
@@ -120,7 +122,7 @@ public class AccuracyEvaluator {
                     // The matcher calls this from several threads, so the tally needs guarding.
                     synchronized (tally) {
                         record(tally, entry, dbTree, candidates, effectiveScope, baseline, obsBaseline,
-                                collectBaseline);
+                                collectBaseline, groundTruthFree);
                     }
                 }
 
@@ -182,7 +184,11 @@ public class AccuracyEvaluator {
      */
     private void record(AccuracyTally tally, FastqKMerMatcher.MatcherReadEntry entry, SmallTaxTree dbTree,
                         SpeciesCandidates candidates, SmallTaxTree scope, GenusOnlyBaseline baseline,
-                        GenusOnlyBaseline obsBaseline, boolean collectBaseline) {
+                        GenusOnlyBaseline obsBaseline, boolean collectBaseline, boolean groundTruthFree) {
+        if (groundTruthFree) {
+            recordWithoutGroundTruth(tally, entry, candidates, obsBaseline, collectBaseline);
+            return;
+        }
         TaxTree.TaxIdNode trueNode = groundTruth.resolve(entry.readDescriptor, entry.readDescriptorSize);
         if (trueNode == null) {
             tally.recordUnresolved();
@@ -237,6 +243,39 @@ public class AccuracyEvaluator {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();
         }
+    }
+
+    /**
+     * Adds one read of a fastq file without known ground truth to the tally.
+     * <p>
+     * Nothing here consults {@code groundTruth}, the scope or the read's true taxon, because none of
+     * them exists for a real sample. What remains observable is the assigned node and, through the
+     * database's taxonomy, how many species it leaves in question -- which is the ungated score of
+     * Section \"Estimating the gain without ground truth\" in the paper.
+     *
+     * @param tally           the tally to update
+     * @param entry           the matcher's result for the read
+     * @param candidates      the candidate species counter for the variant's taxonomy
+     * @param obsBaseline     the observable genus-only subset, filled by the unrefined run
+     * @param collectBaseline whether this run fills that subset or consults it
+     */
+    private void recordWithoutGroundTruth(AccuracyTally tally, FastqKMerMatcher.MatcherReadEntry entry,
+                                          SpeciesCandidates candidates, GenusOnlyBaseline obsBaseline,
+                                          boolean collectBaseline) {
+        SmallTaxTree.SmallTaxIdNode classNode = entry.classNode;
+        double ungatedScore = classNode != null ? candidates.weightFor(classNode) : 0;
+        boolean obsGenusOnly;
+        String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
+                StandardCharsets.UTF_8);
+        if (collectBaseline) {
+            obsGenusOnly = classNode != null && Rank.GENUS.equals(classNode.getRank());
+            if (obsGenusOnly) {
+                obsBaseline.collect(descriptor);
+            }
+        } else {
+            obsGenusOnly = obsBaseline.contains(descriptor);
+        }
+        tally.recordWithoutGroundTruth(classNode != null, ungatedScore, obsGenusOnly);
     }
 
     /**

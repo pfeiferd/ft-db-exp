@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|real|all]
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
 #   part for every database, and `accuracy' and `all' evaluate the two Illumina read sets and the
@@ -88,6 +88,23 @@ run_iss_all_regimes() {
   ERROR_NANOPORE_LONG=$saved_nanopore_long
 }
 
+# The experiments on real reads, which have no ground truth: `cv' against the five human saliva runs
+# of the first paper and `tb' against its tick samples. Neither precision nor recall is defined here,
+# so this runs the `specificity' entry point instead of `accuracy': it reports how far each database
+# variant narrows the species down on the reads the unrefined one left at a genus, and the difference
+# between the two -- the specificity gain that bounds the precision gain from above.
+#
+# $1 = database project name, $2 = fastq mapping file, $3 = report key
+run_real() {
+  map="${basedir}/data/fastq/$2"
+  if [ ! -f "$map" ]; then
+    echo "Missing ${map}." >&2
+    return 1
+  fi
+  echo "############ $1: real reads (${3}), unrefined vs. refined ############"
+  mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3"
+}
+
 run_ticks() {
   map="${basedir}/data/fastq/ticks_sim.txt"
   if [ ! -f "$map" ]; then
@@ -157,12 +174,13 @@ case "$what" in
   gut-protozoa) run_iss gut-protozoa; run_perf gut-protozoa gut-protozoa_sim.txt ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks ;;
+  real)         run_real viral saliva_real.txt saliva; run_real tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt ;;
   all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt ;;
-  *)          echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 
 echo

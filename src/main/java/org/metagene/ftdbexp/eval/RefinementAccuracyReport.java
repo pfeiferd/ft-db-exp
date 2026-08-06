@@ -114,7 +114,7 @@ public class RefinementAccuracyReport {
             System.out.println("Evaluating " + variant.getLabel() + " database " + db + " on " + fqMapFile);
             byVariant.put(variant, evaluator.evaluate(db, fqMapFile, variant.getMatchGoalKey(),
                     variant.getLoadDbGoalKey(), scope, baseline, obsBaseline,
-                    variant == Variant.UNREFINED));
+                    variant == Variant.UNREFINED, false));
         }
 
         if (!resultsDir.exists() && !resultsDir.mkdirs()) {

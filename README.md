@@ -171,7 +171,39 @@ built before it can be created.
 
 Both parts skip whatever is already present and write the fastq mapping files the next step needs.
 
-## 4. Classification quality experiments
+## 4. Real reads, without ground truth
+
+Two collections of real sequencing data are analysed as well, both taken from the first Genestrip
+paper: the human saliva runs, matched against `cv`, and the tick samples, matched against `tb`. No
+ground truth exists for either, so precision and recall are undefined; what is measured instead is
+how far each database variant narrows the species down -- see the paper's section "Estimating the
+gain without ground truth".
+
+The tick reads are the same files NanoSim trains on and are already in place after step 3. The
+saliva runs are fetched with sra-tools, which `install_tools.sh` installs:
+
+```sh
+sh ./bin/fetch_saliva.sh                  # the three runs the first paper used
+sh ./bin/fetch_saliva.sh SRR5571991       # a single run
+```
+
+**Mind the volume.** These are deep metagenomic runs of 605 to 981 million read pairs, 122 to 198
+Gbp each -- roughly 400 GB of gzipped fastq for the three, and transiently about as much again for
+the `.sra` files and fasterq-dump's scratch space. Run them one at a time unless the machine has a
+spare quarter of a terabyte. Files are named after their accession, exactly as the original
+`genestrip-db-exp` project named them, so anything already fetched there is reused rather than
+downloaded again.
+
+Then:
+
+```sh
+sh ./bin/run_classification_exps.sh real
+```
+
+which writes `results/<db>_<key>_specificity.csv`: one row per fastq key with the size of the
+observable subset, the ungated precision of each database variant and their difference.
+
+## 5. Classification quality experiments
 
 ```sh
 sh ./bin/run_classification_exps.sh
@@ -200,7 +232,7 @@ says how faithfully the observable subset reproduces the real one; it is essenti
 reads and cannot be expected to be on a real sample. `genus only gate missed` counts the reads that
 make rho_d fall short of one.
 
-## 5. Machine description
+## 6. Machine description
 
 The paper states what hardware the experiments ran on, mirroring the corresponding paragraph of the
 first Genestrip paper. Run this **on the machine that executed the experiments**, ideally right

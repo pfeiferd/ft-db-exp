@@ -218,6 +218,28 @@
 						</configuration>
 					</execution>
 					<execution>
+						<!-- The ground-truth-free measurement on real reads: no precision, no recall,
+						     only how far each database variant narrows the species down. -->
+						<id>specificity</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.FTSpecificityMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.fqmap}</argument>
+								<argument>${gs.project.reportkey}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
 						<id>nanosimlist</id>
 						<goals>
 							<goal>exec</goal>

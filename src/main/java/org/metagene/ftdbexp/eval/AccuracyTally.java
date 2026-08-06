@@ -129,6 +129,31 @@ public final class AccuracyTally {
     }
 
     /**
+     * Records a read of a fastq file whose ground truth is unknown.
+     * <p>
+     * Only the ungated measures are defined in that case: how far the classification narrows the
+     * species down can be read off the assignment alone, whether it does so <em>correctly</em>
+     * cannot. The gated counters are therefore left untouched rather than filled with zeros, which
+     * would read as "every read wrong" instead of "not determined". {@link #getTotal()} counts every
+     * read here, since there is no ground truth by which a read could be out of scope.
+     *
+     * @param classified          whether the analysis assigned a taxon to the read
+     * @param ungatedSpeciesScore the reciprocal number of species the assignment leaves in question
+     * @param obsGenusOnly        whether the unrefined database assigned the read to a node at genus
+     *                            rank, i.e. whether it belongs to the observable subset
+     */
+    public void recordWithoutGroundTruth(boolean classified, double ungatedSpeciesScore, boolean obsGenusOnly) {
+        total++;
+        if (obsGenusOnly) {
+            obsGenusOnlyTotal++;
+            obsGenusOnlyUngatedScore += ungatedSpeciesScore;
+        }
+        if (classified) {
+            this.classified++;
+        }
+    }
+
+    /**
      * Returns the number of correctly classified reads for the given rank.
      *
      * @param rank {@link Rank#GENUS}, {@link Rank#SPECIES} or {@link Rank#STRAIN}
