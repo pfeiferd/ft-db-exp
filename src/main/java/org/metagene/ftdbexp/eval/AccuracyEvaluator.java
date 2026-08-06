@@ -84,13 +84,16 @@ public class AccuracyEvaluator {
      *                      was built to cover
      * @param baseline        records which reads were left at their genus, so that the gain can be
      *                        related to exactly those; may be {@code null} to skip that measurement
-     * @param collectBaseline whether this run fills the baseline (the unrefined one) or consults it
+     * @param obsBaseline     records the observable substitute for that subset -- the reads assigned
+     *                        to a node at genus rank, which needs no ground truth
+     * @param collectBaseline whether this run fills the baselines (the unrefined one) or consults them
      * @return the tallies keyed by fastq key, in the order the files were processed
      * @throws IOException if the database or the fastq files cannot be read
      */
     public Map<String, AccuracyTally> evaluate(String db, String fqMapFile, GoalKey matchGoalKey,
                                                GoalKey loadDbGoalKey, SmallTaxTree scope,
-                                               GenusOnlyBaseline baseline, boolean collectBaseline)
+                                               GenusOnlyBaseline baseline, GenusOnlyBaseline obsBaseline,
+                                               boolean collectBaseline)
             throws IOException {
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
@@ -116,7 +119,8 @@ public class AccuracyEvaluator {
                 public void afterMatch(FastqKMerMatcher.MatcherReadEntry entry, boolean found) {
                     // The matcher calls this from several threads, so the tally needs guarding.
                     synchronized (tally) {
-                        record(tally, entry, dbTree, candidates, effectiveScope, baseline, collectBaseline);
+                        record(tally, entry, dbTree, candidates, effectiveScope, baseline, obsBaseline,
+                                collectBaseline);
                     }
                 }
 
@@ -126,8 +130,10 @@ public class AccuracyEvaluator {
                         if (baseline != null) {
                             if (collectBaseline) {
                                 baseline.endCollecting(key);
+                                obsBaseline.endCollecting(key);
                             } else {
                                 baseline.endConsulting(key);
+                                obsBaseline.endConsulting(key);
                             }
                         }
                         System.out.println(key + ": " + tally);
@@ -176,7 +182,7 @@ public class AccuracyEvaluator {
      */
     private void record(AccuracyTally tally, FastqKMerMatcher.MatcherReadEntry entry, SmallTaxTree dbTree,
                         SpeciesCandidates candidates, SmallTaxTree scope, GenusOnlyBaseline baseline,
-                        boolean collectBaseline) {
+                        GenusOnlyBaseline obsBaseline, boolean collectBaseline) {
         TaxTree.TaxIdNode trueNode = groundTruth.resolve(entry.readDescriptor, entry.readDescriptorSize);
         if (trueNode == null) {
             tally.recordUnresolved();
@@ -191,10 +197,16 @@ public class AccuracyEvaluator {
             SmallTaxTree.SmallTaxIdNode trueInDb = inDbTree(trueNode, dbTree);
             Rank lcaRank = classNode == null || trueInDb == null
                     ? null : lowestRankedCommonAncestor(dbTree, trueInDb, classNode);
+            // The ungated score drops the test that the read's true species is still in question at
+            // the assigned node. It therefore states how far the classification narrows the species
+            // down rather than how far it narrows them down *correctly* -- and, since it never looks
+            // at the ground truth, it is the one score obtainable from a real fastq file.
+            double ungatedScore = classNode != null ? candidates.weightFor(classNode) : 0;
             double score = classNode != null && trueInDb != null
                     && SpeciesCandidates.areComparable(classNode, trueInDb)
-                    ? candidates.weightFor(classNode) : 0;
+                    ? ungatedScore : 0;
             boolean genusOnly = false;
+            boolean obsGenusOnly = false;
             if (baseline != null) {
                 String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
                         StandardCharsets.UTF_8);
@@ -204,11 +216,23 @@ public class AccuracyEvaluator {
                     if (genusOnly) {
                         baseline.collect(descriptor);
                     }
+                    // The observable substitute for that subset: the unrefined database assigned the
+                    // read to a node at genus rank. Whether that genus is the right one is exactly
+                    // what cannot be checked without ground truth, so it is not checked here either.
+                    obsGenusOnly = classNode != null && Rank.GENUS.equals(classNode.getRank());
+                    if (obsGenusOnly) {
+                        obsBaseline.collect(descriptor);
+                    }
                 } else {
                     genusOnly = baseline.contains(descriptor);
+                    obsGenusOnly = obsBaseline.contains(descriptor);
                 }
             }
-            tally.record(classNode != null, lcaRank, score, genusOnly);
+            // Both subsets are fixed by the unrefined run, so a read that scores zero here does so
+            // because of that run's assignment; on the refined pass the flag is looked up, not
+            // recomputed, and the gate-missed count is only meaningful for the unrefined variant.
+            tally.record(classNode != null, lcaRank, score, ungatedScore,
+                    genusOnly, obsGenusOnly, genusOnly && score == 0);
         } else if (classNode != null && inScope(taxTree.getNodeByTaxId(classNode.getTaxId()), scope)) {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();

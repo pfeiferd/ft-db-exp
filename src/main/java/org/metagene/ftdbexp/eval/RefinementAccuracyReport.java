@@ -107,10 +107,14 @@ public class RefinementAccuracyReport {
         // The unrefined run fills the baseline of reads it left at their genus, the refined one is
         // then measured on exactly those. Hence the order of Variant.values() matters here.
         GenusOnlyBaseline baseline = new GenusOnlyBaseline();
+        // The ground-truth-free substitute for that subset, fixed by the same run for the same
+        // reason: both variants must be scored on one and the same set of reads.
+        GenusOnlyBaseline obsBaseline = new GenusOnlyBaseline();
         for (Variant variant : Variant.values()) {
             System.out.println("Evaluating " + variant.getLabel() + " database " + db + " on " + fqMapFile);
             byVariant.put(variant, evaluator.evaluate(db, fqMapFile, variant.getMatchGoalKey(),
-                    variant.getLoadDbGoalKey(), scope, baseline, variant == Variant.UNREFINED));
+                    variant.getLoadDbGoalKey(), scope, baseline, obsBaseline,
+                    variant == Variant.UNREFINED));
         }
 
         if (!resultsDir.exists() && !resultsDir.mkdirs()) {
@@ -149,7 +153,15 @@ public class RefinementAccuracyReport {
         // Restricted to the reads the unrefined database left at their genus: the only ones a
         // refinement can improve on. The delta between the two variants of "genus only precision
         // species cand" is the gain where a gain was possible.
-        ps.println(";genus only;genus only score;genus only precision species cand;genus only species share;");
+        ps.print(";genus only;genus only score;genus only precision species cand;genus only species share");
+        // The ungated counterpart of the same measure -- the reciprocal candidate count without the
+        // test that the read's true species is still in question -- together with the observable
+        // substitute for the genus-only subset. Neither looks at the ground truth, so both can be
+        // obtained from a real fastq file; the columns are reported here so that the ratio between
+        // the gated and the ungated gain can be calibrated on data where the truth *is* known.
+        ps.println(";genus only ungated precision;genus only gate missed"
+                + ";obs genus only;obs genus only precision;obs genus only ungated precision"
+                + ";obs genus only also true;");
     }
 
     /**
@@ -196,6 +208,18 @@ public class RefinementAccuracyReport {
         ps.print(format(tally.getGenusOnlyPrecision()));
         ps.print(';');
         ps.print(format(tally.getGenusOnlySpeciesShare()));
+        ps.print(';');
+        ps.print(format(tally.getGenusOnlyUngatedPrecision()));
+        ps.print(';');
+        ps.print(tally.getGenusOnlyGateMissed());
+        ps.print(';');
+        ps.print(tally.getObsGenusOnlyTotal());
+        ps.print(';');
+        ps.print(format(tally.getObsGenusOnlyPrecision()));
+        ps.print(';');
+        ps.print(format(tally.getObsGenusOnlyUngatedPrecision()));
+        ps.print(';');
+        ps.print(tally.getObsGenusOnlyAlsoTrue());
         ps.println(';');
     }
 

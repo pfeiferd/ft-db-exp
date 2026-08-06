@@ -18,8 +18,10 @@
 #   sh ./bin/run_classification_exps.sh [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|all]
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
-#   part for every database, and `accuracy' and `all' evaluate all three error regimes of every
-#   InSilicoSeq project: Illumina, error-free and Nanopore-level per-base error.
+#   part for every database, and `accuracy' and `all' evaluate the two Illumina read sets and the
+#   error-free one of every InSilicoSeq project. The Nanopore regimes of make_fastqs.sh are not
+#   among them -- NanoSim covers that ground -- but ERROR_NANOPORE=1 or ERROR_NANOPORE_LONG=1 still
+#   scores them if the reads exist.
 #
 # Prerequisites:
 #   sh ./bin/install_tools.sh     installs InSilicoSeq, NanoSim and cgmemtime
@@ -52,6 +54,10 @@ run_iss() {
     mapname="${db}_sim_nanopore.txt"
     reportkey="iss_nanopore"
     what="InSilicoSeq reads at a Nanopore-level per-base error"
+  elif [ -n "${ERROR_NANOPORE_LONG:-}" ]; then
+    mapname="${db}_sim_nanoporelong.txt"
+    reportkey="iss_nanopore_long"
+    what="long InSilicoSeq reads at a Nanopore-level per-base error"
   else
     mapname="${db}_sim.txt"
     reportkey="iss"
@@ -66,19 +72,20 @@ run_iss() {
   mvn exec:exec@accuracy -Dname="$db" -Dfqmap="$mapname" -Dreportkey="$reportkey" -Dsimulator=ISS
 }
 
-# All three error regimes of a database -- Illumina, error-free and Nanopore-level per-base error.
-# See make_fastqs.sh for what each of them is for.
+# The read sets the paper reports: the two Illumina models and the error-free one.
+# See make_fastqs.sh for what each of them is for, and why the Nanopore ones are not included.
 run_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
   saved_nanopore=${ERROR_NANOPORE:-}
-  ERROR_FREE=""; ERROR_NANOPORE=""
+  saved_nanopore_long=${ERROR_NANOPORE_LONG:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
   run_iss "$1"
-  ERROR_FREE=1; ERROR_NANOPORE=""
+  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
   run_iss "$1"
-  ERROR_FREE=""; ERROR_NANOPORE=1
-  run_iss "$1"
+  # No Nanopore regimes here either, for the reason given in make_fastqs.sh: NanoSim replaces them.
   ERROR_FREE=$saved_error_free
   ERROR_NANOPORE=$saved_nanopore
+  ERROR_NANOPORE_LONG=$saved_nanopore_long
 }
 
 run_ticks() {

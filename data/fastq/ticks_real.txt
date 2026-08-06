@@ -18,19 +18,24 @@
 # *classifying* the real reads, as the first paper did, and leaves tick5 out because KrakenUniq hung
 # on it. This map declares all eight, since the simulation trains on each of them in turn.
 #
-# The URLs point at ENA rather than at NCBI's own fastq endpoint
-# (https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=<accession>), which serves the same
-# runs but is not reachable from every network -- from inside the sandbox it answers 403. ENA is an
-# INSDC mirror, so these are the identical SRA runs, and their read counts were checked against the
-# run metadata. Swapping in the NCBI form works too: Genestrip names the download after the key, not
-# after the URL, so the file names do not change.
+# The URLs are NCBI's own SRA fastq endpoint. It serves gzip, despite the URL not saying so, which is
+# what makes the .fastq.gz naming correct -- Genestrip assumes gzip by default (alwaysAssumeGzip) and
+# names the download after the key rather than the URL, so the file names do not depend on the form
+# of the URL at all. Two alternatives, should this host be unreachable from a given network:
+#
+#   www.be-md.ncbi.nlm.nih.gov   the same endpoint under NCBI's other host name; substitute it for
+#                                trace.ncbi.nlm.nih.gov below and nothing else changes
+#   ftp.sra.ebi.ac.uk            ENA, which mirrors the identical SRA runs as
+#                                https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/0NN/<acc>/<acc>_1.fastq.gz
+#                                where NN is the last two digits of the accession. Verified to serve
+#                                the correct read counts, but not reachable from every network.
 #
 # key   URL
-tick1 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/017/SRR17281117/SRR17281117_1.fastq.gz
-tick2 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/005/SRR17281105/SRR17281105_1.fastq.gz
-tick3 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/003/SRR17281103/SRR17281103_1.fastq.gz
-tick4 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/001/SRR17281101/SRR17281101_1.fastq.gz
-tick5 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/000/SRR17281100/SRR17281100_1.fastq.gz
-tick6 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/099/SRR17281099/SRR17281099_1.fastq.gz
-tick7 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/016/SRR17281116/SRR17281116_1.fastq.gz
-tick8 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/015/SRR17281115/SRR17281115_1.fastq.gz
+tick1 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281117
+tick2 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281105
+tick3 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281103
+tick4 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281101
+tick5 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281100
+tick6 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281099
+tick7 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281116
+tick8 https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=SRR17281115

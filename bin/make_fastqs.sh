@@ -21,9 +21,16 @@
 #   ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa      # Nanopore-level per-base error
 #   NANOPORE_ERROR_PCT=15 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa   # ... at 15 %
 #   NANOPORE_READ_LENGTH=1000 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa  # ... 1 kb reads
+#   ERROR_NANOPORE_LONG=1 sh ./bin/make_fastqs.sh protozoa # ... at 3,926 bp, 200k reads
 #
-# A single project follows ERROR_FREE; `all' ignores it and generates both read sets of every
-# InSilicoSeq project, since the paper reports them side by side.
+# A single project follows the error-regime variables; `all' ignores them and generates the two
+# Illumina sets and the error-free one of every InSilicoSeq project, which is what the paper reports.
+#
+# The two Nanopore regimes are kept but are NOT part of `all'. InSilicoSeq's `basic' model only
+# substitutes bases, whereas real Nanopore error is indel-heavy, so they never did more than
+# approximate long-read data -- NanoSim, trained on real Nanopore reads, is what the paper uses for
+# that. They remain available for a quick check of how the classification behaves at a high error
+# rate or a long read length, where training a NanoSim model would be disproportionate.
 #
 # ERROR_FREE uses InSilicoSeq's "perfect" mode, which fragments the genomes into reads of realistic
 # length but introduces no sequencing errors at all. The resulting figures are an upper bound: they
@@ -97,13 +104,17 @@ make_iss() {
   # The first Genestrip paper puts the per-base error of Nanopore devices at 5 % to 15 %; ten is
   # the middle of that range, and its worked example of 6 % lies within it too.
   nanopore_error=${NANOPORE_ERROR_PCT:-10}
-  # The same paper reports a mean read length of 3,926 bp for its NanoSim data, and this regime was
-  # first run that way. One million reads of that length are 7.9 Gbp, some thirty times the other
-  # regimes, which costs hours in generation and again in classification for a result that differs
-  # from the short-read one mainly in how *few* reads are left for a refinement to improve. The
-  # default is therefore the short read length, which isolates the error rate at a fraction of the
-  # cost; set NANOPORE_READ_LENGTH=3926 to reproduce the long-read variant.
+  # The short Nanopore regime keeps the read length of the Illumina sets, so that it isolates the
+  # error rate: comparing it against "HiSeq" varies the error and nothing else.
   nanopore_read_length=${NANOPORE_READ_LENGTH:-125}
+  # The long Nanopore regime is the other half of that pair -- it varies the read length at the same
+  # error rate. The first Genestrip paper reports a mean read length of 3,926 bp for its NanoSim
+  # data, which is what this reproduces. One million reads of that length would be 7.9 Gbp, some
+  # thirty times any other regime, and cost hours in generation and again in classification; the
+  # read count is therefore lowered instead, and 200,000 reads still amount to 785 Mbp, more data
+  # than any of the short-read sets.
+  nanopore_long_read_length=${NANOPORE_LONG_READ_LENGTH:-3926}
+  nanopore_long_n_reads=${NANOPORE_LONG_N_READS:-200k}
   mkdir -p "$workdir"
 
   # InSilicoSeq wants one uncompressed multi-FASTA. The concatenation is removed again at the end,
@@ -131,6 +142,9 @@ make_iss() {
   elif [ -n "${ERROR_NANOPORE:-}" ]; then
     models="nanopore"
     mapfile="${fastqdir}/${db}_sim_nanopore.txt"
+  elif [ -n "${ERROR_NANOPORE_LONG:-}" ]; then
+    models="nanoporelong"
+    mapfile="${fastqdir}/${db}_sim_nanoporelong.txt"
   else
     models="miseq hiseq"
     mapfile="${fastqdir}/${db}_sim.txt"
@@ -142,31 +156,61 @@ make_iss() {
       echo "SKIP  ${prefix}_R1.fastq.gz exists"
       continue
     fi
-    echo "=== ${db}: generating ${n_reads} ${model} reads ==="
+    # The long-read regime draws fewer reads, since each of them carries some thirty times the bases.
+    if [ "$model" = nanoporelong ]; then
+      model_reads=$nanopore_long_n_reads
+      model_read_length=$nanopore_long_read_length
+    else
+      model_reads=$n_reads
+      model_read_length=$nanopore_read_length
+    fi
+    echo "=== ${db}: generating ${model_reads} ${model} reads ==="
     if [ "$model" = perfect ]; then
       # No error model at all: the reads differ from the reference only by where they were cut.
-      "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$n_reads" \
+      "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$model_reads" \
         --cpus "$cpus" --compress --output "$prefix"
-    elif [ "$model" = nanopore ]; then
+    elif [ "$model" = nanopore ] || [ "$model" = nanoporelong ]; then
       # InSilicoSeq's `basic' model substitutes a base with probability 10^(-q/10), so a phred
       # value of q gives a uniform per-base error rate of choice; ISS_BASIC_PHRED is honoured by
       # the patch install_tools.sh applies. Note that these are substitutions only, whereas real
       # Nanopore error is indel-heavy -- what carries over is how many k-mers survive a read,
       # which is what the classification depends on.
       phred=$(awk -v e="$nanopore_error" 'BEGIN{printf "%d", -10*log(e/100)/log(10) + 0.5}')
-      echo "  per-base error ${nanopore_error} % -> phred ${phred}, read length ${nanopore_read_length} bp"
+      echo "  per-base error ${nanopore_error} % -> phred ${phred}, read length ${model_read_length} bp"
       # Records shorter than the read length are skipped by InSilicoSeq, so a long read length
       # restricts the simulation to the longer contigs of the extracted genomes.
-      ISS_BASIC_PHRED="$phred" ISS_BASIC_READ_LENGTH="$nanopore_read_length" \
+      ISS_BASIC_PHRED="$phred" ISS_BASIC_READ_LENGTH="$model_read_length" \
         "$iss" generate --genomes "$genomes" --mode basic \
-        --n_reads "$n_reads" --cpus "$cpus" --compress --output "$prefix"
+        --n_reads "$model_reads" --cpus "$cpus" --compress --output "$prefix"
     else
-      "$iss" generate --genomes "$genomes" --model "$model" --n_reads "$n_reads" \
+      "$iss" generate --genomes "$genomes" --model "$model" --n_reads "$model_reads" \
         --cpus "$cpus" --compress --output "$prefix"
     fi
     # None of InSilicoSeq's scratch output is part of the ground truth: the abundance table, the
     # per-thread VCFs and, when a run is interrupted, the partial fastq files it leaves behind.
     rm -f "${prefix}_abundance.txt" "${prefix}".iss.tmp.*
+
+    # InSilicoSeq silently skips every record shorter than the read length, so a long read length
+    # restricts the draw to the longer contigs and the run can fall far short of what was asked for
+    # -- for protozoa a request of 2,000 long reads yielded 180. Nothing downstream notices: the
+    # files are valid and the accuracy CSV simply rests on fewer reads. Report the shortfall, since
+    # a set an order of magnitude smaller than intended is a different experiment.
+    if [ -f "${prefix}_R1.fastq.gz" ]; then
+      actual=$(gunzip -c "${prefix}_R1.fastq.gz" | awk 'END{print NR/4}')
+      # The request may carry a k/M suffix, so normalise it before comparing.
+      wanted=$(printf '%s' "$model_reads" | awk '{
+        n=$0; f=1
+        if (n ~ /[kK]$/) { f=1000;    sub(/[kK]$/,"",n) }
+        else if (n ~ /[mM]$/) { f=1000000; sub(/[mM]$/,"",n) }
+        printf "%d", n*f }')
+      if [ "$wanted" -gt 0 ] && [ "$actual" -lt $((wanted / 2)) ]; then
+        echo "  WARNING: ${actual} reads generated, ${wanted} requested -- InSilicoSeq skipped every" >&2
+        echo "           record shorter than ${model_read_length} bp. Lower the read length or accept" >&2
+        echo "           the smaller set, but do not compare it read-for-read with the other regimes." >&2
+      else
+        echo "  ${actual} reads"
+      fi
+    fi
   done
 
   rm -f "$genomes"
@@ -199,14 +243,19 @@ make_iss() {
 make_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
   saved_nanopore=${ERROR_NANOPORE:-}
-  ERROR_FREE=""; ERROR_NANOPORE=""
+  saved_nanopore_long=${ERROR_NANOPORE_LONG:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
   make_iss "$1"
-  ERROR_FREE=1; ERROR_NANOPORE=""
+  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
   make_iss "$1"
-  ERROR_FREE=""; ERROR_NANOPORE=1
-  make_iss "$1"
+  # The two Nanopore regimes are deliberately NOT part of `all'. InSilicoSeq's `basic' model
+  # substitutes bases, whereas real Nanopore error is indel-heavy, so those sets only ever
+  # approximated long-read data -- and NanoSim, trained on real Nanopore reads, does the job
+  # properly. They cost hours to generate and to classify, so a full run no longer makes them.
+  # Ask for them explicitly with ERROR_NANOPORE=1 or ERROR_NANOPORE_LONG=1 if they are wanted.
   ERROR_FREE=$saved_error_free
   ERROR_NANOPORE=$saved_nanopore
+  ERROR_NANOPORE_LONG=$saved_nanopore_long
 }
 
 ############################## tick-borne / NanoSim ##############################
@@ -258,13 +307,29 @@ make_ticks() {
       ( cd "$basedir" && mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt )
     fi
   fi
+  # Presence is not enough. Genestrip names a download after its key and assumes gzip, so a host that
+  # answers with an error page, or serves the reads uncompressed, still leaves a plausible-looking
+  # tickN.fastq.gz behind. NanoSim would then train on garbage, or on nothing, without saying so.
+  # `gzip -t' reads the whole stream and settles both cases at once.
   absent=""
+  corrupt=""
   for sample in $samples; do
-    [ -s "${fastqdir}/${sample}.fastq.gz" ] || absent="${absent} ${sample}"
+    if [ ! -s "${fastqdir}/${sample}.fastq.gz" ]; then
+      absent="${absent} ${sample}"
+    elif ! gzip -t "${fastqdir}/${sample}.fastq.gz" 2>/dev/null; then
+      corrupt="${corrupt} ${sample}"
+    fi
   done
   if [ -n "$absent" ]; then
     echo "Missing real tick reads:${absent}" >&2
-    echo "Run 'sh ./bin/fetch_tick_reads.sh' first, or set SAMPLES to the ones actually present." >&2
+    echo "Fetch them with 'mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt'," >&2
+    echo "or set SAMPLES to the ones actually present." >&2
+    exit 1
+  fi
+  if [ -n "$corrupt" ]; then
+    echo "Not a valid gzip stream:${corrupt}" >&2
+    echo "The download host probably served an error page or uncompressed data. Delete those files" >&2
+    echo "and try another host -- data/fastq/ticks_real.txt lists the alternatives." >&2
     exit 1
   fi
 

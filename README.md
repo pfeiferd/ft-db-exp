@@ -104,6 +104,34 @@ For `viral`, InSilicoSeq applies its Illumina "MiSeq" and "HiSeq" error models t
 of the category "Viral", one million reads each as in the first paper. `N_READS=10k` produces a much
 smaller set for a quick smoke test.
 
+`all` generates the two Illumina sets and the error-free one of every InSilicoSeq project, which is
+what the paper reports. "MiSeq" and "HiSeq" differ in read length *and* error profile at once, so the
+error-free set is what separates the two effects: it keeps the read length and drops the errors.
+
+```sh
+sh ./bin/make_fastqs.sh protozoa                          # MiSeq (301 bp) and HiSeq (126 bp)
+ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa             # "perfect": same length, no errors
+```
+
+Two further regimes exist but are **not** part of `all`, and the paper no longer reports them:
+
+```sh
+ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa         # 10 % per-base error, 125 bp
+ERROR_NANOPORE_LONG=1 sh ./bin/make_fastqs.sh protozoa    # 10 % per-base error, 3,926 bp
+```
+
+InSilicoSeq's `basic` model only substitutes bases, whereas real Nanopore error is indel-heavy, so
+these never did more than approximate long-read data -- NanoSim, trained on real Nanopore reads, is
+what covers that ground. They are kept for a quick check of how the classification behaves at a high
+error rate or a long read length, where training a NanoSim model would be disproportionate, and they
+cost hours to generate and to classify, which is why a full run no longer makes them.
+
+Each regime writes its own fastq mapping file, so they never clobber one another. Note that
+InSilicoSeq skips every input record shorter than the read length, so the long regime draws only from
+the longer contigs and can fall well short of the requested count -- for `protozoa` a request of
+2,000 yielded 196. The script reports the shortfall when the result is less than half of what was
+asked for.
+
 For `tick-borne`, NanoSim trains an error model on the real Nanopore reads of a tick sample and
 applies it to the RefSeq genomes of the twelve tick-borne genera -- one simulated fastq file per
 real one, for all eight ticks of the first paper. This needs two things beforehand.
@@ -122,9 +150,13 @@ place and verifies an MD5 where the map states one, so the command is safe to re
 `make_fastqs.sh tick-borne` runs it itself for whatever is missing; set `SKIP_FETCH=1` to suppress
 that, e.g. when the reads were copied over from another machine.
 
-The map points at ENA rather than at NCBI's own fastq endpoint, which serves the same runs but is
-not reachable from every network. Either form works -- Genestrip names the download after the key,
-not after the URL -- and `ticks_real.txt` states the accessions and the alternative URL form.
+The map points at NCBI's own SRA fastq endpoint. It serves gzip even though the URL does not say
+so, which is what makes the `.fastq.gz` naming correct. If that host is unreachable from your
+network, `ticks_real.txt` lists two alternatives (NCBI's other host name, and ENA, which mirrors the
+identical runs); switching is a search-and-replace on the URLs, since Genestrip names the download
+after the map key rather than after the URL. `make_fastqs.sh tick-borne` verifies every file with
+`gzip -t` before starting, so a host that answers with an error page or with uncompressed data fails
+immediately instead of feeding NanoSim garbage.
 
 And the genome list
 
@@ -156,6 +188,17 @@ narrows the species down without reaching a single one.
 The column `unresolved` counts reads whose ground truth could not be recovered from their name. It
 should be small; a large value means the read identifiers do not fit the accession map, and the
 remaining figures then rest on a fraction of the data.
+
+The last six columns serve the ground-truth-free estimate of the paper's Section "Estimating the
+gain without ground truth". `obs genus only ungated precision` is the one measure of the whole file
+that never consults the ground truth: it averages the reciprocal number of candidate species over
+the reads the unrefined database left at a genus, without testing whether the read's true species is
+among them. Its delta between the two variants is the *specificity* gain, an upper bound on the
+precision gain, and the quotient of the two -- computable only here, where the truth is known -- is
+the calibration factor the paper calls rho_d. `obs genus only also true` divided by `obs genus only`
+says how faithfully the observable subset reproduces the real one; it is essentially 1 on simulated
+reads and cannot be expected to be on a real sample. `genus only gate missed` counts the reads that
+make rho_d fall short of one.
 
 ## 5. Machine description
 

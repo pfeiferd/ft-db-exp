@@ -28,6 +28,12 @@ public final class AccuracyTally {
     private long genusOnlyTotal;
     private double genusOnlyScore;
     private long genusOnlyCorrectSpecies;
+    private double genusOnlyUngatedScore;
+    private long genusOnlyGateMissed;
+    private long obsGenusOnlyTotal;
+    private double obsGenusOnlyScore;
+    private double obsGenusOnlyUngatedScore;
+    private long obsGenusOnlyAlsoTrue;
 
     /**
      * Records a read whose ground truth could not be resolved.
@@ -57,25 +63,50 @@ public final class AccuracyTally {
      *                     true species; see {@link SpeciesCandidates}
      */
     public void record(boolean classified, Rank lcaRank, double speciesScore) {
-        record(classified, lcaRank, speciesScore, false);
+        record(classified, lcaRank, speciesScore, speciesScore, false, false, false);
     }
 
     /**
      * Records a read, additionally noting whether it belongs to the subset of reads the unrefined
      * database left at their genus -- the only reads a refinement can improve on at all.
+     * <p>
+     * Two of the parameters exist for the ground-truth-free estimate. {@code ungatedSpeciesScore} is
+     * the same reciprocal candidate count as {@code speciesScore} but <em>without</em> the test that
+     * the read's true species is still in question at the assigned node: it states how far the
+     * classification narrows the species down, not how far it narrows them down correctly, and it is
+     * therefore computable on a fastq file whose ground truth is unknown. {@code obsGenusOnly} is
+     * the corresponding substitute for the genus-only subset -- the unrefined database assigned the
+     * read to a node at genus rank, whether or not that genus is the right one.
      *
-     * @param classified   whether the analysis assigned a taxon to the read
-     * @param lcaRank      the rank the read's true and assigned taxon agree at, may be {@code null}
-     * @param speciesScore the read's candidate-weighted species score
-     * @param genusOnly    whether the read is in the genus-only subset
+     * @param classified          whether the analysis assigned a taxon to the read
+     * @param lcaRank             the rank the read's true and assigned taxon agree at, may be {@code null}
+     * @param speciesScore        the read's candidate-weighted species score
+     * @param ungatedSpeciesScore the same score without the correctness test
+     * @param genusOnly           whether the read is in the genus-only subset
+     * @param obsGenusOnly        whether the read is in the observable substitute for that subset
+     * @param gateMissed          whether the read is in the genus-only subset yet scores zero, i.e.
+     *                            the unrefined assignment says nothing about its true species
      */
-    public void record(boolean classified, Rank lcaRank, double speciesScore, boolean genusOnly) {
+    public void record(boolean classified, Rank lcaRank, double speciesScore, double ungatedSpeciesScore,
+                       boolean genusOnly, boolean obsGenusOnly, boolean gateMissed) {
         total++;
         if (genusOnly) {
             genusOnlyTotal++;
             genusOnlyScore += speciesScore;
+            genusOnlyUngatedScore += ungatedSpeciesScore;
+            if (gateMissed) {
+                genusOnlyGateMissed++;
+            }
             if (lcaRank != null && (Rank.SPECIES.equals(lcaRank) || lcaRank.isBelow(Rank.SPECIES))) {
                 genusOnlyCorrectSpecies++;
+            }
+        }
+        if (obsGenusOnly) {
+            obsGenusOnlyTotal++;
+            obsGenusOnlyScore += speciesScore;
+            obsGenusOnlyUngatedScore += ungatedSpeciesScore;
+            if (genusOnly) {
+                obsGenusOnlyAlsoTrue++;
             }
         }
         if (!classified) {
@@ -243,6 +274,73 @@ public final class AccuracyTally {
     }
 
     /**
+     * Returns the ungated counterpart of {@link #getGenusOnlyPrecision()}: the mean over the
+     * genus-only subset of the reciprocal number of species a classification leaves in question,
+     * regardless of whether the read's true species is among them.
+     *
+     * @return the mean ungated score over the subset, or {@code NaN} if the subset is empty
+     */
+    public double getGenusOnlyUngatedPrecision() {
+        return genusOnlyTotal == 0 ? Double.NaN : genusOnlyUngatedScore / genusOnlyTotal;
+    }
+
+    /**
+     * Returns how many reads of the genus-only subset score zero, i.e. how many of them the
+     * unrefined database assigned to a node that does not leave their true species in question at
+     * all. Such a read is in the subset because its assignment agrees with its true taxon down to
+     * the genus and no further, which also admits an assignment to a <em>sibling</em> species of the
+     * right genus. Those are the reads for which the gated and the ungated measure disagree already
+     * before any refinement, and hence the ones that limit how far the ungated measure can bound the
+     * gated one.
+     *
+     * @return the number of such reads
+     */
+    public long getGenusOnlyGateMissed() {
+        return genusOnlyGateMissed;
+    }
+
+    /**
+     * Returns the size of the observable substitute for the genus-only subset, i.e. the reads the
+     * unrefined database assigned to a node at genus rank. Unlike the genus-only subset itself this
+     * needs no ground truth and can therefore be formed on a real fastq file.
+     *
+     * @return the number of reads in the substitute subset
+     */
+    public long getObsGenusOnlyTotal() {
+        return obsGenusOnlyTotal;
+    }
+
+    /**
+     * Returns the mean gated score over the observable substitute subset.
+     *
+     * @return the mean, or {@code NaN} if the subset is empty
+     */
+    public double getObsGenusOnlyPrecision() {
+        return obsGenusOnlyTotal == 0 ? Double.NaN : obsGenusOnlyScore / obsGenusOnlyTotal;
+    }
+
+    /**
+     * Returns the mean ungated score over the observable substitute subset. This is the one quantity
+     * of this class that a run on a fastq file without ground truth can produce.
+     *
+     * @return the mean, or {@code NaN} if the subset is empty
+     */
+    public double getObsGenusOnlyUngatedPrecision() {
+        return obsGenusOnlyTotal == 0 ? Double.NaN : obsGenusOnlyUngatedScore / obsGenusOnlyTotal;
+    }
+
+    /**
+     * Returns how many reads of the observable substitute subset also belong to the genus-only
+     * subset proper. The quotient with {@link #getObsGenusOnlyTotal()} states how faithful the
+     * substitute is for the data at hand.
+     *
+     * @return the number of reads in both subsets
+     */
+    public long getObsGenusOnlyAlsoTrue() {
+        return obsGenusOnlyAlsoTrue;
+    }
+
+    /**
      * Returns the number of reads the classifier assigned a taxon to.
      *
      * @return the number of classified reads
@@ -289,6 +387,12 @@ public final class AccuracyTally {
         copy.genusOnlyTotal = genusOnlyTotal;
         copy.genusOnlyScore = genusOnlyScore;
         copy.genusOnlyCorrectSpecies = genusOnlyCorrectSpecies;
+        copy.genusOnlyUngatedScore = genusOnlyUngatedScore;
+        copy.genusOnlyGateMissed = genusOnlyGateMissed;
+        copy.obsGenusOnlyTotal = obsGenusOnlyTotal;
+        copy.obsGenusOnlyScore = obsGenusOnlyScore;
+        copy.obsGenusOnlyUngatedScore = obsGenusOnlyUngatedScore;
+        copy.obsGenusOnlyAlsoTrue = obsGenusOnlyAlsoTrue;
         return copy;
     }
 
@@ -306,6 +410,12 @@ public final class AccuracyTally {
         genusOnlyTotal = 0;
         genusOnlyScore = 0;
         genusOnlyCorrectSpecies = 0;
+        genusOnlyUngatedScore = 0;
+        genusOnlyGateMissed = 0;
+        obsGenusOnlyTotal = 0;
+        obsGenusOnlyScore = 0;
+        obsGenusOnlyUngatedScore = 0;
+        obsGenusOnlyAlsoTrue = 0;
     }
 
     @Override
