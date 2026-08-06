@@ -85,6 +85,14 @@ under `data/projects`, measures the generation performance, and computes the int
 measures -- node precision and subtree precision -- along with the tree figures. All resulting CSV,
 SVG and LaTeX files are collected in `./results`.
 
+Several projects list the human genome in their `additional.txt`, `viral` among them since `cv` is
+applied to human saliva. The taxid there tells the LCA update whose genome the file is; it must
+**not** also appear in `taxids.txt`, or the database would store the human genome rather than merely
+account for it. Without that entry every *k*-mer a virus shares with the human genome -- endogenous
+retroviral sequence, integrated herpesvirus, host contamination in the viral assemblies -- stays
+stored under its virus and turns human reads into viral hits, which on a saliva sample is most of
+the data. The file itself is declared once in `data/common/fasta/downloads.txt` and shared.
+
 Individual steps can be run on their own, e.g. only the two databases of one project:
 
 ```sh
@@ -146,7 +154,9 @@ mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt
 
 `-ll` puts them in the common fastq directory, `data/fastq`, named after their key in the map:
 `tick1.fastq.gz` .. `tick8.fastq.gz`, about 3.2 GB in total. Genestrip skips whatever is already in
-place and verifies an MD5 where the map states one, so the command is safe to repeat.
+place, so the command is safe to repeat. A fastq map has no checksum column, though -- that exists
+only on the genome side, in `common/fasta/downloads.txt` -- so nothing verifies what a host actually
+sent, which is why `make_fastqs.sh tick-borne` runs `gzip -t` over the files before using them.
 `make_fastqs.sh tick-borne` runs it itself for whatever is missing; set `SKIP_FETCH=1` to suppress
 that, e.g. when the reads were copied over from another machine.
 

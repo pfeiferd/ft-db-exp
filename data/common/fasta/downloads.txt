@@ -1,4 +1,35 @@
-GCA_000001405.29_GRCh38.p14_genomic.fna.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.29_GRCh38.p14/GCA_000001405.29_GRCh38.p14_genomic.fna.gz
-#22907ad69ddfae66071bf9cf99b3e8de
-GCF_016920785.2_ASM1692078v2_genomic.fna.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/016/920/785/GCF_016920785.2_ASM1692078v2/GCF_016920785.2_ASM1692078v2_genomic.fna.gz
-#fbf305ffa378d5e9221533303c0fb7ad
+# Genomes downloaded once and shared across projects.
+#
+# A project asks for one of these by putting a line
+#
+#   <taxid> <file name>
+#
+# into its own additional.txt. If the file is found in neither the project's fasta directory nor
+# this one, Genestrip's goal `adddownloads' fetches it from the URL below and stores it here, so
+# that several projects share one copy instead of each downloading its own. The line format is
+#
+#   <file name> <URL> [<md5>]
+#
+# and the optional MD5 is verified after the download and on every later run -- a file that does not
+# match is fetched again. The values below were taken from NCBI's own md5checksums.txt in the
+# respective assembly directory on 2026-08-06 and, for the human genome, additionally checked
+# against the copy already present here.
+#
+# Beware that NCBI re-releases an assembly under the same accession from time to time, which changes
+# the checksum: the value previously recorded for the human genome, 22907ad69ddfae66071bf9cf99b3e8de,
+# no longer matches what that URL serves. Should a download start failing verification, compare
+# against md5checksums.txt in the assembly directory before assuming the file is corrupt.
+#
+# The genomes are declared to the LCA update rather than stored: their taxid must NOT appear in a
+# project's taxids.txt, or the database would keep their k-mers instead of merely using them to
+# recognise which of its own k-mers are unspecific.
+
+# Homo sapiens (taxid 9606), GRCh38.p14. Requested by every project whose reads come from a human
+# sample -- viral (human saliva), protozoa, gut-protozoa, parasites, borrelia, tick-borne -- where
+# host DNA is the bulk of the data and would otherwise produce false positives.
+GCA_000001405.29_GRCh38.p14_genomic.fna.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.29_GRCh38.p14/GCA_000001405.29_GRCh38.p14_genomic.fna.gz 81800f793d1803a1d5e529a5e7ba7050
+
+# Ixodes scapularis (taxid 6945, the blacklegged tick), ASM1692078v2. Requested by tick-borne, whose
+# reads are sequenced from whole ticks, so that the vector's own DNA is accounted for in the same way
+# as the host's.
+GCF_016920785.2_ASM1692078v2_genomic.fna.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/016/920/785/GCF_016920785.2_ASM1692078v2/GCF_016920785.2_ASM1692078v2_genomic.fna.gz fbf305ffa378d5e9221533303c0fb7ad

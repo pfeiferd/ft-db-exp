@@ -172,9 +172,11 @@
 						     own goal `fastqdownload'. -ll stores them in the common fastq directory
 						     (data/fastq) rather than per project, named after their key in the map,
 						     so several projects share one copy. Genestrip skips whatever is already
-						     in place and verifies an MD5 where the map states one, which is why this
-						     needs no download script of its own. A download needs no heap to speak
-						     of, hence the small -Xmx. -->
+						     in place, which is why this needs no download script of its own. Note that
+						     a fastq map has no checksum column (that exists only on the genome side, in
+						     common/fasta/downloads.txt), so nothing verifies the content here;
+						     make_fastqs.sh runs gzip -t over the result for that reason. A download
+						     needs no heap to speak of, hence the small -Xmx. -->
 						<id>fastqdl</id>
 						<goals>
 							<goal>exec</goal>

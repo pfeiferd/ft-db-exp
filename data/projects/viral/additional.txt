@@ -1,0 +1,18 @@
+# The human genome, so that the LCA update sees it.
+#
+# `cv' is applied to human saliva (data/fastq/saliva_real.txt), where human DNA is the bulk of the
+# sample. Genestrip's LCA update only pushes a k-mer above a viral taxon if it knows of another
+# organism carrying it, and the category `viral' of categories.txt does not include the host. Without
+# this entry every k-mer a virus shares with the human genome -- endogenous retroviral sequence,
+# integrated herpesvirus, and whatever host contamination the viral assemblies carry -- stays stored
+# under its virus and turns human reads into viral hits.
+#
+# 9606 must NOT appear in taxids.txt: the taxid here declares whose genome the file is, so that the
+# LCA update can account for it, not that the database should store its k-mers. Listing it there too
+# would put the whole human genome into the database.
+#
+# The file itself is declared in common/fasta/downloads.txt and is shared with the other projects
+# that need it, so it is downloaded once rather than per project.
+#
+# taxid  file
+9606 GCA_000001405.29_GRCh38.p14_genomic.fna.gz

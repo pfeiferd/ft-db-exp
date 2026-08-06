@@ -280,6 +280,14 @@ make_ticks() {
     echo "Create it with: mvn exec:exec@nanosimlist -Dname=tick-borne" >&2
     exit 1
   fi
+  # NanoSim runs from $nswork below and resolves the paths in the list against *its* working
+  # directory, so they have to be absolute. Lists written before that was fixed hold paths relative
+  # to the project root, and NanoSim then dies with a FileNotFoundError on a file that is plainly
+  # there. Regenerate rather than fail: the list is derived from the extracted fasta files anyway.
+  if grep -qv '^[^	]*	/' "$genomes" 2>/dev/null; then
+    echo "=== ${genomes} holds relative paths - regenerating ==="
+    ( cd "$basedir" && mvn exec:exec@nanosimlist -Dname=tick-borne )
+  fi
 
   nswork="${basedir}/tools/work-nanosim"
   mkdir -p "$nswork"

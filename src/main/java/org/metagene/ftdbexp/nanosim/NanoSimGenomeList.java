@@ -32,6 +32,11 @@ import java.nio.charset.StandardCharsets;
  * the accompanying CSV of the goal {@code extractrefseqcsv}. Note that NanoSim does not accept
  * gzipped fasta files.
  * <p>
+ * The paths are written out absolute, since NanoSim resolves them against whatever working directory
+ * it happens to run in rather than against the location of this list. That makes the list valid only
+ * on the machine that wrote it, which is harmless: it is regenerated from the extracted fasta files
+ * whenever those are, and it is not a file anybody carries between machines.
+ * <p>
  * Very small fasta files are left out: NanoSim cannot draw reads of a realistic length from them and
  * they slow the simulation down disproportionately. Unlike the original experiment, which dropped
  * them silently, this class reports how many entries it skipped -- a genome missing from the list
@@ -113,7 +118,13 @@ public class NanoSimGenomeList {
                     out.print('x');
                     out.print(index);
                     out.print('\t');
-                    out.print(fasta.getPath());
+                    // Absolute, deliberately. NanoSim resolves these paths against its own working
+                    // directory, and make_fastqs.sh runs it from tools/work-nanosim so that the
+                    // training and simulation files it litters the working directory with stay out
+                    // of the project. A relative path -- which is what the base directory ./data
+                    // yields -- then points at nothing and read_analysis.py dies with a
+                    // FileNotFoundError on a file that is plainly there.
+                    out.print(fasta.getAbsolutePath());
                     out.println();
                     written++;
                 }
