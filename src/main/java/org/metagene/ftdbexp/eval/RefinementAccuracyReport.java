@@ -132,8 +132,100 @@ public class RefinementAccuracyReport {
                 }
             }
         }
+        writeSummary(db, reportKey, byVariant);
         System.out.println("Wrote " + file);
         return file;
+    }
+
+    /**
+     * Writes {@code <db>_<report key>_summary.csv}: one row per fastq key, shaped so that the
+     * paper's table can include it with {@code \csvreader} and nothing has to be copied by hand.
+     * <p>
+     * The detailed CSV beside it carries one row per database variant, which is the right shape for
+     * the measurements but the wrong one for a table: the quantities the paper reports --- the gain
+     * {@code delta}, its ground-truth-free counterpart {@code delta'} and their ratio {@code rho} ---
+     * are differences and a quotient <em>between</em> those rows. LaTeX is poor at arithmetic across
+     * rows, so they are computed here instead.
+     *
+     * @param db        the name of the database project
+     * @param reportKey the report key, used in the file name
+     * @param byVariant the tallies of both variants, keyed by fastq key
+     * @throws IOException if the file cannot be written
+     */
+    private void writeSummary(String db, String reportKey,
+                              Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
+        File file = new File(resultsDir, db + "_" + reportKey + "_summary.csv");
+        try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
+            ps.println("db;model;reads;classified;obs genus only;obs genus only share"
+                    + ";prec g u;prec g f;delta;prec g ungated u;prec g ungated f;delta ungated;rho;");
+            for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
+                AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
+                AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
+                if (u == null || f == null) {
+                    continue;
+                }
+                double pu = u.getObsGenusOnlyPrecision();
+                double pf = f.getObsGenusOnlyPrecision();
+                double gu = u.getObsGenusOnlyUngatedPrecision();
+                double gf = f.getObsGenusOnlyUngatedPrecision();
+                double delta = pf - pu;
+                double deltaUngated = gf - gu;
+                ps.print(db);
+                ps.print(';');
+                ps.print(displayModel(fastqKey));
+                ps.print(';');
+                ps.print(u.getTotal());
+                ps.print(';');
+                ps.print(u.getClassified());
+                ps.print(';');
+                ps.print(u.getObsGenusOnlyTotal());
+                ps.print(';');
+                ps.print(format(u.getTotal() == 0 ? Double.NaN
+                        : 100.0 * u.getObsGenusOnlyTotal() / u.getTotal()));
+                ps.print(';');
+                ps.print(format(pu));
+                ps.print(';');
+                ps.print(format(pf));
+                ps.print(';');
+                ps.print(format(delta));
+                ps.print(';');
+                ps.print(format(gu));
+                ps.print(';');
+                ps.print(format(gf));
+                ps.print(';');
+                ps.print(format(deltaUngated));
+                ps.print(';');
+                ps.print(format(deltaUngated == 0 ? Double.NaN : delta / deltaUngated));
+                ps.println(';');
+            }
+        }
+        System.out.println("Wrote " + file);
+    }
+
+    /**
+     * Turns a fastq key into the label the paper prints for it, so that the CSV can be included
+     * without a mapping on the LaTeX side.
+     *
+     * @param fastqKey the key as it appears in the fastq mapping file
+     * @return the label to print
+     */
+    private static String displayModel(String fastqKey) {
+        if ("iss_miseq".equals(fastqKey)) {
+            return "MiSeq";
+        }
+        if ("iss_hiseq".equals(fastqKey)) {
+            return "HiSeq";
+        }
+        if ("iss_perfect".equals(fastqKey)) {
+            return "error-free";
+        }
+        if ("iss_nanopore".equals(fastqKey)) {
+            return "Nanopore";
+        }
+        if ("nanosim".equals(fastqKey) || fastqKey.startsWith("tick")) {
+            return "NanoSim";
+        }
+        return fastqKey;
     }
 
     /**
