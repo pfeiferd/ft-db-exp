@@ -13,6 +13,9 @@
 /data/fastq/*
 # The accession list of the real Nanopore tick runs is input, not generated.
 !/data/fastq/seventicks.txt
+# So is the map that declares those runs by URL for the goal `fastqdownload'. It holds URLs rather
+# than absolute paths, so unlike the generated maps above it is valid on any machine.
+!/data/fastq/ticks_real.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*

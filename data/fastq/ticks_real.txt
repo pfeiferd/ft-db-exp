@@ -1,0 +1,36 @@
+# The eight real Nanopore tick runs NanoSim trains its error model on, from SRA study PRJNA790938 --
+# the tick surveillance work the first Genestrip paper builds on. Ticks 1 to 4 are that study's
+# "NASenrich" runs, ticks 5 to 8 its "NASdeplete" ones; its "control" and Illumina "16S" runs of the
+# same ticks are deliberately not listed here.
+#
+# This is an ordinary Genestrip fastq map, so the goal `fastqdownload' fetches every entry whose
+# second column is a URL. With -ll the files land in the common fastq directory, i.e. data/fastq,
+# named after their key: data/fastq/tick1.fastq.gz .. tick8.fastq.gz. That is exactly what
+# make_fastqs.sh expects, and it is the same name the map would refer to if the files were local, so
+# nothing downstream has to know where they came from.
+#
+#   mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt
+#
+# make_fastqs.sh tick-borne runs that itself for whatever is missing. Genestrip skips a file that is
+# already in place, so it is safe to repeat; about 3.2 GB in total.
+#
+# Not to be confused with seventicks.txt beside it, which maps the same runs to their local files for
+# *classifying* the real reads, as the first paper did, and leaves tick5 out because KrakenUniq hung
+# on it. This map declares all eight, since the simulation trains on each of them in turn.
+#
+# The URLs point at ENA rather than at NCBI's own fastq endpoint
+# (https://trace.ncbi.nlm.nih.gov/Traces/sra-reads-be/fastq?acc=<accession>), which serves the same
+# runs but is not reachable from every network -- from inside the sandbox it answers 403. ENA is an
+# INSDC mirror, so these are the identical SRA runs, and their read counts were checked against the
+# run metadata. Swapping in the NCBI form works too: Genestrip names the download after the key, not
+# after the URL, so the file names do not change.
+#
+# key   URL
+tick1 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/017/SRR17281117/SRR17281117_1.fastq.gz
+tick2 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/005/SRR17281105/SRR17281105_1.fastq.gz
+tick3 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/003/SRR17281103/SRR17281103_1.fastq.gz
+tick4 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/001/SRR17281101/SRR17281101_1.fastq.gz
+tick5 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/000/SRR17281100/SRR17281100_1.fastq.gz
+tick6 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/099/SRR17281099/SRR17281099_1.fastq.gz
+tick7 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/016/SRR17281116/SRR17281116_1.fastq.gz
+tick8 https://ftp.sra.ebi.ac.uk/vol1/fastq/SRR172/015/SRR17281115/SRR17281115_1.fastq.gz
