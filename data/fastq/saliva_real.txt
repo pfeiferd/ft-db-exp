@@ -1,0 +1,33 @@
+# The human saliva runs of the first Genestrip paper (its Table "errorsviral"): DNA sequencing of
+# saliva from different donors, downloaded from the SRA. They are the real data without ground truth
+# that `cv', the complete viral database, is applied to, exactly as in that paper.
+#
+# Unlike ticks_real.txt this map holds no URLs. These runs are paired, so each arrives as two files
+# that have to be read under one key, and at 100+ GB per run a download needs to be resumable and
+# checksum-verified. That is what sra-tools does, so the files are fetched separately:
+#
+#   sh ./bin/fetch_saliva.sh                  # the three runs -- see that script's volume warning
+#   sh ./bin/fetch_saliva.sh SRR5571991       # a single run
+#
+# and this map refers to the result by name, resolved against data/fastq as usual. The names are the
+# accessions, as in the original genestrip-db-exp project, so runs already fetched there are reused.
+#
+# That paper lists five runs; its project fetched only the three below through sra-tools and left
+# ERR1395613 (#2) and ERR1395610 (#4) commented out. The same choice is made here. Both mates of a
+# run share its key, so Genestrip analyses them together -- the convention the generated maps of
+# make_fastqs.sh use for the simulated paired-end sets too.
+#
+#   key         #    read pairs      bases
+#   SRR5571991  3    980,879,835     198 Gbp   <- reported in detail by the first paper
+#   SRR5571990  5    605,561,636     122 Gbp
+#   SRR5571985  1    812,085,208     164 Gbp
+#
+# Comment out the runs not wanted for a given analysis; there is no SAMPLES variable on this side.
+#
+# key        file
+SRR5571991 SRR5571991_1.fastq.gz
+SRR5571991 SRR5571991_2.fastq.gz
+SRR5571990 SRR5571990_1.fastq.gz
+SRR5571990 SRR5571990_2.fastq.gz
+SRR5571985 SRR5571985_1.fastq.gz
+SRR5571985 SRR5571985_2.fastq.gz
