@@ -1,0 +1,8 @@
+# A single simulated tick sample, for evaluating one file rather than the whole set.
+#
+# ticks_sim.txt is the full map that make_fastqs.sh writes once all samples are simulated. This one
+# exists so that tick1 can be scored on its own, before the rest are generated or transferred.
+#
+# The key is the sample name, as in the full map, so the row in the resulting CSV is directly
+# comparable with a later run over all of them.
+tick1 tick1_sim.fastq
