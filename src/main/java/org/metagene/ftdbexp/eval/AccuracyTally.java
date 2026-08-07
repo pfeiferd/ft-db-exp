@@ -25,15 +25,21 @@ public final class AccuracyTally {
     private long unresolved;
     private long total;
     private double speciesCandidateScore;
+    // The genus-only subset and the two sums taken over it. The subset is the same for both: what
+    // separates the gated from the ungated measure is only which count is summed, q or q'. Keeping
+    // one denominator is what makes the two comparable, and the difference between the numerators
+    // is the whole of the distinction.
+    // Two subsets, because the two measures answer questions of different kinds. The gated one is a
+    // precision and is therefore taken over the positives -- the reads the unrefined database placed
+    // correctly at a genus, which is governed by sigma(r). The ungated one has to be formable on a
+    // sample that supplies no sigma(r) at all, so it is taken over the observable approximation of
+    // that subset: the reads the database placed no further than a genus, right or wrong.
     private long genusOnlyTotal;
     private double genusOnlyScore;
     private long genusOnlyCorrectSpecies;
-    private double genusOnlyUngatedScore;
-    private long genusOnlyGateMissed;
+    private long genusOnlyZeroScoring;
     private long obsGenusOnlyTotal;
-    private double obsGenusOnlyScore;
     private double obsGenusOnlyUngatedScore;
-    private long obsGenusOnlyAlsoTrue;
 
     /**
      * Records a read whose ground truth could not be resolved.
@@ -63,7 +69,7 @@ public final class AccuracyTally {
      *                     true species; see {@link SpeciesCandidates}
      */
     public void record(boolean classified, Rank lcaRank, double speciesScore) {
-        record(classified, lcaRank, speciesScore, speciesScore, false, false, false);
+        record(classified, lcaRank, speciesScore, speciesScore, false, false);
     }
 
     /**
@@ -82,31 +88,24 @@ public final class AccuracyTally {
      * @param lcaRank             the rank the read's true and assigned taxon agree at, may be {@code null}
      * @param speciesScore        the read's candidate-weighted species score
      * @param ungatedSpeciesScore the same score without the correctness test
-     * @param genusOnly           whether the read is in the genus-only subset
-     * @param obsGenusOnly        whether the read is in the observable substitute for that subset
-     * @param gateMissed          whether the read is in the genus-only subset yet scores zero, i.e.
-     *                            the unrefined assignment says nothing about its true species
+     * @param genusOnly           whether the read is in the genus-only subset $R_g$
+     * @param obsGenusOnly        whether it is in the observable subset the ungated measure uses
      */
     public void record(boolean classified, Rank lcaRank, double speciesScore, double ungatedSpeciesScore,
-                       boolean genusOnly, boolean obsGenusOnly, boolean gateMissed) {
+                       boolean genusOnly, boolean obsGenusOnly) {
         total++;
+        if (obsGenusOnly) {
+            obsGenusOnlyTotal++;
+            obsGenusOnlyUngatedScore += ungatedSpeciesScore;
+        }
         if (genusOnly) {
             genusOnlyTotal++;
             genusOnlyScore += speciesScore;
-            genusOnlyUngatedScore += ungatedSpeciesScore;
-            if (gateMissed) {
-                genusOnlyGateMissed++;
+            if (speciesScore == 0) {
+                genusOnlyZeroScoring++;
             }
             if (lcaRank != null && (Rank.SPECIES.equals(lcaRank) || lcaRank.isBelow(Rank.SPECIES))) {
                 genusOnlyCorrectSpecies++;
-            }
-        }
-        if (obsGenusOnly) {
-            obsGenusOnlyTotal++;
-            obsGenusOnlyScore += speciesScore;
-            obsGenusOnlyUngatedScore += ungatedSpeciesScore;
-            if (genusOnly) {
-                obsGenusOnlyAlsoTrue++;
             }
         }
         if (!classified) {
@@ -139,8 +138,8 @@ public final class AccuracyTally {
      *
      * @param classified          whether the analysis assigned a taxon to the read
      * @param ungatedSpeciesScore the reciprocal number of species the assignment leaves in question
-     * @param obsGenusOnly        whether the unrefined database assigned the read to a node at genus
-     *                            rank, i.e. whether it belongs to the observable subset
+     * @param genusOnly           whether the unrefined database left the read at a genus, i.e.
+     *                            whether it belongs to the genus-only subset
      */
     public void recordWithoutGroundTruth(boolean classified, double ungatedSpeciesScore, boolean obsGenusOnly) {
         total++;
@@ -299,70 +298,36 @@ public final class AccuracyTally {
     }
 
     /**
-     * Returns the ungated counterpart of {@link #getGenusOnlyPrecision()}: the mean over the
-     * genus-only subset of the reciprocal number of species a classification leaves in question,
-     * regardless of whether the read's true species is among them.
+     * Returns the ungated counterpart of {@link #getGenusOnlyPrecision()}: the same average over the
+     * same subset, but of {@code q'} rather than {@code q}, i.e. of the reciprocal number of species
+     * a classification leaves in question regardless of whether the read's true species is among
+     * them. The denominator is identical, so the two differ only in what is summed.
      *
      * @return the mean ungated score over the subset, or {@code NaN} if the subset is empty
-     */
-    public double getGenusOnlyUngatedPrecision() {
-        return genusOnlyTotal == 0 ? Double.NaN : genusOnlyUngatedScore / genusOnlyTotal;
-    }
-
-    /**
-     * Returns how many reads of the genus-only subset score zero, i.e. how many of them the
-     * unrefined database assigned to a node that does not leave their true species in question at
-     * all. Such a read is in the subset because its assignment agrees with its true taxon down to
-     * the genus and no further, which also admits an assignment to a <em>sibling</em> species of the
-     * right genus. Those are the reads for which the gated and the ungated measure disagree already
-     * before any refinement, and hence the ones that limit how far the ungated measure can bound the
-     * gated one.
-     *
-     * @return the number of such reads
-     */
-    public long getGenusOnlyGateMissed() {
-        return genusOnlyGateMissed;
-    }
-
-    /**
-     * Returns the size of the observable substitute for the genus-only subset, i.e. the reads the
-     * unrefined database assigned to a node at genus rank. Unlike the genus-only subset itself this
-     * needs no ground truth and can therefore be formed on a real fastq file.
-     *
-     * @return the number of reads in the substitute subset
-     */
-    public long getObsGenusOnlyTotal() {
-        return obsGenusOnlyTotal;
-    }
-
-    /**
-     * Returns the mean gated score over the observable substitute subset.
-     *
-     * @return the mean, or {@code NaN} if the subset is empty
-     */
-    public double getObsGenusOnlyPrecision() {
-        return obsGenusOnlyTotal == 0 ? Double.NaN : obsGenusOnlyScore / obsGenusOnlyTotal;
-    }
-
-    /**
-     * Returns the mean ungated score over the observable substitute subset. This is the one quantity
-     * of this class that a run on a fastq file without ground truth can produce.
-     *
-     * @return the mean, or {@code NaN} if the subset is empty
      */
     public double getObsGenusOnlyUngatedPrecision() {
         return obsGenusOnlyTotal == 0 ? Double.NaN : obsGenusOnlyUngatedScore / obsGenusOnlyTotal;
     }
 
     /**
-     * Returns how many reads of the observable substitute subset also belong to the genus-only
-     * subset proper. The quotient with {@link #getObsGenusOnlyTotal()} states how faithful the
-     * substitute is for the data at hand.
+     * Returns the size of the observable subset the ungated measure is taken over.
      *
-     * @return the number of reads in both subsets
+     * @return the number of reads the unrefined database placed no further than a genus
      */
-    public long getObsGenusOnlyAlsoTrue() {
-        return obsGenusOnlyAlsoTrue;
+    public long getObsGenusOnlyTotal() {
+        return obsGenusOnlyTotal;
+    }
+
+    /**
+     * Returns how many reads of the genus-only subset score zero under {@code q}, i.e. how many the
+     * database placed where their true species is not in question at all. These are the reads on
+     * which the gated and the ungated measure disagree, and hence the whole of the difference
+     * between them.
+     *
+     * @return the number of such reads
+     */
+    public long getGenusOnlyZeroScoring() {
+        return genusOnlyZeroScoring;
     }
 
     /**
@@ -412,12 +377,9 @@ public final class AccuracyTally {
         copy.genusOnlyTotal = genusOnlyTotal;
         copy.genusOnlyScore = genusOnlyScore;
         copy.genusOnlyCorrectSpecies = genusOnlyCorrectSpecies;
-        copy.genusOnlyUngatedScore = genusOnlyUngatedScore;
-        copy.genusOnlyGateMissed = genusOnlyGateMissed;
-        copy.obsGenusOnlyTotal = obsGenusOnlyTotal;
-        copy.obsGenusOnlyScore = obsGenusOnlyScore;
         copy.obsGenusOnlyUngatedScore = obsGenusOnlyUngatedScore;
-        copy.obsGenusOnlyAlsoTrue = obsGenusOnlyAlsoTrue;
+        copy.obsGenusOnlyTotal = obsGenusOnlyTotal;
+        copy.genusOnlyZeroScoring = genusOnlyZeroScoring;
         return copy;
     }
 
@@ -445,12 +407,9 @@ public final class AccuracyTally {
         genusOnlyTotal += other.genusOnlyTotal;
         genusOnlyScore += other.genusOnlyScore;
         genusOnlyCorrectSpecies += other.genusOnlyCorrectSpecies;
-        genusOnlyUngatedScore += other.genusOnlyUngatedScore;
-        genusOnlyGateMissed += other.genusOnlyGateMissed;
-        obsGenusOnlyTotal += other.obsGenusOnlyTotal;
-        obsGenusOnlyScore += other.obsGenusOnlyScore;
         obsGenusOnlyUngatedScore += other.obsGenusOnlyUngatedScore;
-        obsGenusOnlyAlsoTrue += other.obsGenusOnlyAlsoTrue;
+        obsGenusOnlyTotal += other.obsGenusOnlyTotal;
+        genusOnlyZeroScoring += other.genusOnlyZeroScoring;
     }
 
     /**
@@ -467,12 +426,9 @@ public final class AccuracyTally {
         genusOnlyTotal = 0;
         genusOnlyScore = 0;
         genusOnlyCorrectSpecies = 0;
-        genusOnlyUngatedScore = 0;
-        genusOnlyGateMissed = 0;
-        obsGenusOnlyTotal = 0;
-        obsGenusOnlyScore = 0;
         obsGenusOnlyUngatedScore = 0;
-        obsGenusOnlyAlsoTrue = 0;
+        obsGenusOnlyTotal = 0;
+        genusOnlyZeroScoring = 0;
     }
 
     @Override

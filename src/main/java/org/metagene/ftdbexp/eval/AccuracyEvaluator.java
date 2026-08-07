@@ -161,20 +161,21 @@ public class AccuracyEvaluator {
                         merged.add(threadTally);
                         threadTally.reset();
                     }
-                    {
-                        if (baseline != null) {
-                            if (collectBaseline) {
-                                baseline.endCollecting(key);
-                                obsBaseline.endCollecting(key);
-                            } else {
-                                baseline.endConsulting(key);
-                                obsBaseline.endConsulting(key);
-                            }
+                    // Both subsets are advanced in lockstep: each is filled by the unrefined run
+                    // and consulted by the refined one, so either variant is scored on the reads the
+                    // unrefined run put in that subset and not on its own.
+                    if (baseline != null) {
+                        if (collectBaseline) {
+                            baseline.endCollecting(key);
+                            obsBaseline.endCollecting(key);
+                        } else {
+                            baseline.endConsulting(key);
+                            obsBaseline.endConsulting(key);
                         }
-                        System.out.println(key + ": " + merged);
-                        warnIfUnresolved(key, merged);
-                        result.put(key, merged);
                     }
+                    System.out.println(key + ": " + merged);
+                    warnIfUnresolved(key, merged);
+                    result.put(key, merged);
                 }
             });
             matchResGoal.make();
@@ -249,14 +250,18 @@ public class AccuracyEvaluator {
                 String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
                         StandardCharsets.UTF_8);
                 if (collectBaseline) {
-                    // Correct down to the genus but no further: the refinement's only opportunity.
-                    genusOnly = isAtLeast(lcaRank, Rank.GENUS) && !isAtLeast(lcaRank, Rank.SPECIES);
+                    // R_g: correct down to the genus but no further, the refinement's only
+                    // opportunity. Governed by the positives, i.e. by sigma(r), because prec_g is a
+                    // precision and a read placed in the wrong genus is not one a refinement can
+                    // put right.
+                    genusOnly = isGenusOnlyRank(lcaRank);
                     if (genusOnly) {
                         baseline.collect(descriptor);
                     }
-                    // The observable substitute for that subset: the unrefined database placed the
-                    // read no further than the genus. Whether that genus is the right one is exactly
-                    // what cannot be checked without ground truth, so it is not checked here either.
+                    // R_g': the same rank window read off the assignment alone. It is not a
+                    // subset of R_g and does not contain it either -- it drops the reads whose
+                    // assignment named a sibling species (their lca with sigma(r) is the genus, but
+                    // the node itself sits at a species) and admits those left at a foreign genus.
                     obsGenusOnly = isGenusOnlyNode(classNode);
                     if (obsGenusOnly) {
                         obsBaseline.collect(descriptor);
@@ -266,11 +271,9 @@ public class AccuracyEvaluator {
                     obsGenusOnly = obsBaseline.contains(descriptor);
                 }
             }
-            // Both subsets are fixed by the unrefined run, so a read that scores zero here does so
-            // because of that run's assignment; on the refined pass the flag is looked up, not
-            // recomputed, and the gate-missed count is only meaningful for the unrefined variant.
-            tally.record(classNode != null, lcaRank, score, ungatedScore,
-                    genusOnly, obsGenusOnly, genusOnly && score == 0);
+            // The subset is fixed by the unrefined run; on the refined pass the flag is looked up
+            // rather than recomputed, so both variants are scored on identical reads.
+            tally.record(classNode != null, lcaRank, score, ungatedScore, genusOnly, obsGenusOnly);
         } else if (classNode != null && inScope(taxTree.getNodeByTaxId(classNode.getTaxId()), scope)) {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();
@@ -351,12 +354,24 @@ public class AccuracyEvaluator {
     }
 
     /**
-     * Returns whether a rank is at or below the given one.
+     * Returns whether the rank two taxa agree at leaves the read in the window a refinement can act
+     * on: at or below a genus, but still above the species. This is the membership test of the
+     * genus-only subset $R_g$, and it is applied to the rank of the lowest common ancestor of the
+     * read's true taxon and its assignment, so the subset is governed by the ground truth.
+     * <p>
+     * The window is a range of ranks rather than the genus alone because a taxonomy places further
+     * ranks inside it -- see {@link #isGenusOnlyNode} for why that matters and by how much. Unranked
+     * ancestors need no handling here: {@link #lowestRankedCommonAncestor} has already resolved them
+     * upwards, so the two subsets are formed by one and the same rule.
      *
-     * @param rank      the rank to test, may be {@code null}
-     * @param threshold the rank to compare against
-     * @return whether {@code rank} is as specific as {@code threshold} or more so
+     * @param lcaRank the rank the read's true taxon and its assignment agree at, may be
+     *                {@code null} if they share no ranked ancestor at all
+     * @return whether the agreement stops inside the genus-only window
      */
+    private static boolean isGenusOnlyRank(Rank lcaRank) {
+        return isAtLeast(lcaRank, Rank.GENUS) && !isAtLeast(lcaRank, Rank.SPECIES);
+    }
+
     /**
      * Returns whether the node a read was assigned to leaves it in the window a refinement can act
      * on: at or below a genus, but still above the species.
@@ -395,6 +410,13 @@ public class AccuracyEvaluator {
         return isAtLeast(rank, Rank.GENUS) && !isAtLeast(rank, Rank.SPECIES);
     }
 
+    /**
+     * Returns whether a rank is at or below the given one.
+     *
+     * @param rank      the rank to test, may be {@code null}
+     * @param threshold the rank to compare against
+     * @return whether {@code rank} is as specific as {@code threshold} or more so
+     */
     private static boolean isAtLeast(Rank rank, Rank threshold) {
         return rank != null && (threshold.equals(rank) || rank.isBelow(threshold));
     }

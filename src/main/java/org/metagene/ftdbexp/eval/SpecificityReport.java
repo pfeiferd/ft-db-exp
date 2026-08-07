@@ -93,6 +93,9 @@ public class SpecificityReport {
                 ps.print(';');
                 ps.print(f.getClassified());
                 ps.print(';');
+                // The observable subset, never R_g: without sigma(r) there is no telling whether
+                // the genus a read was left at was the right one, so getGenusOnlyTotal() stays zero
+                // on this path by construction.
                 ps.print(u.getObsGenusOnlyTotal());
                 ps.print(';');
                 ps.print(format(u.getTotal() == 0 ? Double.NaN

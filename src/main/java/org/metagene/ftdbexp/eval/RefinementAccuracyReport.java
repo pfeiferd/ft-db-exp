@@ -132,7 +132,7 @@ public class RefinementAccuracyReport {
                 }
             }
         }
-        writeSummary(db, reportKey, byVariant);
+        writeSummary(resultsDir, db, reportKey, byVariant);
         System.out.println("Wrote " + file);
         return file;
     }
@@ -152,20 +152,21 @@ public class RefinementAccuracyReport {
      * @param byVariant the tallies of both variants, keyed by fastq key
      * @throws IOException if the file cannot be written
      */
-    private void writeSummary(String db, String reportKey,
-                              Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
+    private static void writeSummary(File resultsDir, String db, String reportKey,
+                                     Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
         File file = new File(resultsDir, db + "_" + reportKey + "_summary.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
-            ps.println("db;model;reads;classified;obs genus only;obs genus only share"
-                    + ";prec g u;prec g f;delta;prec g ungated u;prec g ungated f;delta ungated;rho;");
+            ps.println("db;model;reads;classified;genus only;genus only share"
+                    + ";prec g u;prec g f;delta"
+                    + ";obs genus only;prec g ungated u;prec g ungated f;delta ungated;rho;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
                 AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
                 if (u == null || f == null) {
                     continue;
                 }
-                double pu = u.getObsGenusOnlyPrecision();
-                double pf = f.getObsGenusOnlyPrecision();
+                double pu = u.getGenusOnlyPrecision();
+                double pf = f.getGenusOnlyPrecision();
                 double gu = u.getObsGenusOnlyUngatedPrecision();
                 double gf = f.getObsGenusOnlyUngatedPrecision();
                 double delta = pf - pu;
@@ -178,16 +179,18 @@ public class RefinementAccuracyReport {
                 ps.print(';');
                 ps.print(u.getClassified());
                 ps.print(';');
-                ps.print(u.getObsGenusOnlyTotal());
+                ps.print(u.getGenusOnlyTotal());
                 ps.print(';');
                 ps.print(format(u.getTotal() == 0 ? Double.NaN
-                        : 100.0 * u.getObsGenusOnlyTotal() / u.getTotal()));
+                        : 100.0 * u.getGenusOnlyTotal() / u.getTotal()));
                 ps.print(';');
                 ps.print(format(pu));
                 ps.print(';');
                 ps.print(format(pf));
                 ps.print(';');
                 ps.print(format(delta));
+                ps.print(';');
+                ps.print(u.getObsGenusOnlyTotal());
                 ps.print(';');
                 ps.print(format(gu));
                 ps.print(';');
@@ -204,7 +207,8 @@ public class RefinementAccuracyReport {
 
     /**
      * Turns a fastq key into the label the paper prints for it, so that the CSV can be included
-     * without a mapping on the LaTeX side.
+     * without a mapping on the LaTeX side. The label names the <em>read set</em>: for the
+     * InSilicoSeq projects one set per error model, for the tick-borne data one per sample.
      *
      * @param fastqKey the key as it appears in the fastq mapping file
      * @return the label to print
@@ -222,9 +226,13 @@ public class RefinementAccuracyReport {
         if ("iss_nanopore".equals(fastqKey)) {
             return "Nanopore";
         }
-        if ("nanosim".equals(fastqKey) || fastqKey.startsWith("tick")) {
+        if ("nanosim".equals(fastqKey)) {
             return "NanoSim";
         }
+        // Anything else keeps its key, which is what names the read set. For the tick-borne data
+        // that is the sample -- tick1, tick2 and so on -- and mapping those to the simulator would
+        // collapse eight distinct read sets into eight identical labels. Which simulator produced
+        // them is a property of the database's block in the table and belongs in its caption.
         return fastqKey;
     }
 
@@ -233,7 +241,7 @@ public class RefinementAccuracyReport {
      *
      * @param ps the stream to write to
      */
-    private void writeHeader(PrintStream ps) {
+    private static void writeHeader(PrintStream ps) {
         ps.print("fastq key;variant;classified;total;unresolved");
         for (Rank rank : REPORTED_RANKS) {
             String name = rank.getName();
@@ -245,15 +253,17 @@ public class RefinementAccuracyReport {
         // Restricted to the reads the unrefined database left at their genus: the only ones a
         // refinement can improve on. The delta between the two variants of "genus only precision
         // species cand" is the gain where a gain was possible.
-        ps.print(";genus only;genus only score;genus only precision species cand;genus only species share");
-        // The ungated counterpart of the same measure -- the reciprocal candidate count without the
-        // test that the read's true species is still in question -- together with the observable
-        // substitute for the genus-only subset. Neither looks at the ground truth, so both can be
-        // obtained from a real fastq file; the columns are reported here so that the ratio between
-        // the gated and the ungated gain can be calibrated on data where the truth *is* known.
-        ps.println(";genus only ungated precision;genus only gate missed"
-                + ";obs genus only;obs genus only precision;obs genus only ungated precision"
-                + ";obs genus only also true;");
+        ps.print(";genus only;genus only score;genus only precision species cand"
+                + ";genus only species share;genus only zero scoring");
+        // The ungated measure, prec'_g of the paper. It differs from the gated one in *both* of its
+        // ingredients: the summand drops the test that the read's true species is still in question
+        // at the assigned node, and the subset is the observable one -- the reads the unrefined
+        // database left at a genus, right or wrong -- because R_g itself is defined through the
+        // ground truth and a real sample supplies none. Neither ingredient consults sigma(r), which
+        // is what makes these two columns obtainable from a real fastq file. They are reported
+        // alongside the gated ones so that the ratio rho_d between the two gains can be calibrated
+        // where the truth *is* known.
+        ps.println(";obs genus only;obs genus only ungated precision;");
     }
 
     /**
@@ -264,7 +274,7 @@ public class RefinementAccuracyReport {
      * @param variant  the database variant the row refers to
      * @param tally    the counts to report
      */
-    private void writeRow(PrintStream ps, String fastqKey, Variant variant, AccuracyTally tally) {
+    private static void writeRow(PrintStream ps, String fastqKey, Variant variant, AccuracyTally tally) {
         ps.print(fastqKey);
         ps.print(';');
         ps.print(variant.getLabel());
@@ -301,17 +311,11 @@ public class RefinementAccuracyReport {
         ps.print(';');
         ps.print(format(tally.getGenusOnlySpeciesShare()));
         ps.print(';');
-        ps.print(format(tally.getGenusOnlyUngatedPrecision()));
-        ps.print(';');
-        ps.print(tally.getGenusOnlyGateMissed());
+        ps.print(tally.getGenusOnlyZeroScoring());
         ps.print(';');
         ps.print(tally.getObsGenusOnlyTotal());
         ps.print(';');
-        ps.print(format(tally.getObsGenusOnlyPrecision()));
-        ps.print(';');
         ps.print(format(tally.getObsGenusOnlyUngatedPrecision()));
-        ps.print(';');
-        ps.print(tally.getObsGenusOnlyAlsoTrue());
         ps.println(';');
     }
 
