@@ -2,12 +2,18 @@
 # saliva from different donors, downloaded from the SRA. They are the real data without ground truth
 # that `cv', the complete viral database, is applied to, exactly as in that paper.
 #
-# Unlike ticks_real.txt this map holds no URLs. These runs are paired, so each arrives as two files
-# that have to be read under one key, and at 100+ GB per run a download needs to be resumable and
-# checksum-verified. That is what sra-tools does, so the files are fetched separately:
+# Unlike ticks_real.txt this map holds no URLs, because these runs are paired: each arrives as two
+# files that have to be read under one key, and the URLs have to be resolved per accession. That is
+# what the fetch script does, so the files are downloaded separately:
 #
 #   sh ./bin/fetch_saliva.sh                  # the three runs -- see that script's volume warning
 #   sh ./bin/fetch_saliva.sh SRR5571991       # a single run
+#
+# It fetches the gzipped fastq files from the ENA over HTTPS, resumably and md5-verified. Going
+# through sra-tools instead (METHOD=sra) does not work at these sizes on an ordinary disk: turning
+# the .sra archive into fastq writes the reads out uncompressed first, so SRR5571991 needs some
+# 615 GB transiently to yield 139 GB, and fasterq-dump aborts with "disk-limit exeeded!". The
+# script's header explains this in full.
 #
 # and this map refers to the result by name, resolved against data/fastq as usual. The names are the
 # accessions, as in the original genestrip-db-exp project, so runs already fetched there are reused.

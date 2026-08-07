@@ -1,0 +1,239 @@
+package org.metagene.ftdbexp.eval;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.PrintStream;
+import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.junit.Test;
+import org.metagene.genestrip.tax.Rank;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+/**
+ * Checks that what the evaluation reports is what the paper defines.
+ * <p>
+ * The measures are two averages over two different subsets, and the two are easy to cross by
+ * accident because they are computed side by side from the same reads:
+ * <ul>
+ * <li>the restricted precision, an average of the gated count $q$ over the genus-only subset $R_g$,
+ * whose membership follows from the read's true species and is therefore unavailable on a real
+ * sample;</li>
+ * <li>the specificity, an average of the ungated count $q'$ over the observable subset
+ * $R_g^\circ$, whose membership follows from the assignment alone.</li>
+ * </ul>
+ * Each test below states one of those definitions arithmetically and compares it against the
+ * accessor the report writes into its CSV. The last one checks the CSV itself: a header with fewer
+ * fields than its rows silently shifts every column a reader picks out by name.
+ */
+public class MeasureConsistencyTest {
+
+    private static final double EPS = 1e-12;
+
+    /**
+     * The gated precision is the average of $q$ over $R_g$ -- summed over the reads of that subset
+     * and divided by its size, with reads outside it contributing to neither.
+     */
+    @Test
+    public void gatedPrecisionAveragesOverItsOwnSubset() {
+        AccuracyTally tally = new AccuracyTally();
+        // Three reads in R_g scoring 1/2, 1/4 and 0, and one read outside it scoring 1 -- which
+        // must not reach the restricted average even though it is the best-scoring read of all.
+        tally.record(true, Rank.GENUS, 0.5, 0.5, true, true);
+        tally.record(true, Rank.GENUS, 0.25, 0.25, true, true);
+        tally.record(true, Rank.GENUS, 0.0, 0.5, true, false);
+        tally.record(true, Rank.SPECIES, 1.0, 1.0, false, false);
+
+        assertEquals(3, tally.getGenusOnlyTotal());
+        assertEquals((0.5 + 0.25 + 0.0) / 3, tally.getGenusOnlyPrecision(), EPS);
+        assertEquals(4, tally.getTotal());
+    }
+
+    /**
+     * The ungated precision is the average of $q'$ over $R_g^\circ$. It must take its denominator
+     * from that subset and not from $R_g$, and must sum the ungated score and not the gated one.
+     */
+    @Test
+    public void ungatedPrecisionAveragesOverTheObservableSubset() {
+        AccuracyTally tally = new AccuracyTally();
+        // A read in R_g but not in R_g' -- a sibling species was named, so q = 0 while q' = 1/2.
+        tally.record(true, Rank.GENUS, 0.0, 0.5, true, false);
+        // A read in both.
+        tally.record(true, Rank.GENUS, 0.25, 0.25, true, true);
+        // A read in R_g' but not in R_g: stopped at a genus that is not the read's own.
+        tally.record(true, Rank.FAMILY, 0.0, 0.5, false, true);
+
+        assertEquals(2, tally.getGenusOnlyTotal());
+        assertEquals(2, tally.getObsGenusOnlyTotal());
+        // Neither subset contains the other, and the two averages share no read but the middle one.
+        assertEquals((0.0 + 0.25) / 2, tally.getGenusOnlyPrecision(), EPS);
+        assertEquals((0.25 + 0.5) / 2, tally.getObsGenusOnlyUngatedPrecision(), EPS);
+    }
+
+    /**
+     * On a sample without ground truth only the observable subset can be formed, so the gated
+     * measure must stay undefined rather than quietly reporting an average over no reads.
+     */
+    @Test
+    public void groundTruthFreePathFillsOnlyTheObservableSubset() {
+        AccuracyTally tally = new AccuracyTally();
+        tally.recordWithoutGroundTruth(true, 0.5, true);
+        tally.recordWithoutGroundTruth(true, 0.25, true);
+        tally.recordWithoutGroundTruth(true, 1.0, false);
+
+        assertEquals(2, tally.getObsGenusOnlyTotal());
+        assertEquals((0.5 + 0.25) / 2, tally.getObsGenusOnlyUngatedPrecision(), EPS);
+        assertEquals(0, tally.getGenusOnlyTotal());
+        assertTrue("the gated precision has no meaning without sigma(r)",
+                Double.isNaN(tally.getGenusOnlyPrecision()));
+    }
+
+    /**
+     * The evaluator shards its tallies per thread and merges them per fastq file, so both subsets
+     * have to survive a merge, and a reset has to clear both -- a field forgotten in either place
+     * leaks reads of one file into the next.
+     */
+    @Test
+    public void mergingAndResettingKeepBothSubsets() {
+        AccuracyTally a = new AccuracyTally();
+        a.record(true, Rank.GENUS, 0.5, 0.5, true, true);
+        AccuracyTally b = new AccuracyTally();
+        b.record(true, Rank.GENUS, 0.25, 0.75, true, true);
+        b.record(true, Rank.FAMILY, 0.0, 0.5, false, true);
+
+        AccuracyTally merged = new AccuracyTally();
+        merged.add(a);
+        merged.add(b);
+        assertEquals(2, merged.getGenusOnlyTotal());
+        assertEquals(3, merged.getObsGenusOnlyTotal());
+        assertEquals((0.5 + 0.25) / 2, merged.getGenusOnlyPrecision(), EPS);
+        assertEquals((0.5 + 0.75 + 0.5) / 3, merged.getObsGenusOnlyUngatedPrecision(), EPS);
+
+        b.reset();
+        assertEquals(0, b.getGenusOnlyTotal());
+        assertEquals(0, b.getObsGenusOnlyTotal());
+        assertTrue(Double.isNaN(b.getObsGenusOnlyUngatedPrecision()));
+    }
+
+    /**
+     * Zero-scoring reads are those of $R_g$ whose true species is not in question at the node they
+     * were placed on. They are counted over $R_g$, and a read outside it must not be counted even
+     * when it scores zero.
+     */
+    @Test
+    public void zeroScoringIsCountedOverTheGatedSubset() {
+        AccuracyTally tally = new AccuracyTally();
+        tally.record(true, Rank.GENUS, 0.0, 0.5, true, false);
+        tally.record(true, Rank.GENUS, 0.5, 0.5, true, true);
+        tally.record(true, Rank.FAMILY, 0.0, 0.5, false, true);
+
+        assertEquals(1, tally.getGenusOnlyZeroScoring());
+    }
+
+    /**
+     * A header with fewer fields than its rows shifts every column read out by name. The two are
+     * written by separate methods, so nothing but a comparison keeps them in step.
+     */
+    @Test
+    public void csvHeaderAndRowHaveTheSameFieldCount() throws Exception {
+        Method writeHeader = RefinementAccuracyReport.class
+                .getDeclaredMethod("writeHeader", PrintStream.class);
+        Method writeRow = RefinementAccuracyReport.class
+                .getDeclaredMethod("writeRow", PrintStream.class, String.class,
+                        RefinementAccuracyReport.Variant.class, AccuracyTally.class);
+        writeHeader.setAccessible(true);
+        writeRow.setAccessible(true);
+
+        AccuracyTally tally = new AccuracyTally();
+        tally.record(true, Rank.GENUS, 0.5, 0.5, true, true);
+
+        assertEquals("header and row must describe the same number of columns",
+                fieldCount(writeHeader, new Object[]{null}),
+                fieldCount(writeRow, new Object[]{null, "key",
+                        RefinementAccuracyReport.Variant.UNREFINED, tally}));
+    }
+
+    /**
+     * The summary CSV is the file the paper reads, so its columns have to carry what their names
+     * claim: the gated pair from $R_g$, the ungated pair from $R_g^\circ$, the two gains as the
+     * differences of those pairs, and $\rho_d$ as their ratio. Crossing any of them would leave a
+     * plausible-looking table stating the wrong thing.
+     */
+    @Test
+    public void summaryColumnsCarryTheMeasuresTheyAreNamedAfter() throws Exception {
+        // Unrefined: R_g = 2 reads averaging (0.10 + 0.20)/2 = 0.15, R_g' = 4 reads averaging
+        // (0.40 + 0.40 + 0.40 + 0.40)/4 = 0.40. The two subsets deliberately differ in size, so a
+        // denominator taken from the wrong one cannot pass unnoticed.
+        AccuracyTally u = new AccuracyTally();
+        u.record(true, Rank.GENUS, 0.10, 0.40, true, true);
+        u.record(true, Rank.GENUS, 0.20, 0.40, true, true);
+        u.record(true, Rank.FAMILY, 0.0, 0.40, false, true);
+        u.record(true, Rank.FAMILY, 0.0, 0.40, false, true);
+        // Refined: same subsets (they are fixed by the unrefined run), gated mean 0.35, ungated 0.60.
+        AccuracyTally f = new AccuracyTally();
+        f.record(true, Rank.GENUS, 0.30, 0.60, true, true);
+        f.record(true, Rank.GENUS, 0.40, 0.60, true, true);
+        f.record(true, Rank.FAMILY, 0.0, 0.60, false, true);
+        f.record(true, Rank.FAMILY, 0.0, 0.60, false, true);
+
+        Map<String, String> row = summaryRow(u, f);
+        assertEquals(4L, Long.parseLong(row.get("reads")));
+        assertEquals(2L, Long.parseLong(row.get("genus only")));
+        assertEquals(4L, Long.parseLong(row.get("obs genus only")));
+        assertEquals(0.15, Double.parseDouble(row.get("prec g u")), 1e-6);
+        assertEquals(0.35, Double.parseDouble(row.get("prec g f")), 1e-6);
+        assertEquals(0.20, Double.parseDouble(row.get("delta")), 1e-6);
+        assertEquals(0.40, Double.parseDouble(row.get("prec g ungated u")), 1e-6);
+        assertEquals(0.60, Double.parseDouble(row.get("prec g ungated f")), 1e-6);
+        assertEquals(0.20, Double.parseDouble(row.get("delta ungated")), 1e-6);
+        assertEquals(1.0, Double.parseDouble(row.get("rho")), 1e-6);
+    }
+
+    /** Runs writeSummary into a temporary directory and zips its header against its single row. */
+    private Map<String, String> summaryRow(AccuracyTally u, AccuracyTally f) throws Exception {
+        Map<RefinementAccuracyReport.Variant, Map<String, AccuracyTally>> byVariant =
+                new EnumMap<>(RefinementAccuracyReport.Variant.class);
+        byVariant.put(RefinementAccuracyReport.Variant.UNREFINED,
+                Collections.singletonMap("set", u));
+        byVariant.put(RefinementAccuracyReport.Variant.REFINED,
+                Collections.singletonMap("set", f));
+
+        File dir = Files.createTempDirectory("summary").toFile();
+        dir.deleteOnExit();
+        Method writeSummary = RefinementAccuracyReport.class.getDeclaredMethod(
+                "writeSummary", File.class, String.class, String.class, Map.class);
+        writeSummary.setAccessible(true);
+        writeSummary.invoke(null, dir, "db", "key", byVariant);
+
+        List<String> lines = Files.readAllLines(new File(dir, "db_key_summary.csv").toPath(),
+                StandardCharsets.UTF_8);
+        assertEquals("one header and one data row expected", 2, lines.size());
+        String[] header = lines.get(0).split(";", -1);
+        String[] values = lines.get(1).split(";", -1);
+        assertEquals("summary header and row must describe the same number of columns",
+                header.length, values.length);
+        Map<String, String> row = new HashMap<>();
+        for (int i = 0; i < header.length; i++) {
+            row.put(header[i], values[i]);
+        }
+        return row;
+    }
+
+    private int fieldCount(Method method, Object[] args) throws Exception {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        try (PrintStream ps = new PrintStream(out, true, StandardCharsets.UTF_8.name())) {
+            args[0] = ps;
+            method.invoke(null, args);
+        }
+        String line = new String(out.toByteArray(), StandardCharsets.UTF_8).trim();
+        return line.split(";", -1).length;
+    }
+}

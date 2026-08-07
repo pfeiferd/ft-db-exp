@@ -6,7 +6,11 @@
 #   cgmemtime      measures wall time and peak RAM of the database generation
 #   InSilicoSeq    simulates the Illumina reads for the viral experiments
 #   NanoSim        simulates the Nanopore reads for the tick-borne experiments
-#   sra-toolkit    downloads the real sequencing runs (prefetch, fasterq-dump)
+#
+# Nothing is needed here for the real sequencing runs: fetch_saliva.sh and ticks_real.txt both pull
+# gzipped fastq files straight over HTTPS with curl, which every machine already has. sra-toolkit
+# used to be installed for that and is not any more -- see the header of fetch_saliva.sh for why
+# going through prefetch/fasterq-dump cannot work at these volumes.
 #
 # The script is idempotent: anything already in place is skipped, so it is cheap to re-run after a
 # partial failure.
@@ -34,20 +38,13 @@ echo "############ 1/4  Distribution packages ############"
 # sequences. python3-dev supplies the headers pybedtools compiles its C extension against, bedtools
 # the binary it drives. All of this is what the conda recipe would have pulled from bioconda.
 #
-# sra-toolkit supplies prefetch and fasterq-dump, which fetch the real sequencing runs of the
-# experiments without ground truth -- see fetch_saliva.sh. The distribution package is preferred over
-# NCBI's own tarball because the latter is not reachable from every network; should it be too old,
-# install https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/current/sratoolkit.current-ubuntu64.tar.gz by
-# hand and put its `bin' on the PATH instead. pigz parallelises the compression of the dumped fastq
-# files, which matters at these volumes; gzip is used if it is absent.
 sudo apt-get install -y -q \
-  minimap2 samtools last-align genometools bedtools sra-toolkit pigz \
+  minimap2 samtools last-align genometools bedtools \
   build-essential python3-dev python3-venv >/dev/null
 echo "  minimap2:    $(minimap2 --version 2>&1 | head -1)"
 echo "  samtools:    $(samtools --version 2>&1 | head -1)"
 echo "  lastal:      $(lastal --version 2>&1 | head -1)"
 echo "  genometools: $(gt --version 2>&1 | head -1)"
-echo "  sra-toolkit: $(fasterq-dump --version 2>&1 | tr -d '\n' | sed 's/^ *//')"
 
 echo "############ 2/4  cgmemtime ############"
 if [ -x "${toolsdir}/cgmemtime/cgmemtime" ]; then
