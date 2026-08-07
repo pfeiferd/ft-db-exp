@@ -240,6 +240,10 @@ make_iss() {
     prefix="${fastqdir}/${db}_iss_${model}_reads"
     if [ -f "${prefix}_R1.fastq.gz" ]; then
       echo "SKIP  ${prefix}_R1.fastq.gz exists"
+      # Measure it anyway. The parameters are read off the file, so they can be recorded for reads
+      # generated before this script started recording them -- which beats regenerating the set to
+      # learn what it already is.
+      record_simparams "$db" "iss_${model}" "${prefix}_R1.fastq.gz" "" 2
       continue
     fi
     # The long-read regime draws fewer reads, since each of them carries some thirty times the bases.
@@ -440,6 +444,14 @@ make_ticks() {
     out="${fastqdir}/${sample}_sim.fastq"
     if [ -s "$out" ]; then
       echo "SKIP  ${out} exists"
+      # As above -- and the alignment-derived error rate survives from the run that generated these
+      # reads, so nothing has to be retrained to record it.
+      ns_error=""
+      if [ -f "${fastqdir}/${sample}_sim_error_rate.tsv" ]; then
+        ns_error=$(awk '/[Ee]rror rate/ { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%?$/) { gsub(/%/, "", $i); print $i; exit } }' \
+            "${fastqdir}/${sample}_sim_error_rate.tsv")
+      fi
+      record_simparams "$db" "$sample" "$out" "$ns_error" 1
       continue
     fi
     input="${fastqdir}/${sample}.fastq.gz"
