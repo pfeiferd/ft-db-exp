@@ -1,0 +1,12 @@
+# The single human saliva run the first Genestrip paper reports in detail, both mates under one key
+# so that Genestrip analyses them together. Written by hand to score one sample at a time: the three
+# runs of saliva_real.txt are 981, 606 and 812 million read pairs, and scoring them in one go is a
+# multi-day proposition where one of them is a day.
+#
+# Fetch it with:  sh ./bin/fetch_saliva.sh SRR5571991
+# Score it with:  mvn exec:exec@specificity -Dname=viral -Dfqmap=saliva_srr5571991.txt \
+#                     -Dreportkey=saliva -Dgs.project.calibration=iss_saliva
+#
+# key        file
+SRR5571991 SRR5571991_1.fastq.gz
+SRR5571991 SRR5571991_2.fastq.gz
