@@ -16,6 +16,7 @@
 #
 # Usage:
 #   sh ./bin/run_classification_exps.sh [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|real|all]
+#   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
 #   part for every database, and `accuracy' and `all' evaluate the two Illumina read sets and the
@@ -58,6 +59,10 @@ run_iss() {
     mapname="${db}_sim_nanoporelong.txt"
     reportkey="iss_nanopore_long"
     what="long InSilicoSeq reads at a Nanopore-level per-base error"
+  elif [ -n "${ERROR_SALIVA:-}" ]; then
+    mapname="${db}_sim_saliva.txt"
+    reportkey="iss_saliva"
+    what="InSilicoSeq reads matched to the human saliva runs"
   else
     mapname="${db}_sim.txt"
     reportkey="iss"
@@ -94,7 +99,10 @@ run_iss_all_regimes() {
 # variant narrows the species down on the reads the unrefined one left at a genus, and the difference
 # between the two -- the specificity gain that bounds the precision gain from above.
 #
-# $1 = database project name, $2 = fastq mapping file, $3 = report key
+# $1 = database project name, $2 = fastq mapping file, $3 = report key,
+# $4 = report key of the simulated run supplying the calibration rho (optional). For the ticks that
+# is `nanosim': its simulation named tickN was trained on the real sample named tickN, so joining
+# the two by fastq key gives each estimate the calibration derived from its own sample.
 run_real() {
   map="${basedir}/data/fastq/$2"
   if [ ! -f "$map" ]; then
@@ -102,7 +110,7 @@ run_real() {
     return 1
   fi
   echo "############ $1: real reads (${3}), unrefined vs. refined ############"
-  mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3"
+  mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.project.calibration="${4:-}"
 }
 
 # Wall time and maximum RAM of classifying the *real* reads, measured the same way as for the
@@ -186,8 +194,8 @@ case "$what" in
   gut-protozoa) run_iss gut-protozoa; run_perf gut-protozoa gut-protozoa_sim.txt ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks ;;
-  real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva
-                run_real tick-borne seventicks.txt ticks
+  real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
+                run_real tick-borne seventicks.txt ticks nanosim
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
@@ -197,8 +205,8 @@ case "$what" in
   all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes gut-protozoa; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf gut-protozoa gut-protozoa_sim.txt; run_perf tick-borne ticks_sim.txt
-                run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva
-                run_real tick-borne seventicks.txt ticks
+                run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
+                run_real tick-borne seventicks.txt ticks nanosim
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   *)          echo "Usage: $0 [viral|protozoa|gut-protozoa|tick-borne|accuracy|perf|real|all]" >&2; exit 1 ;;

@@ -13,6 +13,9 @@
 		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
+		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;
+		     empty leaves the estimate columns of the CSV blank. -->
+		<gs.project.calibration></gs.project.calibration>
 		<!-- Heap for the database goals. The original experiments used a 64 GB machine;
 		     override on a smaller one, e.g. -Dgs.xmx=10G . -->
 		<gs.xmx>64G</gs.xmx>
@@ -238,6 +241,7 @@
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.project.fqmap}</argument>
 								<argument>${gs.project.reportkey}</argument>
+								<argument>${gs.project.calibration}</argument>
 							</arguments>
 						</configuration>
 					</execution>

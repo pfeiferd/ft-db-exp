@@ -22,6 +22,7 @@
 # files rather than absolute paths, so they are valid anywhere.
 !/data/fastq/ticks_sim_tick1.txt
 !/data/fastq/saliva_mate1.txt
+!/data/fastq/saliva_srr5571991.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*

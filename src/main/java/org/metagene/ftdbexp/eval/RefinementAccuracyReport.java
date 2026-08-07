@@ -6,11 +6,15 @@ import org.metagene.genestrip.make.GoalKey;
 import org.metagene.genestrip.tax.Rank;
 import org.metagene.genestrip.tax.SmallTaxTree;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -133,6 +137,8 @@ public class RefinementAccuracyReport {
             }
         }
         writeSummary(resultsDir, db, reportKey, byVariant);
+        writeQuality(resultsDir, db, reportKey, byVariant);
+        writeSimdata(resultsDir, db, reportKey, byVariant);
         System.out.println("Wrote " + file);
         return file;
     }
@@ -156,7 +162,9 @@ public class RefinementAccuracyReport {
                                      Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
         File file = new File(resultsDir, db + "_" + reportKey + "_summary.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
-            ps.println("db;model;reads;classified;genus only;genus only share"
+            // The raw fastq key travels with the row so that a report keyed off this one can join
+            // to it without depending on how the model happens to be spelled.
+            ps.println("db;fastq key;model;reads;classified;genus only;genus only share"
                     + ";prec g u;prec g f;delta"
                     + ";obs genus only;prec g ungated u;prec g ungated f;delta ungated;rho;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
@@ -172,6 +180,8 @@ public class RefinementAccuracyReport {
                 double delta = pf - pu;
                 double deltaUngated = gf - gu;
                 ps.print(db);
+                ps.print(';');
+                ps.print(fastqKey);
                 ps.print(';');
                 ps.print(displayModel(fastqKey));
                 ps.print(';');
@@ -229,11 +239,176 @@ public class RefinementAccuracyReport {
         if ("nanosim".equals(fastqKey)) {
             return "NanoSim";
         }
-        // Anything else keeps its key, which is what names the read set. For the tick-borne data
-        // that is the sample -- tick1, tick2 and so on -- and mapping those to the simulator would
-        // collapse eight distinct read sets into eight identical labels. Which simulator produced
-        // them is a property of the database's block in the table and belongs in its caption.
-        return fastqKey;
+        // Anything else keeps its identity, which is what names the read set. For the tick-borne
+        // data that is the sample -- tick1, tick2 and so on -- and mapping those to the simulator
+        // would collapse eight distinct read sets into eight identical labels. Which simulator
+        // produced them is a property of the database's block and belongs in the caption. Only the
+        // spelling is normalised, through SampleNames, which SpecificityReport shares: it joins to
+        // this report's rows by exactly this name, so the two must agree on it.
+        return SampleNames.display(fastqKey, true);
+    }
+
+    /**
+     * Writes {@code <db>_<report key>_quality.csv}: one row per read set rather than per variant, so
+     * that a table can put the unrefined and the refined figure of a measure side by side.
+     * <p>
+     * The boolean counts are given once, for the unrefined database only. That is not a shortcut but
+     * the finding: a refinement inserts nodes between a genus and its species and moves k-mers onto
+     * them, which changes how many species an answer leaves open, not whether the answer is right.
+     * Across every read set here the boolean genus and species scores move by less than 0.0007
+     * between the two variants -- they cannot see what the refinement does. The candidate-weighted
+     * measures, which can, are therefore given for both.
+     *
+     * @param resultsDir the directory to write to
+     * @param db         the name of the database project
+     * @param reportKey  short name used in the result file name
+     * @param byVariant  the tallies of both variants, keyed by fastq key
+     * @throws IOException if the file cannot be written
+     */
+    private static void writeQuality(File resultsDir, String db, String reportKey,
+                                     Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
+        File file = new File(resultsDir, db + "_" + reportKey + "_quality.csv");
+        try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
+            ps.println("db;fastq key;read set"
+                    + ";f1 genus;precision species;recall species;f1 species"
+                    + ";prec cand u;prec cand f;recall cand u;recall cand f;f1 cand u;f1 cand f;");
+            for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
+                AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
+                AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
+                if (u == null || f == null) {
+                    continue;
+                }
+                ps.print(db);
+                ps.print(';');
+                ps.print(fastqKey);
+                ps.print(';');
+                ps.print(displayModel(fastqKey));
+                ps.print(';');
+                ps.print(format(u.getF1(Rank.GENUS)));
+                ps.print(';');
+                ps.print(format(u.getPrecision(Rank.SPECIES)));
+                ps.print(';');
+                ps.print(format(u.getRecall(Rank.SPECIES)));
+                ps.print(';');
+                ps.print(format(u.getF1(Rank.SPECIES)));
+                ps.print(';');
+                ps.print(format(u.getSpeciesCandidatePrecision()));
+                ps.print(';');
+                ps.print(format(f.getSpeciesCandidatePrecision()));
+                ps.print(';');
+                ps.print(format(u.getSpeciesCandidateRecall()));
+                ps.print(';');
+                ps.print(format(f.getSpeciesCandidateRecall()));
+                ps.print(';');
+                ps.print(format(u.getSpeciesCandidateF1()));
+                ps.print(';');
+                ps.print(format(f.getSpeciesCandidateF1()));
+                ps.println(';');
+            }
+        }
+        System.out.println("Wrote " + file);
+    }
+
+    /**
+     * Writes {@code <db>_<report key>_simdata.csv}: what the read sets are, rather than how well
+     * they were classified.
+     * <p>
+     * The three columns describing the simulation --- read length, per-base error and the number of
+     * reads generated --- cannot be recovered here. They are measured by {@code make_fastqs.sh} as
+     * it produces each set and left in {@code <db>_simparams.csv}; by the time this runs, the
+     * settings and the quality strings that produced them are either gone or, for NanoSim, known to
+     * be meaningless. This joins them to the two counts that only the evaluation has: how many of
+     * the generated reads fall within the database's scope, and how many were unresolved.
+     * <p>
+     * A read set with no row in {@code <db>_simparams.csv} still gets a row here, with the
+     * simulation columns empty. That is deliberate: a set generated before the script recorded its
+     * parameters should appear in the table as an incomplete row rather than vanish from it.
+     *
+     * @param resultsDir the directory to write to
+     * @param db         the name of the database project
+     * @param reportKey  short name used in the result file name
+     * @param byVariant  the tallies of both variants, keyed by fastq key
+     * @throws IOException if the file cannot be written
+     */
+    private static void writeSimdata(File resultsDir, String db, String reportKey,
+                                     Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
+        Map<String, String[]> params = readSimParams(resultsDir, db);
+        File file = new File(resultsDir, db + "_" + reportKey + "_simdata.csv");
+        try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
+            ps.println("db;fastq key;read set;read length;per-base error;simulated"
+                    + ";in scope;in scope share;unresolved;");
+            for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
+                AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
+                if (u == null) {
+                    continue;
+                }
+                String[] p = params.get(fastqKey);
+                String length = p == null ? "" : p[0];
+                String error = p == null ? "" : p[1];
+                String simulated = p == null ? "" : p[2];
+                ps.print(db);
+                ps.print(';');
+                ps.print(fastqKey);
+                ps.print(';');
+                ps.print(displayModel(fastqKey));
+                ps.print(';');
+                ps.print(length);
+                ps.print(';');
+                ps.print(error);
+                ps.print(';');
+                ps.print(simulated);
+                ps.print(';');
+                ps.print(u.getTotal());
+                ps.print(';');
+                // The share the scope keeps of what was generated. For a database covering the whole
+                // category the reads were drawn from this is near 100 %; for one requesting a few
+                // genera of a large category it is the fraction the table exists to show.
+                double generated = parseOrNaN(simulated);
+                ps.print(format(generated > 0 ? 100.0 * u.getTotal() / generated : Double.NaN));
+                ps.print(';');
+                ps.print(u.getUnresolved());
+                ps.println(';');
+            }
+        }
+        System.out.println("Wrote " + file);
+    }
+
+    /**
+     * Reads {@code <db>_simparams.csv}, written by {@code make_fastqs.sh}.
+     *
+     * @param resultsDir the directory holding it
+     * @param db         the name of the database project
+     * @return fastq key to {read length, per-base error, reads generated}; empty if absent
+     */
+    private static Map<String, String[]> readSimParams(File resultsDir, String db) {
+        Map<String, String[]> byKey = new HashMap<String, String[]>();
+        File file = new File(resultsDir, db + "_simparams.csv");
+        if (!file.exists()) {
+            System.out.println("No " + file + " - the simulation columns stay empty. "
+                    + "Run bin/make_fastqs.sh to record them.");
+            return byKey;
+        }
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(
+                new FileInputStream(file), StandardCharsets.UTF_8))) {
+            String line = in.readLine();
+            while ((line = in.readLine()) != null) {
+                String[] c = line.split(";", -1);
+                if (c.length >= 4 && !c[0].trim().isEmpty()) {
+                    byKey.put(c[0].trim(), new String[]{c[1].trim(), c[2].trim(), c[3].trim()});
+                }
+            }
+        } catch (IOException e) {
+            System.out.println("Cannot read " + file + " (" + e.getMessage() + ") - columns stay empty.");
+        }
+        return byKey;
+    }
+
+    private static double parseOrNaN(String value) {
+        try {
+            return Double.parseDouble(value);
+        } catch (RuntimeException e) {
+            return Double.NaN;
+        }
     }
 
     /**
@@ -242,7 +417,7 @@ public class RefinementAccuracyReport {
      * @param ps the stream to write to
      */
     private static void writeHeader(PrintStream ps) {
-        ps.print("fastq key;variant;classified;total;unresolved");
+        ps.print("fastq key;read set;variant;classified;total;unresolved");
         for (Rank rank : REPORTED_RANKS) {
             String name = rank.getName();
             ps.print(";correct " + name + ";precision " + name + ";recall " + name + ";f1 " + name);
@@ -276,6 +451,8 @@ public class RefinementAccuracyReport {
      */
     private static void writeRow(PrintStream ps, String fastqKey, Variant variant, AccuracyTally tally) {
         ps.print(fastqKey);
+        ps.print(';');
+        ps.print(displayModel(fastqKey));
         ps.print(';');
         ps.print(variant.getLabel());
         ps.print(';');

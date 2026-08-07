@@ -27,6 +27,7 @@ public class FTSpecificityMain {
      * Runs the ground-truth-free comparison between the unrefined and the refined database.
      *
      * @param args the database project name, the fastq mapping file and, optionally, a report key
+     *             and the report key of the simulated run supplying the calibration rho_{d,s}
      *             used in the output file name; the report key defaults to the mapping file name
      *             without its extension
      * @throws Exception if the databases cannot be read or the report cannot be written
@@ -43,7 +44,8 @@ public class FTSpecificityMain {
         String fqMapFile = args[1];
         String reportKey = args.length > 2 && !args[2].isEmpty() ? args[2] : stripExtension(fqMapFile);
 
-        new SpecificityReport(BASE_DIR, RESULTS_DIR, db).write(db, fqMapFile, reportKey);
+        String calibrationKey = args.length > 3 && !args[3].isEmpty() ? args[3] : null;
+        new SpecificityReport(BASE_DIR, RESULTS_DIR, db).write(db, fqMapFile, reportKey, calibrationKey);
     }
 
     /**

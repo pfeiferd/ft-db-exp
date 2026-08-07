@@ -22,6 +22,7 @@
 #   NANOPORE_ERROR_PCT=15 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa   # ... at 15 %
 #   NANOPORE_READ_LENGTH=1000 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa  # ... 1 kb reads
 #   ERROR_NANOPORE_LONG=1 sh ./bin/make_fastqs.sh protozoa # ... at 3,926 bp, 200k reads
+#   ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral   # matched to the real human saliva runs, see below
 #
 # A single project follows the error-regime variables; `all' ignores them and generates the two
 # Illumina sets and the error-free one of every InSilicoSeq project, which is what the paper reports.
@@ -49,6 +50,59 @@
 #   Set SKIP_FETCH=1 to suppress it, e.g. when the reads were copied over from another machine.
 #
 set -e
+
+# Phred+33, the encoding every simulator here and the SRA itself write.
+PHRED33='!"#$%&'"'"'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghij'
+
+# Records what a generated read set actually is, into <results>/<db>_simparams.csv, which the
+# accuracy report joins against its own counts to produce the CSV that Table "simdata" of the paper
+# reads. Only this script can supply these three numbers: they are properties of the simulation, and
+# by the time the evaluation runs the settings that produced them are gone.
+#
+# The read length and the read count are measured from the generated file rather than taken from the
+# request, because the two differ -- InSilicoSeq silently skips records shorter than the read length,
+# so a run can fall far short of what was asked for.
+#
+# The per-base error is measured from the quality strings unless a rate is passed in. That override
+# exists for NanoSim, whose quality strings are placeholders and whose honest figure comes from the
+# alignment its training performed; see the tick-borne part below.
+#
+# $1 = database, $2 = fastq key, $3 = generated fastq (may be .gz), $4 = per-base error % or empty
+record_simparams() {
+  _rs_db=$1; _rs_key=$2; _rs_file=$3; _rs_error=$4
+  _rs_out="${basedir}/results/${_rs_db}_simparams.csv"
+  mkdir -p "${basedir}/results"
+  [ -s "$_rs_file" ] || return 0
+
+  case "$_rs_file" in
+    *.gz) _rs_cat="gunzip -c" ;;
+    *)    _rs_cat="cat" ;;
+  esac
+  _rs_m=$($_rs_cat "$_rs_file" | awk -v CHARS="$PHRED33" '
+    NR % 4 == 2 { bases += length($0); reads++ }
+    NR % 4 == 0 { n = length($0)
+                  for (i = 1; i <= n; i++) { q = index(CHARS, substr($0, i, 1)) - 1
+                                             if (q < 0) q = 0
+                                             esum += 10 ^ (-q / 10) }
+                  qbases += n }
+    END { if (reads == 0) { print "0;0;0"; exit }
+          printf "%.0f;%.4f;%d\n", bases / reads, qbases ? 100 * esum / qbases : 0, reads }')
+
+  _rs_len=$(printf '%s' "$_rs_m" | cut -d';' -f1)
+  _rs_qerr=$(printf '%s' "$_rs_m" | cut -d';' -f2)
+  _rs_n=$(printf '%s' "$_rs_m" | cut -d';' -f3)
+  [ -n "$_rs_error" ] || _rs_error=$_rs_qerr
+
+  if [ ! -f "$_rs_out" ]; then
+    echo "fastq key;read length;per-base error;simulated;" > "$_rs_out"
+  fi
+  # Replace any earlier row for this key, so re-running a regime updates rather than duplicates.
+  _rs_tmp="${_rs_out}.tmp"
+  awk -F';' -v k="$_rs_key" 'NR==1 || $1 != k' "$_rs_out" > "$_rs_tmp"
+  echo "${_rs_key};${_rs_len};${_rs_error};${_rs_n};" >> "$_rs_tmp"
+  mv "$_rs_tmp" "$_rs_out"
+  echo "  recorded: ${_rs_len} bp, ${_rs_error} % per-base error, ${_rs_n} reads"
+}
 
 scriptdir=$(dirname "$0")
 cd "$scriptdir/.."
@@ -115,6 +169,27 @@ make_iss() {
   # than any of the short-read sets.
   nanopore_long_read_length=${NANOPORE_LONG_READ_LENGTH:-3926}
   nanopore_long_n_reads=${NANOPORE_LONG_N_READS:-200k}
+  # The saliva regime exists so that the ground-truth-free estimate of the paper can be calibrated
+  # at the parameters of the data it is applied to, rather than extrapolated to them. The three runs
+  # of the first Genestrip paper -- SRR5571991, SRR5571990, SRR5571985 -- are Illumina HiSeq 2000,
+  # paired, 101 bp per mate, and their quality strings give a mean per-base error of 2.07 %.
+  #
+  # Neither stock InSilicoSeq model reproduces that. Its "HiSeq" model emits 126 bp at 0.1952 % --
+  # an order of magnitude cleaner than the real HiSeq data it is named after -- and its "MiSeq"
+  # model 301 bp at 0.7274 %. The `basic' model is used instead, which substitutes a base with
+  # probability 10^(-q/10) and so takes both the error rate and the read length as parameters.
+  #
+  # Substitutions only, and that limitation is mild here: Illumina error is overwhelmingly
+  # substitution, unlike the indel-heavy Nanopore error the same mechanism approximates above. What
+  # this set does NOT reproduce is the position-dependent quality profile of a real run, where the
+  # error concentrates towards the read end; it spreads the same total error uniformly instead.
+  #
+  # The phred value the rate is converted to is an integer, so 2.07 % lands on phred 17 and the
+  # reads come out at 1.9953 %. That is the figure the table reports, since it is measured from the
+  # generated reads rather than from this setting -- the 4 % relative shortfall is not worth a
+  # fractional-phred patch, being far inside the spread the calibration is meant to bridge.
+  saliva_error=${SALIVA_ERROR_PCT:-2.07}
+  saliva_read_length=${SALIVA_READ_LENGTH:-101}
   mkdir -p "$workdir"
 
   # InSilicoSeq wants one uncompressed multi-FASTA. The concatenation is removed again at the end,
@@ -145,6 +220,9 @@ make_iss() {
   elif [ -n "${ERROR_NANOPORE_LONG:-}" ]; then
     models="nanoporelong"
     mapfile="${fastqdir}/${db}_sim_nanoporelong.txt"
+  elif [ -n "${ERROR_SALIVA:-}" ]; then
+    models="saliva"
+    mapfile="${fastqdir}/${db}_sim_saliva.txt"
   else
     models="miseq hiseq"
     mapfile="${fastqdir}/${db}_sim.txt"
@@ -160,6 +238,9 @@ make_iss() {
     if [ "$model" = nanoporelong ]; then
       model_reads=$nanopore_long_n_reads
       model_read_length=$nanopore_long_read_length
+    elif [ "$model" = saliva ]; then
+      model_reads=$n_reads
+      model_read_length=$saliva_read_length
     else
       model_reads=$n_reads
       model_read_length=$nanopore_read_length
@@ -169,14 +250,19 @@ make_iss() {
       # No error model at all: the reads differ from the reference only by where they were cut.
       "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$model_reads" \
         --cpus "$cpus" --compress --output "$prefix"
-    elif [ "$model" = nanopore ] || [ "$model" = nanoporelong ]; then
+    elif [ "$model" = nanopore ] || [ "$model" = nanoporelong ] || [ "$model" = saliva ]; then
       # InSilicoSeq's `basic' model substitutes a base with probability 10^(-q/10), so a phred
       # value of q gives a uniform per-base error rate of choice; ISS_BASIC_PHRED is honoured by
       # the patch install_tools.sh applies. Note that these are substitutions only, whereas real
       # Nanopore error is indel-heavy -- what carries over is how many k-mers survive a read,
       # which is what the classification depends on.
-      phred=$(awk -v e="$nanopore_error" 'BEGIN{printf "%d", -10*log(e/100)/log(10) + 0.5}')
-      echo "  per-base error ${nanopore_error} % -> phred ${phred}, read length ${model_read_length} bp"
+      if [ "$model" = saliva ]; then
+        model_error=$saliva_error
+      else
+        model_error=$nanopore_error
+      fi
+      phred=$(awk -v e="$model_error" 'BEGIN{printf "%d", -10*log(e/100)/log(10) + 0.5}')
+      echo "  per-base error ${model_error} % -> phred ${phred}, read length ${model_read_length} bp"
       # Records shorter than the read length are skipped by InSilicoSeq, so a long read length
       # restricts the simulation to the longer contigs of the extracted genomes.
       ISS_BASIC_PHRED="$phred" ISS_BASIC_READ_LENGTH="$model_read_length" \
@@ -210,6 +296,7 @@ make_iss() {
       else
         echo "  ${actual} reads"
       fi
+      record_simparams "$db" "iss_${model}" "${prefix}_R1.fastq.gz" ""
     fi
   done
 
@@ -373,9 +460,17 @@ make_ticks() {
     # the rest), NanoSim trains its base-quality model on them and emits equally meaningless
     # qualities, so reading an error rate off the simulated fastq gives nonsense. The alignment-based
     # figure here is the one to quote.
+    ns_error=""
     if [ -f "${nswork}/training_error_rate.tsv" ]; then
       cp "${nswork}/training_error_rate.tsv" "${fastqdir}/${sample}_sim_error_rate.tsv"
+      # The file states the rate as a percentage on a line naming it; take the first number on the
+      # line mentioning the mismatch/insertion/deletion total. An empty result simply falls back to
+      # the quality strings, which for these runs would be nonsense -- so report that it happened.
+      ns_error=$(awk '/[Ee]rror rate/ { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%?$/) { gsub(/%/, "", $i); print $i; exit } }' \
+          "${fastqdir}/${sample}_sim_error_rate.tsv")
+      [ -n "$ns_error" ] || echo "  WARNING: no error rate parsed from ${sample}_sim_error_rate.tsv" >&2
     fi
+    record_simparams "$db" "$sample" "$out" "$ns_error"
     # Everything else NanoSim leaves behind, removed per sample rather than at the end: it writes
     # every sample under the same `simulated_sample0' prefix, so without this the next tick's run
     # sits on top of the previous one's debris and the folder never reveals what belongs to what.
