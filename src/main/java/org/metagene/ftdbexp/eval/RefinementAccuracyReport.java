@@ -148,10 +148,12 @@ public class RefinementAccuracyReport {
      * paper's table can include it with {@code \csvreader} and nothing has to be copied by hand.
      * <p>
      * The detailed CSV beside it carries one row per database variant, which is the right shape for
-     * the measurements but the wrong one for a table: the quantities the paper reports --- the gain
-     * {@code delta}, its ground-truth-free counterpart {@code delta'} and their ratio {@code rho} ---
-     * are differences and a quotient <em>between</em> those rows. LaTeX is poor at arithmetic across
-     * rows, so they are computed here instead.
+     * the measurements but the wrong one for a table: the paper puts the unrefined and the refined
+     * figure of a measure side by side, and {@code rho} is a quotient of differences <em>between</em>
+     * those rows. LaTeX is poor at arithmetic across rows, so it is computed here instead.
+     * <p>
+     * The two gains themselves get no column: each is the difference of the two precisions printed
+     * beside it, so a column would restate what the row already says.
      *
      * @param db        the name of the database project
      * @param reportKey the report key, used in the file name
@@ -165,8 +167,8 @@ public class RefinementAccuracyReport {
             // The raw fastq key travels with the row so that a report keyed off this one can join
             // to it without depending on how the model happens to be spelled.
             ps.println("db;fastq key;model;reads;classified;genus only;genus only share"
-                    + ";prec g u;prec g f;delta"
-                    + ";obs genus only;prec g ungated u;prec g ungated f;delta ungated;rho;");
+                    + ";prec g u;prec g f"
+                    + ";obs genus only;prec g ungated u;prec g ungated f;rho u;rho f;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
                 AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
@@ -177,8 +179,22 @@ public class RefinementAccuracyReport {
                 double pf = f.getGenusOnlyPrecision();
                 double gu = u.getObsGenusOnlyUngatedPrecision();
                 double gf = f.getObsGenusOnlyUngatedPrecision();
-                double delta = pf - pu;
-                double deltaUngated = gf - gu;
+                // The calibration is a pair of factors on the levels, not one factor on the gain.
+                // Each turns an ungated precision into the gated one it stands for, and the two are
+                // kept apart because they answer to different effects. rho_u is the subset
+                // discrepancy |R'_g| / |R_g| times a factor that is one when no read was stopped at
+                // a foreign genus -- 0.9991 to 1.0000 on the viral sets, but 0.985 to 0.993 on the
+                // tick ones, where the ungated average is small enough that the few dozen such reads
+                // still shift it. rho_f carries that and the sibling reads a refinement rescues,
+                // which is why rho_f exceeds rho_u on every read set here.
+                //
+                // Ratios of levels rather than of gains, for two reasons. They stay within [0, 1]
+                // and so read as the shrinkage factors they are, where a ratio of two small
+                // differences has no such bound and crosses one on "MiSeq". And they let a real
+                // sample be given an estimated precision before and after, rather than only an
+                // estimated gain -- the difference of the two estimates is that gain anyway.
+                double rhoU = gu == 0 ? Double.NaN : pu / gu;
+                double rhoF = gf == 0 ? Double.NaN : pf / gf;
                 ps.print(db);
                 ps.print(';');
                 ps.print(fastqKey);
@@ -198,17 +214,15 @@ public class RefinementAccuracyReport {
                 ps.print(';');
                 ps.print(format(pf));
                 ps.print(';');
-                ps.print(format(delta));
-                ps.print(';');
                 ps.print(u.getObsGenusOnlyTotal());
                 ps.print(';');
                 ps.print(format(gu));
                 ps.print(';');
                 ps.print(format(gf));
                 ps.print(';');
-                ps.print(format(deltaUngated));
+                ps.print(format(rhoU));
                 ps.print(';');
-                ps.print(format(deltaUngated == 0 ? Double.NaN : delta / deltaUngated));
+                ps.print(format(rhoF));
                 ps.println(';');
             }
         }
@@ -238,6 +252,9 @@ public class RefinementAccuracyReport {
         }
         if ("nanosim".equals(fastqKey)) {
             return "NanoSim";
+        }
+        if ("iss_saliva".equals(fastqKey)) {
+            return "saliva-like";
         }
         // Anything else keeps its identity, which is what names the read set. For the tick-borne
         // data that is the sample -- tick1, tick2 and so on -- and mapping those to the simulator
@@ -426,8 +443,8 @@ public class RefinementAccuracyReport {
         // counts as 1/n of a hit, so narrowing the species down pays off even short of pinning it.
         ps.print(";species score;precision species cand;recall species cand;f1 species cand");
         // Restricted to the reads the unrefined database left at their genus: the only ones a
-        // refinement can improve on. The delta between the two variants of "genus only precision
-        // species cand" is the gain where a gain was possible.
+        // refinement can improve on. The increase in "genus only precision species cand" from the
+        // unrefined to the refined variant is the gain where a gain was possible.
         ps.print(";genus only;genus only score;genus only precision species cand"
                 + ";genus only species share;genus only zero scoring");
         // The ungated measure, prec'_g of the paper. It differs from the gated one in *both* of its

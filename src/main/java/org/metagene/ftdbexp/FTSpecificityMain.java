@@ -16,8 +16,10 @@ import java.io.File;
  * <p>
  * Unlike {@link FTExpMain} this reports no precision and no recall. Neither is defined without the
  * species a read stems from. What it does report is how far each database variant narrows the
- * species down on the reads the unrefined one left at a genus, and the difference between the two --
- * the specificity gain that bounds the precision gain from above.
+ * species down on the reads the unrefined one left at a genus. That difference is not a bound on the
+ * precision gain in either direction; it becomes an estimate of the gated precisions only through
+ * the calibration factors of a simulated run, which {@link org.metagene.ftdbexp.eval.SpecificityReport}
+ * applies.
  */
 public class FTSpecificityMain {
     private static final File BASE_DIR = new File("./data");

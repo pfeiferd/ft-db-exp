@@ -16,6 +16,7 @@ import org.junit.Test;
 import org.metagene.genestrip.tax.Rank;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 /**
@@ -190,11 +191,17 @@ public class MeasureConsistencyTest {
         assertEquals(4L, Long.parseLong(row.get("obs genus only")));
         assertEquals(0.15, Double.parseDouble(row.get("prec g u")), 1e-6);
         assertEquals(0.35, Double.parseDouble(row.get("prec g f")), 1e-6);
-        assertEquals(0.20, Double.parseDouble(row.get("delta")), 1e-6);
         assertEquals(0.40, Double.parseDouble(row.get("prec g ungated u")), 1e-6);
         assertEquals(0.60, Double.parseDouble(row.get("prec g ungated f")), 1e-6);
-        assertEquals(0.20, Double.parseDouble(row.get("delta ungated")), 1e-6);
-        assertEquals(1.0, Double.parseDouble(row.get("rho")), 1e-6);
+        // The calibration is a pair of factors on the levels, not one on the gain: rho_u turns the
+        // unrefined ungated precision into the gated one (0.15 / 0.40) and rho_f does the same after
+        // the refinement (0.35 / 0.60). Neither gain gets a column -- each is a difference of two
+        // columns already present.
+        assertEquals(0.15 / 0.40, Double.parseDouble(row.get("rho u")), 1e-6);
+        assertEquals(0.35 / 0.60, Double.parseDouble(row.get("rho f")), 1e-6);
+        assertFalse("the gain columns were dropped", row.containsKey("delta"));
+        assertFalse("the gain columns were dropped", row.containsKey("delta ungated"));
+        assertFalse("a single rho was replaced by the pair", row.containsKey("rho"));
     }
 
     /** Runs writeSummary into a temporary directory and zips its header against its single row. */

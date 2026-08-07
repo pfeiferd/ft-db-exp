@@ -67,9 +67,16 @@ PHRED33='!"#$%&'"'"'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abc
 # exists for NanoSim, whose quality strings are placeholders and whose honest figure comes from the
 # alignment its training performed; see the tick-borne part below.
 #
-# $1 = database, $2 = fastq key, $3 = generated fastq (may be .gz), $4 = per-base error % or empty
+# The read count is per FILE, and for a paired set that is half the reads: InSilicoSeq's --n_reads
+# is the total across both mates, and Genestrip counts each mate as a read, so a request of 1M
+# yields 500k records in R1 and a `total' of 1M in the evaluation. Only R1 is measured -- reading
+# both would double the work to learn the same read length -- so $5 says how many mates the set has
+# and the count is scaled by it. NanoSim's output is single-end and passes 1.
+#
+# $1 = database, $2 = fastq key, $3 = generated fastq (may be .gz), $4 = per-base error % or empty,
+# $5 = number of mates (default 1)
 record_simparams() {
-  _rs_db=$1; _rs_key=$2; _rs_file=$3; _rs_error=$4
+  _rs_db=$1; _rs_key=$2; _rs_file=$3; _rs_error=$4; _rs_mates=${5:-1}
   _rs_out="${basedir}/results/${_rs_db}_simparams.csv"
   mkdir -p "${basedir}/results"
   [ -s "$_rs_file" ] || return 0
@@ -91,6 +98,7 @@ record_simparams() {
   _rs_len=$(printf '%s' "$_rs_m" | cut -d';' -f1)
   _rs_qerr=$(printf '%s' "$_rs_m" | cut -d';' -f2)
   _rs_n=$(printf '%s' "$_rs_m" | cut -d';' -f3)
+  _rs_n=$((_rs_n * _rs_mates))
   [ -n "$_rs_error" ] || _rs_error=$_rs_qerr
 
   if [ ! -f "$_rs_out" ]; then
@@ -296,7 +304,7 @@ make_iss() {
       else
         echo "  ${actual} reads"
       fi
-      record_simparams "$db" "iss_${model}" "${prefix}_R1.fastq.gz" ""
+      record_simparams "$db" "iss_${model}" "${prefix}_R1.fastq.gz" "" 2
     fi
   done
 
@@ -470,7 +478,7 @@ make_ticks() {
           "${fastqdir}/${sample}_sim_error_rate.tsv")
       [ -n "$ns_error" ] || echo "  WARNING: no error rate parsed from ${sample}_sim_error_rate.tsv" >&2
     fi
-    record_simparams "$db" "$sample" "$out" "$ns_error"
+    record_simparams "$db" "$sample" "$out" "$ns_error" 1
     # Everything else NanoSim leaves behind, removed per sample rather than at the end: it writes
     # every sample under the same `simulated_sample0' prefix, so without this the next tick's run
     # sits on top of the previous one's debris and the folder never reveals what belongs to what.

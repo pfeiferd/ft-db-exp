@@ -24,11 +24,12 @@ import java.util.Map;
  * remains available is how far a classification narrows the species down: the reciprocal of the
  * number of species still in question at the assigned node, averaged over the reads the unrefined
  * database left at a genus. The difference between the two database variants is the
- * <em>specificity gain</em> {@code delta'} of the paper's Section "Estimating the gain without
- * ground truth". It is not a bound on the precision gain in either direction --- the two are
- * averages of different summands over different subsets --- but multiplied by the calibration
- * factor {@code rho_{d,s}} determined on simulated reads of the same database it estimates it,
- * which is what this report exists for.
+ * increase in the ungated precision of the paper's Section "Estimating the gain without ground
+ * truth". It is not a bound on the increase in the gated precision in either direction --- the two are averages of different
+ * summands over different subsets --- but each ungated precision, carried by the calibration factor
+ * {@code rho_u} or {@code rho_f} determined on simulated reads of the same database, estimates the
+ * gated precision it stands for. Those two estimates, and the gain between them, are what this
+ * report exists for.
  * <p>
  * The subset is fixed by the unrefined run and looked up by the refined one, exactly as for the
  * simulated data, so that both variants are scored on one and the same set of reads.
@@ -84,13 +85,13 @@ public class SpecificityReport {
         if (!resultsDir.exists() && !resultsDir.mkdirs()) {
             throw new IOException("Cannot create results directory " + resultsDir);
         }
-        Map<String, Double> calibration = readCalibration(db, calibrationKey);
+        Map<String, double[]> calibration = readCalibration(db, calibrationKey);
         File file = new File(resultsDir, db + "_" + reportKey + "_specificity.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
             ps.println("fastq key;sample;reads;classified unrefined;classified refined"
                     + ";obs genus only;obs genus only share"
-                    + ";ungated precision unrefined;ungated precision refined;delta"
-                    + ";rho;estimated delta;");
+                    + ";ungated precision unrefined;ungated precision refined"
+                    + ";rho u;rho f;est prec g u;est prec g f;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
                 AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
@@ -121,8 +122,6 @@ public class SpecificityReport {
                 ps.print(';');
                 ps.print(format(pf));
                 ps.print(';');
-                ps.print(format(pf - pu));
-                ps.print(';');
                 // Two ways a calibration applies. Per sample, when the simulated run was trained
                 // on the very sample being scored -- the ticks, where both are keyed tickN. Or
                 // wholesale, when the calibration run models the sample's parameters rather than
@@ -130,13 +129,20 @@ public class SpecificityReport {
                 // saliva runs, whose keys are SRA accessions and match nothing. A calibration of
                 // exactly one row is therefore taken to apply to every sample; more than one row
                 // means the rows are per sample and only a key match will do.
-                Double rho = calibration.get(fastqKey);
+                double[] rho = calibration.get(fastqKey);
                 if (rho == null && calibration.size() == 1) {
                     rho = calibration.values().iterator().next();
                 }
-                ps.print(rho == null ? "" : format(rho));
+                ps.print(rho == null ? "" : format(rho[0]));
                 ps.print(';');
-                ps.print(rho == null ? "" : format(rho * (pf - pu)));
+                ps.print(rho == null ? "" : format(rho[1]));
+                ps.print(';');
+                // The estimated gated precision before and after, each level carrying its own
+                // factor. Their difference is the estimated precision gain; it gets no column, for
+                // the same reason the measured gains get none.
+                ps.print(rho == null ? "" : format(rho[0] * pu));
+                ps.print(';');
+                ps.print(rho == null ? "" : format(rho[1] * pf));
                 ps.println(';');
             }
         }
@@ -145,7 +151,8 @@ public class SpecificityReport {
     }
 
     /**
-     * Reads the {@code rho} column of a simulated run's summary, keyed by its raw fastq key.
+     * Reads the {@code rho u} and {@code rho f} columns of a simulated run's summary, keyed by
+     * its raw fastq key.
      * <p>
      * The calibration cannot be computed here: {@code rho_{d,s}} is the ratio of the gated to the
      * ungated gain, and the gated one needs the ground truth this report does not have. It is
@@ -155,11 +162,11 @@ public class SpecificityReport {
      *
      * @param db             the name of the database project
      * @param calibrationKey the report key of the simulated run, or {@code null} for none
-     * @return fastq key to rho; empty if no calibration was named or its summary is absent. A map
+     * @return fastq key to {rho_u, rho_f}; empty if none was named or its summary is absent. A map
      * of exactly one entry is applied to every sample regardless of its key --- see the call site.
      */
-    private Map<String, Double> readCalibration(String db, String calibrationKey) {
-        Map<String, Double> byKey = new HashMap<String, Double>();
+    private Map<String, double[]> readCalibration(String db, String calibrationKey) {
+        Map<String, double[]> byKey = new HashMap<String, double[]>();
         if (calibrationKey == null || calibrationKey.isEmpty()) {
             return byKey;
         }
@@ -176,19 +183,24 @@ public class SpecificityReport {
             }
             String[] names = header.split(";", -1);
             int keyAt = indexOf(names, "fastq key");
-            int rhoAt = indexOf(names, "rho");
-            if (keyAt < 0 || rhoAt < 0) {
-                System.out.println("No 'fastq key'/'rho' columns in " + summary + " - estimate columns stay empty.");
+            int rhoUAt = indexOf(names, "rho u");
+            int rhoFAt = indexOf(names, "rho f");
+            if (keyAt < 0 || rhoUAt < 0 || rhoFAt < 0) {
+                System.out.println("No 'fastq key'/'rho u'/'rho f' columns in " + summary
+                        + " - estimate columns stay empty.");
                 return byKey;
             }
             String line;
             while ((line = in.readLine()) != null) {
                 String[] cells = line.split(";", -1);
-                if (cells.length <= Math.max(keyAt, rhoAt) || cells[rhoAt].trim().isEmpty()) {
+                if (cells.length <= Math.max(keyAt, Math.max(rhoUAt, rhoFAt))
+                        || cells[rhoUAt].trim().isEmpty() || cells[rhoFAt].trim().isEmpty()) {
                     continue;
                 }
                 try {
-                    byKey.put(cells[keyAt].trim(), Double.valueOf(cells[rhoAt].trim()));
+                    byKey.put(cells[keyAt].trim(), new double[]{
+                            Double.parseDouble(cells[rhoUAt].trim()),
+                            Double.parseDouble(cells[rhoFAt].trim())});
                 } catch (NumberFormatException e) {
                     // A row whose rho is undefined carries no calibration; skip it rather than fail.
                 }

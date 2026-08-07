@@ -96,8 +96,9 @@ run_iss_all_regimes() {
 # The experiments on real reads, which have no ground truth: `cv' against the five human saliva runs
 # of the first paper and `tb' against its tick samples. Neither precision nor recall is defined here,
 # so this runs the `specificity' entry point instead of `accuracy': it reports how far each database
-# variant narrows the species down on the reads the unrefined one left at a genus, and the difference
-# between the two -- the specificity gain that bounds the precision gain from above.
+# variant narrows the species down on the reads the unrefined one left at a genus. The difference
+# between the two is not a bound on the precision gain; it becomes an estimate of it only through the
+# calibration factors rho_u and rho_f of a simulated run -- see SpecificityReport.
 #
 # $1 = database project name, $2 = fastq mapping file, $3 = report key,
 # $4 = report key of the simulated run supplying the calibration rho (optional). For the ticks that
