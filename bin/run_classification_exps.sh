@@ -79,18 +79,33 @@ run_iss() {
 
 # The read sets the paper reports: the two Illumina models and the error-free one.
 # See make_fastqs.sh for what each of them is for, and why the Nanopore ones are not included.
+#
+# Every regime variable run_iss reads is cleared here, not just the ones this function sets, and for
+# the same reason make_fastqs.sh clears them: run_iss takes the first non-empty one, so one left over
+# in the environment redirects these calls without saying so. The saliva case is the one that bites.
+# `ERROR_SALIVA=1 run_classification_exps.sh all' would score the saliva-matched reads under the
+# report key iss_saliva where the plain Illumina run belongs, leaving no viral_iss_summary.csv at
+# all -- and `all' goes on to call run_real for the saliva samples, which reads exactly that report
+# key as its calibration, so the damage would surface as a calibration silently taken from the wrong
+# read set rather than as a failure. Run the saliva regime on its own:
+#
+#   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral
+#
+# and run it *before* the `real' part, since that is what produces the calibration `real' consumes.
 run_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
   saved_nanopore=${ERROR_NANOPORE:-}
   saved_nanopore_long=${ERROR_NANOPORE_LONG:-}
-  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
+  saved_saliva=${ERROR_SALIVA:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""
   run_iss "$1"
-  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
+  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""
   run_iss "$1"
   # No Nanopore regimes here either, for the reason given in make_fastqs.sh: NanoSim replaces them.
   ERROR_FREE=$saved_error_free
   ERROR_NANOPORE=$saved_nanopore
   ERROR_NANOPORE_LONG=$saved_nanopore_long
+  ERROR_SALIVA=$saved_saliva
 }
 
 # The experiments on real reads, which have no ground truth: `cv' against the five human saliva runs

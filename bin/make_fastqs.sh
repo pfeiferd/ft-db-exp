@@ -374,13 +374,22 @@ make_iss() {
 #   Nanopore     long reads at a uniform per-base error, both in the range the first Genestrip
 #                paper reports for Nanopore devices, which tests whether the effect survives a far
 #                higher error rate and a far greater read length at once
+#
+# Every regime variable make_iss reads has to be cleared here, not just the ones this function sets.
+# make_iss picks its regime from the first of them that is non-empty, so one left over in the
+# environment silently redirects the calls below: `ERROR_SALIVA=1 make_fastqs.sh all' would write the
+# saliva-matched set where the plain Illumina one belongs, under a mapping file of a different name,
+# and the run would look like it had succeeded. The saliva regime is a calibration set for the real
+# saliva runs rather than one of the three reported here, so `all' must never produce it by accident
+# -- ask for it on its own, with ERROR_SALIVA=1 make_fastqs.sh viral.
 make_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
   saved_nanopore=${ERROR_NANOPORE:-}
   saved_nanopore_long=${ERROR_NANOPORE_LONG:-}
-  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
+  saved_saliva=${ERROR_SALIVA:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""
   make_iss "$1"
-  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""
+  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""
   make_iss "$1"
   # The two Nanopore regimes are deliberately NOT part of `all'. InSilicoSeq's `basic' model
   # substitutes bases, whereas real Nanopore error is indel-heavy, so those sets only ever
@@ -390,6 +399,7 @@ make_iss_all_regimes() {
   ERROR_FREE=$saved_error_free
   ERROR_NANOPORE=$saved_nanopore
   ERROR_NANOPORE_LONG=$saved_nanopore_long
+  ERROR_SALIVA=$saved_saliva
 }
 
 ############################## tick-borne / NanoSim ##############################
