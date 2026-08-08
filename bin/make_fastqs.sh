@@ -112,6 +112,41 @@ record_simparams() {
   echo "  recorded: ${_rs_len} bp, ${_rs_error} % per-base error, ${_rs_n} reads"
 }
 
+# Copies what NanoSim learned about one sample into <results>, so that the simulation can afterwards
+# be held against the real run it was trained on. Everything here is a *training* output, not a
+# measurement of the simulated reads, and none of it can be reconstructed once the working directory
+# is cleaned:
+#
+#   _quantification.tsv  the abundance table -- per reference genome, the share of the simulated
+#                        reads it supplies. Derived by aligning the real reads against the genome
+#                        list, so it states the real sample's composition as projected onto the
+#                        twelve genera, which is what a simulated-against-real comparison of the
+#                        genus-only subset |R'_g| turns on.
+#   _error_rate.tsv      the alignment-derived per-base error, already summarised into
+#                        <db>_simparams.csv but kept whole here: that summary is one number, and the
+#                        file breaks it into mismatches, insertions and deletions.
+#
+# Both are preserved next to the fastq files by the caller, which is what lets this run on a SKIP
+# too: a re-run that regenerates nothing still republishes them. Only the copy into <results> is
+# this function's business.
+#
+# $1 = sample name
+publish_ns_inputs() {
+  _ns_sample=$1
+  mkdir -p "${basedir}/results"
+  for _ns_what in quantification error_rate; do
+    _ns_src="${fastqdir}/${_ns_sample}_sim_${_ns_what}.tsv"
+    if [ -f "$_ns_src" ]; then
+      cp "$_ns_src" "${basedir}/results/tick-borne_${_ns_sample}_${_ns_what}.tsv"
+    else
+      # Reads generated before this script preserved the file. Say so rather than leave a gap in
+      # <results> that looks like the sample was never simulated.
+      echo "  NOTE: ${_ns_src} is missing - ${_ns_sample} was simulated before this was kept." >&2
+      echo "        Delete ${fastqdir}/${_ns_sample}_sim.fastq and re-run to regenerate it." >&2
+    fi
+  done
+}
+
 scriptdir=$(dirname "$0")
 cd "$scriptdir/.."
 basedir=$(pwd)
@@ -452,6 +487,7 @@ make_ticks() {
             "${fastqdir}/${sample}_sim_error_rate.tsv")
       fi
       record_simparams "$db" "$sample" "$out" "$ns_error" 1
+      publish_ns_inputs "$sample"
       continue
     fi
     input="${fastqdir}/${sample}.fastq.gz"
@@ -459,6 +495,22 @@ make_ticks() {
     echo "=== ${sample}: training the error model on the real reads ==="
     ( cd "$nswork" && "$python" "${nanosimdir}/src/read_analysis.py" metagenome \
         -q --fastq -gl "$genomes" -i "$input" -t "$cpus" )
+
+    # The abundance table, kept before the sed below rewrites its header. This is what the training
+    # step measured: minimap2 aligned the real reads of this sample against the genome list, and the
+    # result says what share of the simulated reads each reference genome supplies. It is therefore
+    # the real sample's composition *projected onto the twelve genera* -- the only record of how the
+    # simulation's makeup relates to the sample it stands for, and what an analysis comparing the
+    # simulated |R'_g| against the real one has to appeal to.
+    #
+    # It cannot be recovered afterwards, for the same reason the error rate cannot: NanoSim writes
+    # every sample under the same `training_' prefix in one shared working directory, and the
+    # cleanup at the end of this loop removes it so the next sample does not train on top of it.
+    if [ -f "${nswork}/training_quantification.tsv" ]; then
+      cp "${nswork}/training_quantification.tsv" "${fastqdir}/${sample}_sim_quantification.tsv"
+    else
+      echo "  WARNING: no training_quantification.tsv for ${sample} - the abundance is not preserved." >&2
+    fi
 
     echo "=== ${sample}: simulating ${reads} reads ==="
     sed -i "s/Abundance/${reads}/g" "${nswork}/training_quantification.tsv"
@@ -508,8 +560,16 @@ make_ticks() {
     #                         a half-finished run from looking like a finished one.
     rm -f "${nswork}"/training* "${nswork}/reference_metagenome.fasta" \
           "${nswork}"/simulated_sample0_*
+    publish_ns_inputs "$sample"
     echo "OK    ${out}"
   done
+
+  # The genome list, once per run rather than per sample: it is the same file for all eight, and it
+  # is what resolves an abundance row to a taxon -- each entry labels a genome "<taxid>x<index>",
+  # which is also the prefix of every simulated read's name.
+  mkdir -p "${basedir}/results"
+  cp "$genomes" "${basedir}/results/tick-borne_nanosim_genomes.tsv"
+  echo "Wrote ${basedir}/results/tick-borne_nanosim_genomes.tsv"
 
   # One key per sample, as in the first paper's ticks_sim.txt, and again next to the fastq files.
   {

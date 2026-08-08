@@ -181,7 +181,44 @@ run_perf() {
     mvn exec:exec@match -Dname="$db" -Dgoal="$goal" -Dfqmap="$map" -Dgs.target=clean
     ./tools/cgmemtime/cgmemtime mvn exec:exec@match -Dname="$db" -Dgoal="$goal" -Dfqmap="$map" \
         > "${res_path}/${goal}_${logkey}.log"
+    publish_match_results "$db" "$goal" "$logkey"
   done
+}
+
+# Copies the per-taxon match results of the run just measured into <results>.
+#
+# These are the goal's own output -- one CSV per fastq key, giving per taxon how many reads were
+# assigned to it -- and they are the only per-taxon view of a run that survives it. The reports
+# beside them aggregate: <db>_<key>_summary.csv states how large the genus-only subset |R'_g| is,
+# these say *which* taxa it consists of, which is what an analysis of why that subset differs
+# between a simulation and the real sample it models has to work from.
+#
+# They must be copied here, inside the loop, rather than by a sweep at the end. Genestrip names them
+# after the fastq key, and the simulated and the real tick runs use the same keys tick1 .. tick8 from
+# two different maps (ticks_sim.txt and seventicks.txt), so the second run overwrites the first's
+# files in the project folder -- and the `clean' target above deletes them outright. The log key,
+# which already keeps the two runs' performance logs apart, keeps their CSVs apart the same way.
+#
+# Note that this rides on the performance measurement: run_perf returns early when cgmemtime is
+# unavailable, and then the match goals never run and there is nothing to copy.
+#
+# $1 = database project name, $2 = goal name, $3 = log key distinguishing this run
+publish_match_results() {
+  _pm_db=$1; _pm_goal=$2; _pm_logkey=$3
+  _pm_dir="${basedir}/data/projects/${_pm_db}/csv"
+  _pm_n=0
+  for _pm_src in "${_pm_dir}/${_pm_db}_${_pm_goal}_"*.csv; do
+    [ -e "$_pm_src" ] || continue
+    _pm_key=$(basename "$_pm_src" .csv)
+    _pm_key=${_pm_key#"${_pm_db}_${_pm_goal}_"}
+    cp "$_pm_src" "${res_path}/${_pm_goal}_${_pm_logkey}_${_pm_key}.csv"
+    _pm_n=$((_pm_n + 1))
+  done
+  if [ "$_pm_n" -gt 0 ]; then
+    echo "  kept ${_pm_n} per-taxon result(s) as ${res_path}/${_pm_goal}_${_pm_logkey}_*.csv"
+  else
+    echo "  WARNING: no ${_pm_db}_${_pm_goal}_*.csv in ${_pm_dir} - no per-taxon results kept." >&2
+  fi
 }
 
 # The first of the two runs reads its database from a cold page cache while the second may find
@@ -217,3 +254,5 @@ echo
 echo "=== results ==="
 ls -la "$res_path"/*_accuracy.csv 2>/dev/null || echo "no accuracy results yet"
 ls -la "$res_path"/match_*.log "$res_path"/ftmatch_*.log 2>/dev/null || echo "no performance logs yet"
+ls -la "$res_path"/match_*_*.csv "$res_path"/ftmatch_*_*.csv 2>/dev/null \
+    || echo "no per-taxon match results yet"

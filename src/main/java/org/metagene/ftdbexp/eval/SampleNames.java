@@ -19,19 +19,76 @@ final class SampleNames {
     /**
      * @param fastqKey  the key of the fastq file
      * @param simulated whether the reads were simulated from the sample rather than being it
-     * @return {@code tick3} as {@code Sim. Tick 3} or {@code Tick 3}; anything else unchanged,
-     * which leaves the SRA accessions and the InSilicoSeq model names as they are
+     * @return {@code tick3} as {@code Sim. Tick 3} or {@code Tick 3}; anything else unchanged but
+     * for the escaping of {@link #latexSafe(String)}, which leaves the SRA accessions and the
+     * InSilicoSeq model names as they are
      */
     static String display(String fastqKey, boolean simulated) {
         if (fastqKey.length() > 4 && fastqKey.startsWith("tick")) {
             String suffix = fastqKey.substring(4);
             for (int i = 0; i < suffix.length(); i++) {
                 if (!Character.isDigit(suffix.charAt(i))) {
-                    return fastqKey;
+                    return latexSafe(fastqKey);
                 }
             }
             return (simulated ? "Sim. Tick " : "Tick ") + suffix;
         }
-        return fastqKey;
+        return latexSafe(fastqKey);
+    }
+
+    /**
+     * Escapes the characters TeX reads as markup, so that a key falling through to being printed
+     * verbatim cannot break the paper's build.
+     * <p>
+     * The label columns of these CSV files are read by {@code \csvreader} straight into a table cell,
+     * in text mode. A fastq key is free to contain an underscore --- {@code iss_saliva} did, and every
+     * table including it failed with <em>Missing $ inserted</em> until the key was given a name of its
+     * own in {@code RefinementAccuracyReport.displayModel}. Naming each key as it appears is the fix
+     * for the label; this is the fix for the failure mode, so that the next key nobody thought of
+     * costs a cell that reads a little oddly rather than a build that stops.
+     * <p>
+     * Escaping rather than substituting, because the fallback exists to let a key keep its identity:
+     * {@code iss_saliva} should still read as {@code iss_saliva} in the table. Only the label columns
+     * are treated this way. The raw key travels in its own column, unescaped, and that is what the
+     * reports join on.
+     *
+     * @param label the label to escape
+     * @return the label with TeX's special characters escaped
+     */
+    private static String latexSafe(String label) {
+        StringBuilder sb = new StringBuilder(label.length() + 8);
+        for (int i = 0; i < label.length(); i++) {
+            char c = label.charAt(i);
+            switch (c) {
+                case '_':
+                case '&':
+                case '%':
+                case '$':
+                case '#':
+                case '{':
+                case '}':
+                    sb.append('\\').append(c);
+                    break;
+                // These three have no \<char> form: a backslash would start a control sequence, and
+                // ~ and ^ are accents that would need an argument.
+                case '\\':
+                    sb.append("\\textbackslash{}");
+                    break;
+                case '~':
+                    sb.append("\\textasciitilde{}");
+                    break;
+                case '^':
+                    sb.append("\\textasciicircum{}");
+                    break;
+                // Not TeX's doing but this file format's: a semicolon would end the cell.
+                case ';':
+                    sb.append(',');
+                    break;
+                default:
+                    sb.append(c);
+                    break;
+            }
+        }
+        return sb.toString();
     }
 }

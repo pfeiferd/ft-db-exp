@@ -204,14 +204,57 @@ public class MeasureConsistencyTest {
         assertFalse("a single rho was replaced by the pair", row.containsKey("rho"));
     }
 
+    /**
+     * The label columns are read straight into a table cell by {@code \csvreader}, in text mode, so
+     * a fastq key carrying an underscore -- {@code iss_saliva} did -- stops the paper's build with
+     * <em>Missing $ inserted</em>. A key with a name of its own is printed under that name; one
+     * without keeps its identity, escaped. The raw key column is neither, since the reports join on
+     * it.
+     */
+    @Test
+    public void labelColumnsAreSafeToTypesetAndRawKeysAreNot() throws Exception {
+        AccuracyTally u = new AccuracyTally();
+        u.record(true, Rank.GENUS, 0.10, 0.40, true, true);
+        AccuracyTally f = new AccuracyTally();
+        f.record(true, Rank.GENUS, 0.30, 0.60, true, true);
+
+        Map<String, String> named = summaryRow(u, f, "iss_saliva");
+        assertEquals("saliva-like", named.get("model"));
+        assertEquals("the raw key travels unescaped, since it is what a report joins on",
+                "iss_saliva", named.get("fastq key"));
+
+        Map<String, String> fallback = summaryRow(u, f, "iss_novaseq");
+        assertEquals("iss\\_novaseq", fallback.get("model"));
+        assertEquals("iss_novaseq", fallback.get("fastq key"));
+    }
+
+    /**
+     * The same escaping guards {@link SpecificityReport}'s sample column, which takes its labels
+     * from {@link SampleNames} directly rather than through a table of known keys.
+     */
+    @Test
+    public void sampleLabelsEscapeWhatTexWouldReadAsMarkup() {
+        assertEquals("Sim. Tick 3", SampleNames.display("tick3", true));
+        assertEquals("Tick 3", SampleNames.display("tick3", false));
+        assertEquals("SRR5571991", SampleNames.display("SRR5571991", false));
+        assertEquals("a\\_b\\%c\\&d\\#e\\$f", SampleNames.display("a_b%c&d#e$f", false));
+        // A semicolon would end the cell rather than mis-typeset it, so it goes too.
+        assertFalse(SampleNames.display("a;b", false).contains(";"));
+    }
+
     /** Runs writeSummary into a temporary directory and zips its header against its single row. */
     private Map<String, String> summaryRow(AccuracyTally u, AccuracyTally f) throws Exception {
+        return summaryRow(u, f, "set");
+    }
+
+    private Map<String, String> summaryRow(AccuracyTally u, AccuracyTally f, String fastqKey)
+            throws Exception {
         Map<RefinementAccuracyReport.Variant, Map<String, AccuracyTally>> byVariant =
                 new EnumMap<>(RefinementAccuracyReport.Variant.class);
         byVariant.put(RefinementAccuracyReport.Variant.UNREFINED,
-                Collections.singletonMap("set", u));
+                Collections.singletonMap(fastqKey, u));
         byVariant.put(RefinementAccuracyReport.Variant.REFINED,
-                Collections.singletonMap("set", f));
+                Collections.singletonMap(fastqKey, f));
 
         File dir = Files.createTempDirectory("summary").toFile();
         dir.deleteOnExit();
