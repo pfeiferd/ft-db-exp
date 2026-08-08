@@ -223,8 +223,21 @@ uniform ~120× depth by construction and say nothing about real MinION yield. Th
 3,824 bp, is essentially the 3,926 bp the first Genestrip paper reports for its NanoSim reads, which
 makes the two directly comparable.
 
-Otherwise `cdiff` takes part in `run_exps.sh` but not in the classification experiments of sections 4
-and 5.
+Otherwise `cdiff` takes part in `run_exps.sh` — including the intrinsic quality measures — but not in
+the classification experiments of sections 4 and 5.
+
+Measuring it needed a change in Genestrip-FT itself. `DBQualityCountsGoal` used to refuse a database
+with file nodes outright (`"This goal does not support file nodes"`), because it recognised a leaf by
+testing for rank `DATA` while `AbstractUpdateFastaReader.updateLeafNode()` resolved each record to the
+`FILE` node below it — the two halves disagreed about what the measure is taken over. A leaf is now
+the *deepest artificial node* on its branch (`DBQualityCountsGoal.isLeafNode`), which is what the fill
+and the reader both mean: the fill nests tax id → `DATA` → `FILE` → `ID` and stores k-mers at the
+deepest enabled one, the reader walks the same chain from the other end. `REFINED` is deliberately not
+among those ranks — a refined node is inserted *above* them and holds the k-mers the refinement moved,
+so the measures restricted to what sits above the data have to keep counting it.
+
+Nothing changes for the other databases: with no file or id nodes the deepest artificial node *is* the
+data node, which the existing tests confirm.
 
 Individual steps can be run on their own, e.g. only the two databases of one project:
 

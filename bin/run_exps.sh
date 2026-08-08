@@ -77,7 +77,14 @@ mvn exec:exec@db -Dname=tick-borne -Dgoal=branchhistorankcsv
 mvn exec:exec@db -Dname=protozoa -Dgoal=kmerrankstatscsv
 mvn exec:exec@db -Dname=protozoa -Dgoal=branchhistorankcsv
 
-# Intrinsic quality of DBs
+# Intrinsic quality of DBs.
+#
+# `cdiff' takes part in this since DBQualityCountsGoal learned to measure a database that uses file
+# nodes. It used to refuse outright ("This goal does not support file nodes"), because it recognised
+# a leaf by testing for rank DATA while the fasta reader resolved records to the FILE node below it.
+# isLeafNode() now defines a leaf as the deepest artificial node on its branch, which is what both
+# halves of the goal actually mean, and the two agree again. Nothing changes for the other databases:
+# with no file or id nodes the deepest artificial node *is* the data node.
 for db in viral tick-borne protozoa gut-protozoa parasites vineyard cdiff;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=dbquality
