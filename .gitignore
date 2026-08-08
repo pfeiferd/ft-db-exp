@@ -23,6 +23,10 @@
 !/data/fastq/ticks_sim_tick1.txt
 !/data/fastq/saliva_mate1.txt
 !/data/fastq/saliva_srr5571991.txt
+# The C. difficile isolates of PRJNA1148956, keyed by the source study's own isolate identifiers.
+# Written by hand rather than generated: bin/fetch_cdiff.sh only downloads the files it names, and
+# the mapping from an isolate to its runs is what the study's sequence types are joined through.
+!/data/fastq/cdiff_isolates.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*

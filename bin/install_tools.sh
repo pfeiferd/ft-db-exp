@@ -6,6 +6,8 @@
 #   cgmemtime      measures wall time and peak RAM of the database generation
 #   InSilicoSeq    simulates the Illumina reads for the viral experiments
 #   NanoSim        simulates the Nanopore reads for the tick-borne experiments
+#   mlst           assigns sequence types to the genomes of the `cdiff' database, which is what
+#                  its sub-species refinement is interpreted and scored against
 #
 # Nothing is needed here for the real sequencing runs: fetch_saliva.sh and ticks_real.txt both pull
 # gzipped fastq files straight over HTTPS with curl, which every machine already has. sra-toolkit
@@ -33,7 +35,7 @@ toolsdir="${basedir}/tools"
 bindir="${toolsdir}/bin"
 mkdir -p "$toolsdir" "$bindir"
 
-echo "############ 1/4  Distribution packages ############"
+echo "############ 1/5  Distribution packages ############"
 # minimap2 and LAST align reads during NanoSim's training, samtools and genometools handle the
 # sequences. python3-dev supplies the headers pybedtools compiles its C extension against, bedtools
 # the binary it drives. All of this is what the conda recipe would have pulled from bioconda.
@@ -46,7 +48,7 @@ echo "  samtools:    $(samtools --version 2>&1 | head -1)"
 echo "  lastal:      $(lastal --version 2>&1 | head -1)"
 echo "  genometools: $(gt --version 2>&1 | head -1)"
 
-echo "############ 2/4  cgmemtime ############"
+echo "############ 2/5  cgmemtime ############"
 if [ -x "${toolsdir}/cgmemtime/cgmemtime" ]; then
   echo "  already built"
 else
@@ -62,7 +64,7 @@ else
   echo "  built ${toolsdir}/cgmemtime/cgmemtime"
 fi
 
-echo "############ 3/4  InSilicoSeq ############"
+echo "############ 3/5  InSilicoSeq ############"
 issvenv="${toolsdir}/iss-venv"
 # A venv records absolute paths, so a moved or renamed one is broken even though its files look
 # fine. Test that iss actually runs rather than that the file exists.
@@ -122,7 +124,7 @@ open(path, 'w', encoding='utf-8').write(src)
 PATCH
 fi
 
-echo "############ 4/4  NanoSim ############"
+echo "############ 4/5  NanoSim ############"
 nsvenv="${toolsdir}/nanosim-venv"
 nanosimdir="${toolsdir}/NanoSim"
 
@@ -224,6 +226,41 @@ if [ -n "${MINIMAP2_INDEX_SIZE:-}" ]; then
     sed -i "s/map-ont -t \" + num_threads + \" \"/map-ont -t \" + num_threads + \" -I ${MINIMAP2_INDEX_SIZE} \"/g" \
       "${nanosimdir}/src/read_analysis.py"
     echo "  patched read_analysis.py with -I ${MINIMAP2_INDEX_SIZE}"
+  fi
+fi
+
+echo "############ 5/5  mlst ############"
+# tseemann/mlst types an assembly against the PubMLST schemes it ships with. It is needed only by
+# bin/mlst_assemblies.sh, which supplies the sequence types the `cdiff' database's dendrogram is
+# interpreted and scored against -- see that script for why. It is a Perl program driving blast+,
+# with no build step: cloning it and putting its bin on the PATH is the whole installation.
+#
+# A failure here is a warning rather than an error. Everything else this script installs is needed
+# for the read simulations, which are the bulk of the experiments; MLST typing concerns one database
+# and can be caught up later.
+mlstdir="${toolsdir}/mlst"
+if [ -x "${mlstdir}/bin/mlst" ]; then
+  echo "  SKIP  ${mlstdir} exists"
+else
+  if sudo apt-get install -y -q ncbi-blast+ libmoo-perl liblist-moreutils-perl libjson-perl >/dev/null 2>&1 \
+     && git clone -q --depth 1 https://github.com/tseemann/mlst.git "$mlstdir"; then
+    echo "  cloned ${mlstdir}"
+  else
+    echo "  WARNING: could not install mlst - bin/mlst_assemblies.sh will not run." >&2
+    echo "           It needs blast+ and https://github.com/tseemann/mlst on the PATH." >&2
+    mlstdir=""
+  fi
+fi
+if [ -n "$mlstdir" ] && [ -x "${mlstdir}/bin/mlst" ]; then
+  ln -sf "${mlstdir}/bin/mlst" "${bindir}/mlst"
+  # The scheme name matters: bin/mlst_assemblies.sh defaults to `cdifficile', which is what
+  # PubMLST's database pubmlst_cdifficile_seqdef becomes here. Checking it now beats discovering
+  # after a typing run that every genome came back as `-'.
+  if "${mlstdir}/bin/mlst" --list 2>/dev/null | tr ' ' '\n' | grep -qx cdifficile; then
+    echo "  OK  mlst knows the 'cdifficile' scheme"
+  else
+    echo "  WARNING: this mlst has no 'cdifficile' scheme - check 'mlst --list' and pass the" >&2
+    echo "           right name as the second argument of bin/mlst_assemblies.sh." >&2
   fi
 fi
 

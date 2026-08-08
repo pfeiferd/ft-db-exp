@@ -165,8 +165,66 @@ genomes (300 of the 32,835 -- C. difficile has no chromosome-level assemblies at
 2026-08-08, so the two qualities together select the complete ones) and what to watch when widening
 it: a database may hold at most 32767 tax ids, which `fileNodes` spends one of per fasta file.
 
-`cdiff` has no read data of its own, so it takes part in `run_exps.sh` but not in the classification
-experiments of sections 4 and 5.
+#### Sequence types for the `cdiff` genomes
+
+The refinement clusters assemblies by *k*-mer similarity alone, and nothing in that construction
+knows what a cluster *is*. An ST per assembly supplies the missing half:
+
+```sh
+sh ./bin/mlst_assemblies.sh                     # the cdiff project, scheme cdifficile
+sh ./bin/mlst_assemblies.sh <project> <scheme>  # any other project and PubMLST scheme
+```
+
+writing `results/cdiff_mlst.csv` with one row per genome — `file;scheme;st;alleles;`. It needs
+`mlst`, which `install_tools.sh` clones. The scheme name `cdifficile` is what PubMLST's
+`pubmlst_cdifficile_seqdef` becomes there; its seven loci are `adk`, `atpA`, `dxr`, `glyA`, `recA`,
+`sodA`, `tpi`, and PubMLST held 1,319 profiles as of 2026-08-08.
+
+The join costs nothing: `fileNodes` names each artificial node after the fasta **file name**, and
+`mlst` reports one row per fasta file, so the ST table meets the dendrogram's leaves on the filename.
+
+This is not only for interpretation. Below the species there is no rank to count candidates at, so a
+sub-species analogue of the paper's *q* has to count something else — the natural unit is the ST:
+score a read against the ST of the isolate it came from, and count candidates as the distinct STs
+still in question at the assigned node. Without an ST per database genome that measure cannot be
+formed at all.
+
+#### Real reads with sub-species ground truth
+
+`cdiff` has no simulated reads, but there is real read data whose true organism is known below the
+species — the 37 *C. difficile* isolates of Bejaoui et al., *BMC Genomics* 2025
+(doi:10.1186/s12864-025-11267-9), BioProject **PRJNA1148956**. Every isolate was sequenced twice,
+once on an Illumina NextSeq 500 and once on an ONT MinION, with none missing either platform, and the
+study types them by MLST and cgMLST.
+
+```sh
+DRY_RUN=1 sh ./bin/fetch_cdiff.sh    # what would be fetched, and how much
+sh ./bin/fetch_cdiff.sh              # all 74 runs, 111 files, about 29 GB
+sh ./bin/fetch_cdiff.sh illumina     # one platform only (13.3 GB / 15.3 GB)
+sh ./bin/fetch_cdiff.sh B11 B12np    # named isolates
+```
+
+The file list is queried from ENA at run time rather than hard-coded, so it cannot drift out of step
+with `data/fastq/cdiff_isolates.txt` beside it. That map keys the runs by the study's own isolate
+identifiers, `B11` to `B51` with an `np` suffix for the Nanopore run — the same values ENA carries as
+`sample_alias`, so a key joins straight to the study's Table 2 for the sequence type.
+
+The map lists **local files**, not URLs, which is why a fetch step exists at all. Genestrip names a
+download after the map key alone (`FastqMapTransformGoal.fillMap`), so two URLs under one key would
+both be written to the same file and one mate of a pair would silently overwrite the other. That is
+why `ticks_real.txt` can use URLs — single-end — and the paired collections cannot.
+
+Two properties of this data to know before drawing conclusions from it. These are **pure isolates,
+not metagenomes**: classifying one against a single-species database is trivially easy, so they
+belong beside the saliva and tick results as a validation of what the clusters mean, not as another
+real-sample row. And 25 of the 37 Nanopore runs stop within a few hundred bases above exactly
+500,000,000 — subsampling to 500 Mbp with the crossing read kept whole — so the long reads sit at a
+uniform ~120× depth by construction and say nothing about real MinION yield. Their mean length,
+3,824 bp, is essentially the 3,926 bp the first Genestrip paper reports for its NanoSim reads, which
+makes the two directly comparable.
+
+Otherwise `cdiff` takes part in `run_exps.sh` but not in the classification experiments of sections 4
+and 5.
 
 Individual steps can be run on their own, e.g. only the two databases of one project:
 

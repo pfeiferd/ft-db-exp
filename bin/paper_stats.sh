@@ -58,7 +58,8 @@ SPECIES_AND_BELOW = {'species', 'subspecies', 'strain', 'isolate', 'serotype', '
                      'genotype', 'biotype', 'morph', 'forma', 'forma specialis', 'varietas',
                      'subvariety', 'pathogroup'}
 
-DBS = ['viral', 'tick-borne', 'protozoa', 'vineyard', 'parasites', 'gut-protozoa', 'orthopox']
+DBS = ['viral', 'tick-borne', 'protozoa', 'vineyard', 'parasites', 'gut-protozoa', 'orthopox',
+       'cdiff']
 
 def subtree_data_kmers(info):
     """For every node of a dbinfo file, the k-mers stored at data taxa in its subtree.
