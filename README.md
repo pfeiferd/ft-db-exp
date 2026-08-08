@@ -128,6 +128,46 @@ retroviral sequence, integrated herpesvirus, host contamination in the viral ass
 stored under its virus and turns human reads into viral hits, which on a saliva sample is most of
 the data. The file itself is declared once in `data/common/fasta/downloads.txt` and shared.
 
+### `cdiff`: refinement below the species rank
+
+Every other project requests a genus or a whole category and is refined between a genus and its
+species. `cdiff` requests a single species, *Clostridioides difficile* (tax id 1496), and is refined
+*below* it. The organism is a good fit: its clinically meaningful units -- MLST clades, PCR ribotypes
+such as 027, 078 and 017 -- all sit below the species and differ in things that matter, from the
+presence of the PaLoc at all to a truncated `tcdA` and the binary toxin locus.
+
+The taxonomy cannot supply the children for that refinement. Checked against NCBI on 2026-08-08, the
+subtree of 1496 holds 296 nodes -- the species and 295 of rank `strain` -- against 32,835 GenBank
+assemblies for the species and its descendants, because NCBI stopped minting strain tax ids about a
+decade ago. The overwhelming majority of assemblies therefore carry the species tax id and no node of
+their own. The project sets `fileNodes=true` so that each fasta file becomes an artificial node of
+rank `FILE`, giving the species one node per assembly for the refinement to cluster; the leaves of
+the resulting dendrogram are assemblies rather than named lineages, and whether they recover the
+known clade structure is the question the database exists to ask.
+
+Mind where those nodes actually sit. `data/config.properties` sets `dataNodes=true` for every
+project, and the two kinds of artificial node nest — a tax id's k-mers descend first into its `DATA`
+child and only then into the `FILE` node — so the tree below the species is
+
+```
+1496  ->  "Data for 1496" (rank DATA)  ->  one node of rank FILE per assembly
+```
+
+The node carrying the ~300 children is therefore the `DATA` node, not 1496, and a refinement position
+naming the tax id would cluster the wrong thing. The project leaves `refinementPositions` at its
+default `*`, which includes that node; `refinementPositions=DATA` is the same choice made on purpose.
+
+Setting `fileNodes=false` gives the other variant -- refinement over the 295 strain tax ids only,
+with the assemblies parked at the species node left where they are. Nothing else has to change, and
+the two are not the same experiment. `data/projects/cdiff/config.properties` sets out both, together
+with why the assembly selection is restricted to complete and chromosome-level current GenBank
+genomes (300 of the 32,835 -- C. difficile has no chromosome-level assemblies at all as of
+2026-08-08, so the two qualities together select the complete ones) and what to watch when widening
+it: a database may hold at most 32767 tax ids, which `fileNodes` spends one of per fasta file.
+
+`cdiff` has no read data of its own, so it takes part in `run_exps.sh` but not in the classification
+experiments of sections 4 and 5.
+
 Individual steps can be run on their own, e.g. only the two databases of one project:
 
 ```sh

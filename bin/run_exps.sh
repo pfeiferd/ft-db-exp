@@ -57,7 +57,7 @@ timed_db_goal() {
 }
 
 # DB Build Performance
-for db in viral tick-borne protozoa gut-protozoa parasites vineyard;
+for db in viral tick-borne protozoa gut-protozoa parasites vineyard cdiff;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=refseqfna
     mvn exec:exec@db -Dname=$db -Dgoal=fastasgenbankdl
@@ -78,7 +78,7 @@ mvn exec:exec@db -Dname=protozoa -Dgoal=kmerrankstatscsv
 mvn exec:exec@db -Dname=protozoa -Dgoal=branchhistorankcsv
 
 # Intrinsic quality of DBs
-for db in viral tick-borne protozoa gut-protozoa parasites vineyard;
+for db in viral tick-borne protozoa gut-protozoa parasites vineyard cdiff;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=dbquality
     mvn exec:exec@db -Dname=$db -Dgoal=ftquality
