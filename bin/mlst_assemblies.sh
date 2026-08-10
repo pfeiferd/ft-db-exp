@@ -45,9 +45,17 @@ res_path="${basedir}/results"
 out="${res_path}/${db}_mlst.csv"
 mkdir -p "$res_path"
 
+# install_tools.sh puts mlst below tools/bin, and its own `export PATH' lives no longer than that
+# script does. Prepending the directory here is what make_fastqs.sh does with the simulators for the
+# same reason, and it leaves an mlst installed system-wide in charge, since that one comes first if
+# tools/bin holds none.
+export PATH="${basedir}/tools/bin:${PATH}"
+
 if ! command -v mlst >/dev/null 2>&1; then
-  echo "mlst is not on the PATH - run ./bin/install_tools.sh first." >&2
-  echo "It is https://github.com/tseemann/mlst and it needs blast+ beside it." >&2
+  echo "mlst is not on the PATH, and ${basedir}/tools/bin holds none either." >&2
+  echo "Run ./bin/install_tools.sh first - it clones https://github.com/tseemann/mlst there and" >&2
+  echo "installs the blast+ it drives. A failure of that step is only a warning, so check its" >&2
+  echo "output for '5/5  mlst' if it appeared to succeed." >&2
   exit 1
 fi
 if [ ! -d "$fastadir" ]; then
