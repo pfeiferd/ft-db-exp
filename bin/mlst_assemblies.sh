@@ -67,13 +67,46 @@ fi
 
 # The scheme has to exist, or mlst silently types everything as `-' and the output looks like a
 # result. `mlst --list' prints them space-separated on one line.
-if ! mlst --list 2>/dev/null | tr ' ' '\n' | grep -qx "$scheme"; then
-  echo "mlst does not know a scheme called '${scheme}'." >&2
-  echo "Available schemes:" >&2
-  mlst --list 2>/dev/null | tr ' ' '\n' | grep -i "diff\|clostrid" | sed 's/^/  /' >&2
-  echo "Pass the right one as the second argument." >&2
+#
+# The two ways this can go wrong need telling apart, because they are fixed in entirely different
+# places: mlst may know no scheme at all, which means its installation is incomplete, or it may know
+# plenty while none of them carries the name we ask for. Reporting the number it knows separates the
+# two at a glance, and its stderr is passed on rather than dropped, since a broken installation
+# explains itself there and nowhere else.
+mlst_stderr=$(mktemp)
+schemes=$(mlst --list 2>"$mlst_stderr" | tr ' ' '\n' | grep -v '^[[:space:]]*$' | sort)
+scheme_count=$(printf '%s\n' "$schemes" | grep -c . || true)
+
+if [ "$scheme_count" -eq 0 ]; then
+  echo "mlst knows no schemes at all, so its installation is incomplete." >&2
+  echo "It keeps them in db/pubmlst below its own directory; check that this one has them:" >&2
+  echo "  ls \"\$(dirname \"\$(readlink -f \"\$(command -v mlst)\")\")/../db/pubmlst\" | head" >&2
+  echo "and that it can run at all:" >&2
+  echo "  mlst --check" >&2
+  if [ -s "$mlst_stderr" ]; then
+    echo "What 'mlst --list' reported:" >&2
+    sed 's/^/  /' "$mlst_stderr" >&2
+  fi
+  rm -f "$mlst_stderr"
   exit 1
 fi
+
+if ! printf '%s\n' "$schemes" | grep -qx "$scheme"; then
+  echo "mlst does not know a scheme called '${scheme}', though it knows ${scheme_count} others." >&2
+  candidates=$(printf '%s\n' "$schemes" | grep -i "diff\|clostr" || true)
+  if [ -n "$candidates" ]; then
+    echo "These look related:" >&2
+    printf '%s\n' "$candidates" | sed 's/^/  /' >&2
+  else
+    echo "None of them looks related to C. difficile. The full list starts with:" >&2
+    printf '%s\n' "$schemes" | head -20 | sed 's/^/  /' >&2
+    echo "  ... (see 'mlst --list' for all ${scheme_count})" >&2
+  fi
+  echo "Pass the right one as the second argument." >&2
+  rm -f "$mlst_stderr"
+  exit 1
+fi
+rm -f "$mlst_stderr"
 
 # Genestrip stores the genomes gzipped; mlst reads plain fasta, and unpacking the whole folder just
 # to type it would double the disk. Each file is therefore decompressed to a temporary copy, typed,
