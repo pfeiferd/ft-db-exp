@@ -8,6 +8,9 @@ cd $scriptdir/..
 mkdir -p results
 
 res_path=./results
+# Where the unshortened logs are kept while a goal runs. Only their shortened form is copied on to
+# ${res_path}/logs, so that the results hold nothing but readable files.
+raw_log_path=./logs
 
 # For figures in "Methods" section:
 mvn exec:exec@orthopox3 -Dname=orthopox -Dgoal=svgtaxtree
@@ -31,31 +34,36 @@ mvn exec:exec@db -Dname=borrelia -Dgoal=ftsvgtaxtree
 # real measurement. Re-running this script after a completed run must therefore leave the logs
 # alone. Delete the database to measure its generation again.
 #
-# Drops the intermediate renderings of the progress bar from the log $1, keeping the last one of
-# each line. The bar is on by default and repaints every second, so a run of several hours would
-# otherwise leave megabytes of overwritten frames in a file that is meant to be read.
+# Writes the log $1 to $2 with the intermediate renderings of the progress bar dropped, keeping the
+# last one of each line. The bar is on by default and repaints every second, so a run of several
+# hours would otherwise leave megabytes of overwritten frames in a file that is meant to be read.
+# Only the shortened copy goes to the results, while the raw one stays behind in ${raw_log_path} in
+# case a run has to be examined as it really came out.
 strip_progress_bar() {
-  [ -f "$1" ] && sed -i 's/.*\r//' "$1" || true
+  [ -f "$1" ] || return 0
+  sed 's/.*\r//' "$1" > "$2"
 }
 
 # Runs a command, keeping its output both on screen and on file: stdout goes to the file $1, and
 # everything the command writes to stderr goes to the file $2 *and* to the terminal. The latter is
 # what Genestrip logs through, progress bars included, so a run remains as watchable as it was
-# before these logs were kept at all.
+# before these logs were kept at all. Once the command is done, $2 is shortened into $3, which is
+# the copy that ends up among the results.
 #
 # The status returned is the command's own, not the pipeline's, which would otherwise be tee's and
 # would leave a failed run undetected under `set -e'.
 #
-# $1 = file for stdout, $2 = file for stderr, $3... = the command
+# $1 = file for stdout, $2 = raw file for stderr, $3 = shortened copy of it, $4... = the command
 run_logged() {
   _out=$1
-  _err=$2
-  shift 2
+  _raw=$2
+  _dest=$3
+  shift 3
   _statusfile=$(mktemp)
-  { "$@" > "$_out" 2>&3 3>&-; echo $? > "$_statusfile"; } 3>&1 | tee "$_err"
+  { "$@" > "$_out" 2>&3 3>&-; echo $? > "$_statusfile"; } 3>&1 | tee "$_raw"
   _status=$(cat "$_statusfile")
   rm -f "$_statusfile"
-  strip_progress_bar "$_err"
+  strip_progress_bar "$_raw" "$_dest"
   return $_status
 }
 
@@ -70,24 +78,33 @@ timed_db_goal() {
   esac
   # Genestrip logs through Commons Logging's SimpleLog, which writes to stderr, so redirecting
   # stdout alone captures Maven and cgmemtime but drops everything Genestrip itself reports --
-  # including the "Used heap size" that each goal implementing Goal.LogHeapInfo prints when it
-  # completes, which is the only per-goal account of where the memory of a run goes. It goes to
-  # a file of its own next to the measurement so that the latter stays small and machine-readable.
-  gslog="${res_path}/${goal}_gen_${db}.genestrip.log"
+  # including the "Used heap size" that each goal implementing Goal.LogHeapInfo prints before and
+  # after it runs, which is the only per-goal account of where the memory of a run goes. It goes to
+  # a file of its own so that the measurement stays small and machine-readable, and it is written
+  # raw to ${raw_log_path} first: only its shortened form belongs among the results.
+  gsraw="${raw_log_path}/${goal}_gen_${db}.genestrip.log"
+  gslog="${res_path}/logs/${goal}_gen_${db}.genestrip.log"
   if [ -f "$dbfile" ]; then
     echo "WARNING: not measuring '${goal}' for ${db}: ${dbfile} already exists, so the goal would" >&2
     echo "         do nothing and the timing would be meaningless. ${log} is left untouched." >&2
     echo "         Delete the database first if you want to measure its generation again." >&2
     return 0
   fi
+  # The goal is going to run, so the logs of whatever ran here before must not survive it: a reader
+  # could not tell them apart afterwards, and a run that fails early would otherwise leave the
+  # previous log standing as though it described this one. Only reached once the guard above has
+  # let us through, so a preserved measurement is never touched.
+  mkdir -p "${raw_log_path}" "${res_path}/logs"
+  rm -f "$gsraw" "$gslog"
+
   # Being present is not enough: cgmemtime needs a cgroup it may create, which it cannot do without
   # a systemd user session. Probing it here keeps a broken run from leaving a truncated log behind.
   if ! ./tools/cgmemtime/cgmemtime true >/dev/null 2>&1; then
     echo "WARNING: cgmemtime cannot run here - generating ${db}/${goal} without measuring it." >&2
-    run_logged "$log" "$gslog" mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
+    run_logged "$log" "$gsraw" "$gslog" mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
     return $?
   fi
-  run_logged "$log" "$gslog" ./tools/cgmemtime/cgmemtime mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
+  run_logged "$log" "$gsraw" "$gslog" ./tools/cgmemtime/cgmemtime mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
 }
 
 # DB Build Performance

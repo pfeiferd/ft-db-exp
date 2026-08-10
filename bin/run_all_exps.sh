@@ -266,7 +266,9 @@ if [ -z "${skip:-}" ]; then
     echo "WARNING: ${paper_results} does not exist - results stay in ${basedir}/results." >&2
     echo "         Set PAPER_RESULTS to the paper's results folder, or copy them by hand." >&2
   else
-    run sh -c "cp \"${basedir}\"/results/* \"${paper_results}\"/"
+    # -R because the results hold the `logs' folder as well, which a plain cp would refuse to copy
+    # and so would fail the step.
+    run sh -c "cp -R \"${basedir}\"/results/* \"${paper_results}\"/"
     run sh ./bin/paper_stats.sh "$paper_results"
     echo "Copied to ${paper_results} and regenerated its LaTeX macros."
   fi
