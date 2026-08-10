@@ -232,35 +232,136 @@ fi
 echo "############ 5/5  mlst ############"
 # tseemann/mlst types an assembly against the PubMLST schemes it ships with. It is needed only by
 # bin/mlst_assemblies.sh, which supplies the sequence types the `cdiff' database's dendrogram is
-# interpreted and scored against -- see that script for why. It is a Perl program driving blast+,
-# with no build step: cloning it and putting its bin on the PATH is the whole installation.
+# interpreted and scored against -- see that script for why. It is a Perl program driving blast+
+# and any2fasta, with no build step of its own.
 #
 # A failure here is a warning rather than an error. Everything else this script installs is needed
 # for the read simulations, which are the bulk of the experiments; MLST typing concerns one database
 # and can be caught up later.
-mlstdir="${toolsdir}/mlst"
-if [ -x "${mlstdir}/bin/mlst" ]; then
-  echo "  SKIP  ${mlstdir} exists"
+#
+# THE PERL PROBLEM. mlst declares `use 5.32.0', and its older releases still want 5.26, so on a
+# distribution whose Perl predates that it does not even compile. Replacing the system Perl is no
+# option -- a Debian or Ubuntu carries a great deal of its own tooling on it -- so a Perl of its own
+# is built below tools/ with perlbrew when, and only when, the one on the PATH is too old. That
+# build takes some twenty to forty minutes; it happens once and is skipped from then on.
+mlst_perl_min_major=5
+mlst_perl_min_minor=32
+mlstperl=""
+
+perl_version_ok() {
+  # $1 = a perl executable. True if it is at least the version mlst asks for.
+  [ -x "$1" ] || command -v "$1" >/dev/null 2>&1 || return 1
+  "$1" -e "require ${mlst_perl_min_major}.${mlst_perl_min_minor}.0;" >/dev/null 2>&1
+}
+
+if perl_version_ok perl; then
+  mlstperl=$(command -v perl)
+  echo "  OK  system perl is recent enough: $(perl -e 'print $^V')"
 else
-  if sudo apt-get install -y -q ncbi-blast+ libmoo-perl liblist-moreutils-perl libjson-perl >/dev/null 2>&1 \
-     && git clone -q --depth 1 https://github.com/tseemann/mlst.git "$mlstdir"; then
-    echo "  cloned ${mlstdir}"
+  echo "  system perl is $(perl -e 'print $^V' 2>/dev/null || echo unknown), which is older than" \
+       "v${mlst_perl_min_major}.${mlst_perl_min_minor} - building one below tools/"
+  export PERLBREW_ROOT="${toolsdir}/perlbrew"
+  perlbrew_perl=perl-5.36.3
+  perlbrew_bin="${PERLBREW_ROOT}/perls/${perlbrew_perl}/bin/perl"
+  if [ -x "$perlbrew_bin" ]; then
+    echo "  SKIP  ${perlbrew_bin} exists"
+    mlstperl="$perlbrew_bin"
   else
-    echo "  WARNING: could not install mlst - bin/mlst_assemblies.sh will not run." >&2
-    echo "           It needs blast+ and https://github.com/tseemann/mlst on the PATH." >&2
-    mlstdir=""
+    if [ ! -x "${PERLBREW_ROOT}/bin/perlbrew" ]; then
+      # perlbrew's own installer is a Perl script and runs on the old Perl; only the Perl it builds
+      # has to be new.
+      if ! curl -sSL https://install.perlbrew.pl | bash >/dev/null 2>&1; then
+        echo "  WARNING: could not install perlbrew into ${PERLBREW_ROOT}." >&2
+      fi
+    fi
+    if [ -x "${PERLBREW_ROOT}/bin/perlbrew" ]; then
+      echo "  building ${perlbrew_perl} - this takes 20-40 minutes and happens once"
+      # -n skips the test suite, which is the bulk of the time and tests Perl rather than anything
+      # this project depends on. -j uses the cores the machine has.
+      if "${PERLBREW_ROOT}/bin/perlbrew" install -n -j "$(nproc 2>/dev/null || echo 4)" \
+           "$perlbrew_perl" >"${toolsdir}/perlbrew-install.log" 2>&1; then
+        echo "  built ${perlbrew_perl}"
+        mlstperl="$perlbrew_bin"
+      else
+        echo "  WARNING: building ${perlbrew_perl} failed - see ${toolsdir}/perlbrew-install.log" >&2
+      fi
+    fi
   fi
 fi
-if [ -n "$mlstdir" ] && [ -x "${mlstdir}/bin/mlst" ]; then
-  ln -sf "${mlstdir}/bin/mlst" "${bindir}/mlst"
+
+# The modules mlst and the MLST::* packages beside it load. They go into whichever Perl was settled
+# on above: a freshly built one starts out with core modules only, and the distribution packages an
+# older run may have installed belong to the system Perl, not to it.
+if [ -n "$mlstperl" ]; then
+  if ! "$mlstperl" -MMoo -MList::MoreUtils -MJSON -MPath::Tiny -e1 >/dev/null 2>&1; then
+    echo "  installing the Perl modules mlst needs"
+    cpanm_bin="$(dirname "$mlstperl")/cpanm"
+    if [ ! -x "$cpanm_bin" ]; then
+      curl -sSL https://cpanmin.us -o "$cpanm_bin" 2>/dev/null && chmod +x "$cpanm_bin" || true
+    fi
+    if [ -x "$cpanm_bin" ]; then
+      "$mlstperl" "$cpanm_bin" --quiet --notest Moo List::MoreUtils JSON Path::Tiny \
+        >"${toolsdir}/cpanm-install.log" 2>&1 || true
+    fi
+    if ! "$mlstperl" -MMoo -MList::MoreUtils -MJSON -MPath::Tiny -e1 >/dev/null 2>&1; then
+      echo "  WARNING: some of Moo, List::MoreUtils, JSON, Path::Tiny are still missing -" >&2
+      echo "           see ${toolsdir}/cpanm-install.log" >&2
+    fi
+  else
+    echo "  OK  the Perl modules mlst needs are present"
+  fi
+fi
+
+# blast+ and any2fasta are the two executables mlst requires at run time (`require_exe' in its
+# bin/mlst). any2fasta is a self-contained Perl script that runs on any Perl, so it is cloned rather
+# than packaged, and blast+ comes from the distribution.
+sudo apt-get install -y -q ncbi-blast+ >/dev/null 2>&1 || true
+if ! command -v blastn >/dev/null 2>&1 && [ ! -x "${bindir}/blastn" ]; then
+  echo "  WARNING: blastn is not on the PATH - mlst cannot type anything without it." >&2
+  echo "           Install ncbi-blast+ (needs root) or put a blastn into ${bindir}." >&2
+fi
+a2fdir="${toolsdir}/any2fasta"
+if [ -x "${a2fdir}/any2fasta" ]; then
+  echo "  SKIP  ${a2fdir} exists"
+elif git clone -q --depth 1 https://github.com/tseemann/any2fasta.git "$a2fdir" >/dev/null 2>&1; then
+  echo "  cloned ${a2fdir}"
+else
+  echo "  WARNING: could not install any2fasta - mlst requires it beside blastn." >&2
+fi
+[ -x "${a2fdir}/any2fasta" ] && ln -sf "${a2fdir}/any2fasta" "${bindir}/any2fasta"
+
+mlstdir="${toolsdir}/mlst"
+if [ -d "${mlstdir}/bin" ]; then
+  echo "  SKIP  ${mlstdir} exists"
+elif git clone -q --depth 1 https://github.com/tseemann/mlst.git "$mlstdir"; then
+  echo "  cloned ${mlstdir}"
+else
+  echo "  WARNING: could not clone mlst - bin/mlst_assemblies.sh will not run." >&2
+  mlstdir=""
+fi
+
+if [ -n "$mlstdir" ] && [ -f "${mlstdir}/bin/mlst" ] && [ -n "$mlstperl" ]; then
+  # A wrapper rather than a symlink: mlst has to run under the Perl settled on above, which is not
+  # the one a `#!/usr/bin/env perl' would find, and it has to find any2fasta and blastn no matter
+  # what the caller's PATH holds. FindBin still resolves to the real script, so mlst locates its own
+  # db/pubmlst as it expects.
+  cat > "${bindir}/mlst" <<WRAPPER
+#!/bin/sh
+# Generated by bin/install_tools.sh - edit that instead.
+PATH="${bindir}:\${PATH}"
+export PATH
+exec "${mlstperl}" "${mlstdir}/bin/mlst" "\$@"
+WRAPPER
+  chmod +x "${bindir}/mlst"
+
   # The scheme name matters: bin/mlst_assemblies.sh defaults to `cdifficile', which is what
   # PubMLST's database pubmlst_cdifficile_seqdef becomes here. Checking it now beats discovering
   # after a typing run that every genome came back as `-'.
-  if "${mlstdir}/bin/mlst" --list 2>/dev/null | tr ' ' '\n' | grep -qx cdifficile; then
-    echo "  OK  mlst knows the 'cdifficile' scheme"
+  if "${bindir}/mlst" --list 2>/dev/null | tr ' ' '\n' | grep -qx cdifficile; then
+    echo "  OK  mlst runs and knows the 'cdifficile' scheme"
   else
-    echo "  WARNING: this mlst has no 'cdifficile' scheme - check 'mlst --list' and pass the" >&2
-    echo "           right name as the second argument of bin/mlst_assemblies.sh." >&2
+    echo "  WARNING: mlst does not run, or has no 'cdifficile' scheme. What it says:" >&2
+    "${bindir}/mlst" --list 2>&1 >/dev/null | sed 's/^/           /' >&2 || true
   fi
 fi
 
