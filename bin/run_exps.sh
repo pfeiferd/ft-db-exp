@@ -31,6 +31,34 @@ mvn exec:exec@db -Dname=borrelia -Dgoal=ftsvgtaxtree
 # real measurement. Re-running this script after a completed run must therefore leave the logs
 # alone. Delete the database to measure its generation again.
 #
+# Drops the intermediate renderings of the progress bar from the log $1, keeping the last one of
+# each line. The bar is on by default and repaints every second, so a run of several hours would
+# otherwise leave megabytes of overwritten frames in a file that is meant to be read.
+strip_progress_bar() {
+  [ -f "$1" ] && sed -i 's/.*\r//' "$1" || true
+}
+
+# Runs a command, keeping its output both on screen and on file: stdout goes to the file $1, and
+# everything the command writes to stderr goes to the file $2 *and* to the terminal. The latter is
+# what Genestrip logs through, progress bars included, so a run remains as watchable as it was
+# before these logs were kept at all.
+#
+# The status returned is the command's own, not the pipeline's, which would otherwise be tee's and
+# would leave a failed run undetected under `set -e'.
+#
+# $1 = file for stdout, $2 = file for stderr, $3... = the command
+run_logged() {
+  _out=$1
+  _err=$2
+  shift 2
+  _statusfile=$(mktemp)
+  { "$@" > "$_out" 2>&3 3>&-; echo $? > "$_statusfile"; } 3>&1 | tee "$_err"
+  _status=$(cat "$_statusfile")
+  rm -f "$_statusfile"
+  strip_progress_bar "$_err"
+  return $_status
+}
+
 # $1 = project name, $2 = goal, either `db' for the unrefined database or `ftdb' for the refinement
 timed_db_goal() {
   db=$1
@@ -40,6 +68,12 @@ timed_db_goal() {
     ftdb) dbfile="data/projects/${db}/db/${db}_ftdb.zip"; log="${res_path}/ftdb_gen_${db}.log" ;;
     *)    echo "timed_db_goal: unknown goal '${goal}'" >&2; return 1 ;;
   esac
+  # Genestrip logs through Commons Logging's SimpleLog, which writes to stderr, so redirecting
+  # stdout alone captures Maven and cgmemtime but drops everything Genestrip itself reports --
+  # including the "Used heap size" that each goal implementing Goal.LogHeapInfo prints when it
+  # completes, which is the only per-goal account of where the memory of a run goes. It goes to
+  # a file of its own next to the measurement so that the latter stays small and machine-readable.
+  gslog="${res_path}/${goal}_gen_${db}.genestrip.log"
   if [ -f "$dbfile" ]; then
     echo "WARNING: not measuring '${goal}' for ${db}: ${dbfile} already exists, so the goal would" >&2
     echo "         do nothing and the timing would be meaningless. ${log} is left untouched." >&2
@@ -50,10 +84,10 @@ timed_db_goal() {
   # a systemd user session. Probing it here keeps a broken run from leaving a truncated log behind.
   if ! ./tools/cgmemtime/cgmemtime true >/dev/null 2>&1; then
     echo "WARNING: cgmemtime cannot run here - generating ${db}/${goal} without measuring it." >&2
-    mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
+    run_logged "$log" "$gslog" mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
     return $?
   fi
-  ./tools/cgmemtime/cgmemtime mvn exec:exec@db -Dname="$db" -Dgoal="$goal" > "$log"
+  run_logged "$log" "$gslog" ./tools/cgmemtime/cgmemtime mvn exec:exec@db -Dname="$db" -Dgoal="$goal"
 }
 
 # DB Build Performance
