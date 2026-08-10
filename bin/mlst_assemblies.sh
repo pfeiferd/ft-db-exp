@@ -60,8 +60,12 @@ if ! command -v mlst >/dev/null 2>&1; then
 fi
 if [ ! -d "$fastadir" ]; then
   echo "Missing ${fastadir}." >&2
-  echo "Build the database first, so that Genestrip downloads the genomes:" >&2
-  echo "  mvn exec:exec@db -Dname=${db} -Dgoal=db" >&2
+  echo "The genomes a database was filled from are not in that folder until they are extracted" >&2
+  echo "there, which bin/cdiff_eval.sh does, or by hand:" >&2
+  echo "  mvn exec:exec@db -Dname=${db} -Dgoal=extractrefseqcsv" >&2
+  echo "Ask for that goal rather than for 'extractrefseqfasta': the latter is an ObjectGoal, which" >&2
+  echo "Maker.make() skips as a weak dependency, so it reports success within a second and does" >&2
+  echo "nothing at all." >&2
   exit 1
 fi
 
