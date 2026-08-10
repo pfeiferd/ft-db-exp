@@ -105,6 +105,14 @@ done
 # its CSV to ${res_path} by itself, so it comes after the copy loop above.
 ./bin/db_disk_sizes.sh
 
+# Wall time and memory of each database generation and of the refinement built on top
+# of it, gathered from the cgmemtime logs written above and joined with the disk sizes
+# just determined. The paper's refinement performance table reads the resulting CSV
+# directly, so the numbers it prints can no longer drift apart from the runs they come
+# from. This reads logs only and measures nothing itself, hence it may be re-run at any
+# time; it does need db_disk_sizes.sh to have gone first.
+./bin/db_gen_perf.sh
+
 # The statistics the paper's Tables "Genestrip databases..." and "Subtree precision..." state, as
 # LaTeX macros. It runs last and reads what the copy loop above has just placed in ${res_path}, so
 # dbstats.tex can never describe a different set of CSVs than the ones beside it -- which is the
