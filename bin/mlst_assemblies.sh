@@ -112,71 +112,156 @@ if ! printf '%s\n' "$schemes" | grep -qx "$scheme"; then
 fi
 rm -f "$mlst_stderr"
 
-# Genestrip stores the genomes gzipped; mlst reads plain fasta, and unpacking the whole folder just
-# to type it would double the disk. Each file is therefore decompressed to a temporary copy, typed,
-# and removed again.
+# RefSeq deposits a draft genome as hundreds of WGS contigs, and the extraction writes one file per
+# accession. A seven-locus scheme is practically never complete on a single contig, so typing the
+# files one by one leaves everything but the finished chromosomes untyped -- on the C. difficile
+# database that was 640 of 463906 files. The contigs of one assembly are recognisable by their
+# accession, which is <letters><2-digit assembly version><contig number>, and are concatenated and
+# typed together. That is both a far better ground truth and far less work: 13184 typings instead
+# of 463906.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+lists="${work}/lists"
+asmdir="${work}/asm"
+mkdir -p "$lists" "$asmdir"
 
-count=0
-files=""
-for f in "$fastadir"/*.fna.gz "$fastadir"/*.fa.gz "$fastadir"/*.fasta.gz "$fastadir"/*.fna "$fastadir"/*.fa "$fastadir"/*.fasta; do
-  [ -e "$f" ] || continue
-  count=$((count + 1))
-done
+echo "=== grouping the files of ${db} into assemblies ==="
+# find rather than a glob: some projects hold hundreds of thousands of files, which a glob expands
+# into one argument list.
+members="${work}/members.tsv"
+find "$fastadir" -maxdepth 1 -type f \( -name '*.fna.gz' -o -name '*.fa.gz' -o -name '*.fasta.gz' \
+        -o -name '*.fna' -o -name '*.fa' -o -name '*.fasta' \) \
+  | LC_ALL=C sort \
+  | awk -v lists="$lists" '
+      {
+        path = $0
+        n = split(path, parts, "/"); name = parts[n]
+        acc = name
+        sub(/\.(fna|fa|fasta)(\.gz)?$/, "", acc)
+        sub(/\.[0-9]+$/, "", acc)              # accession version
+        core = acc
+        sub(/^[A-Z][A-Z]_/, "", core)          # RefSeq NZ_ / NC_ prefix
+        key = acc
+        if (match(core, /^[A-Z]+[0-9]+$/)) {
+          letters = core; sub(/[0-9].*$/, "", letters)
+          digits = substr(core, length(letters) + 1)
+          # Two digits of assembly version plus at least six of contig number make a WGS contig.
+          # Anything shorter is an accession in its own right: a finished chromosome or a plasmid.
+          if (length(digits) >= 8) {
+            key = letters substr(digits, 1, 2)
+          }
+        }
+        # The key doubles as a file name, so it must not carry a path separator. Accessions do not,
+        # but a stray one would silently write outside the work directory.
+        gsub(/[^A-Za-z0-9._-]/, "_", key)
+        print path >> (lists "/" key)
+        close(lists "/" key)
+        print key "\t" name
+      }' > "$members"
+
+count=$(wc -l < "$members" | tr -d ' ')
 if [ "$count" -eq 0 ]; then
   echo "No fasta files in ${fastadir}." >&2
   exit 1
 fi
-echo "=== typing ${count} genome(s) of ${db} under scheme ${scheme} ==="
+asmcount=$(find "$lists" -type f | wc -l | tr -d ' ')
+echo "OK    ${count} file(s) in ${asmcount} assembl(y/ies)"
 
-# One invocation per file rather than one over the whole folder: the folder is thousands of files
-# for some projects, which overruns the argument list, and a single unreadable genome would take
-# the whole run down with it instead of one row.
-tmpout="${work}/mlst.tsv"
-: > "$tmpout"
-i=0
-for f in "$fastadir"/*.fna.gz "$fastadir"/*.fa.gz "$fastadir"/*.fasta.gz "$fastadir"/*.fna "$fastadir"/*.fa "$fastadir"/*.fasta; do
-  [ -e "$f" ] || continue
-  i=$((i + 1))
-  name=$(basename "$f")
-  case "$f" in
-    *.gz) plain="${work}/$(basename "$f" .gz)"; gunzip -c "$f" > "$plain" ;;
-    *)    plain="$f" ;;
-  esac
-  # mlst prints: <file> <scheme> <ST> <locus(allele)> ... . The file column is the temporary path,
-  # so it is replaced by the name Genestrip knows the genome by, which is the join key.
-  if line=$(mlst --quiet --scheme "$scheme" "$plain" 2>/dev/null); then
-    printf '%s\t%s\n' "$name" "$(printf '%s' "$line" | cut -f2-)" >> "$tmpout"
+# mlst reads plain fasta; `gzip -cdf' decompresses what is compressed and copies through what is
+# not, so one invocation per assembly concatenates its contigs whatever they are stored as.
+#
+# The assemblies are typed in batches rather than one per invocation: mlst loads the scheme's allele
+# database on every start, which for a single genome costs more than the typing itself. The batch is
+# also what bounds the extra disk -- only the assemblies of the current batch exist unpacked.
+BATCH=${MLST_BATCH:-50}
+threadopt=""
+if mlst --help 2>&1 | grep -q -- "--threads"; then
+  threadopt="--threads $(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+fi
+
+rawout="${work}/mlst.tsv"
+: > "$rawout"
+batch=""
+nbatch=0
+typedsofar=0
+
+run_batch() {
+  [ "$nbatch" -gt 0 ] || return 0
+  # A batch that dies takes no more than its own assemblies with it: they are recorded without an
+  # ST, exactly as an assembly mlst could not type, and the run goes on.
+  # Not named `out': that is the result CSV this script writes at the end.
+  if batchout=$(mlst --quiet --scheme "$scheme" $threadopt $batch 2>/dev/null); then
+    printf '%s\n' "$batchout" >> "$rawout"
   else
-    echo "  WARNING: mlst failed on ${name}" >&2
-    printf '%s\t%s\t-\n' "$name" "$scheme" >> "$tmpout"
+    echo "  WARNING: mlst failed on a batch of ${nbatch} assembl(y/ies)" >&2
+    for a in $batch; do
+      printf '%s\t%s\t-\n' "$a" "$scheme" >> "$rawout"
+    done
   fi
-  case "$f" in *.gz) rm -f "$plain" ;; esac
-  [ $((i % 25)) -eq 0 ] && echo "  ${i}/${count}"
+  rm -f $batch
+  batch=""
+  nbatch=0
+}
+
+echo "=== typing ${asmcount} assembl(y/ies) of ${db} under scheme ${scheme} ==="
+for lst in "$lists"/*; do
+  [ -e "$lst" ] || continue
+  key=${lst##*/}
+  asmfile="${asmdir}/${key}.fa"
+  xargs gzip -cdf < "$lst" > "$asmfile"
+  batch="${batch} ${asmfile}"
+  nbatch=$((nbatch + 1))
+  typedsofar=$((typedsofar + 1))
+  if [ "$nbatch" -ge "$BATCH" ]; then
+    run_batch
+    echo "  ${typedsofar}/${asmcount}"
+  fi
 done
+run_batch
+echo "  ${typedsofar}/${asmcount}"
 
 # Semicolon-separated, as every other CSV this project writes, so that the paper's \csvreader and
 # the reports read it the same way. The allele columns are kept whole in one field: their number
 # varies with the scheme, and a fixed header cannot describe them.
+#
+# One row per file, not per assembly: the join key of everything downstream is the accession, which
+# is what Genestrip knows a genome by. Every contig of an assembly therefore carries the ST of the
+# assembly it belongs to, and the assembly it was typed as is named beside it.
 {
-  echo "file;scheme;st;alleles;"
+  echo "file;assembly;scheme;st;alleles;"
   # mlst leaves the ST as `-' when the profile is novel or incomplete. That is a result, not a
   # failure, and it is passed through rather than dropped: a genome whose ST is unknown still
   # belongs in the table, and a cluster made only of such genomes is itself worth seeing.
-  while IFS="$(printf '\t')" read -r name sch st rest; do
-    printf '%s;%s;%s;%s;\n' "$name" "$sch" "$st" "$(printf '%s' "$rest" | tr '\t' ',')"
-  done < "$tmpout"
+  awk -F'\t' -v OFS=';' '
+    NR == FNR {
+      n = split($1, parts, "/"); key = parts[n]
+      sub(/\.fa$/, "", key)
+      sch[key] = $2
+      st[key] = ($3 == "" ? "-" : $3)
+      alleles = ""
+      for (i = 4; i <= NF; i++) {
+        alleles = (i == 4 ? $i : alleles "," $i)
+      }
+      all[key] = alleles
+      next
+    }
+    {
+      key = $1
+      print $2, key, (key in sch ? sch[key] : scheme), (key in st ? st[key] : "-"), all[key], ""
+    }' "$rawout" "$members"
 } > "$out"
 
-typed=$(awk -F';' 'NR > 1 && $3 != "-" && $3 != "" { n++ } END { print n + 0 }' "$out")
-novel=$(awk -F';' 'NR > 1 && $3 == "-" { n++ } END { print n + 0 }' "$out")
-sts=$(awk -F';' 'NR > 1 && $3 != "-" && $3 != "" { print $3 }' "$out" | sort -u | wc -l)
+typed=$(awk -F';' 'NR > 1 && $4 != "-" && $4 != "" { n++ } END { print n + 0 }' "$out")
+novel=$(awk -F';' 'NR > 1 && $4 == "-" { n++ } END { print n + 0 }' "$out")
+asmtyped=$(awk -F';' 'NR > 1 && $4 != "-" && $4 != "" { print $2 }' "$out" | sort -u | wc -l | tr -d ' ')
+sts=$(awk -F';' 'NR > 1 && $4 != "-" && $4 != "" { print $4 }' "$out" | sort -u | wc -l | tr -d ' ')
 echo
 echo "Wrote ${out}"
-echo "  ${typed} genome(s) typed, ${novel} without an ST, ${sts} distinct ST(s)."
+echo "  ${asmtyped} of ${asmcount} assembl(y/ies) typed, ${sts} distinct ST(s)."
+echo "  ${typed} sequence file(s) carry an ST, ${novel} do not."
 if [ "$novel" -gt 0 ]; then
-  echo "  An ST of '-' means a novel or incomplete profile. Those genomes are kept in the table;" >&2
-  echo "  they cannot contribute a candidate ST to a sub-species measure and have to be counted" >&2
-  echo "  as their own unit or excluded deliberately -- not ignored by accident." >&2
+  echo "  An ST of '-' means a novel or incomplete profile, or a plasmid that was typed on its own." >&2
+  echo "  Those genomes are kept in the table; they cannot contribute a candidate ST to a" >&2
+  echo "  sub-species measure and have to be counted as their own unit or excluded deliberately --" >&2
+  echo "  not ignored by accident." >&2
 fi
