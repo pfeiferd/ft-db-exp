@@ -1,4 +1,19 @@
 #!/bin/sh
+#
+# Builds the databases of the paper, measures what that costs, and gathers the figures and CSV files
+# the paper reads.
+#
+#   sh ./bin/run_exps.sh                 # everything
+#   sh ./bin/run_exps.sh cdiff           # only that project
+#   sh ./bin/run_exps.sh cdiff vineyard  # only those
+#
+# Naming projects restricts every per-project step to them and skips the steps that belong to other
+# projects - the Orthopox figures of the Methods section and the rank statistics of the Introduction.
+# Everything after them still runs, since it reads whatever is in results/ and reports what is not
+# there rather than failing.
+#
+# Note that a database which already exists is not rebuilt, and its generation is therefore not
+# measured either: delete data/projects/<project>/db first if that is what you are after.
 set -e
 
 scriptdir=$(dirname "$0")
@@ -7,12 +22,31 @@ cd $scriptdir/..
 
 mkdir -p results
 
+# Which projects to work on. Naming none means all of them, in the order the paper's tables list.
+if [ $# -gt 0 ]; then
+  projects="$*"
+  restricted=1
+else
+  projects="viral tick-borne protozoa gut-protozoa parasites vineyard cdiff"
+  restricted=""
+fi
+
+# True if project $1 is among the ones to work on.
+wanted() {
+  case " ${projects} " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 res_path=./results
 # Where the unshortened logs are kept while a goal runs. Only their shortened form is copied on to
 # ${res_path}/logs, so that the results hold nothing but readable files.
 raw_log_path=./logs
 
-# For figures in "Methods" section:
+# For figures in "Methods" section. These are about the Orthopox example rather than about any of the
+# databases below, so a restricted run leaves them alone.
+if [ -z "$restricted" ]; then
 mvn exec:exec@orthopox3 -Dname=orthopox -Dgoal=svgtaxtree
 mvn exec:exec@orthopox3 -Dname=orthopox -Dgoal=ftsvgtaxtree
 mv data/projects/orthopox/csv/orthopox_svgtaxtree.svg ${res_path}/orthopox3_svgtaxtree.svg
@@ -26,6 +60,7 @@ mvn exec:exec@db -Dname=orthopox -Dgoal=ftsvgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=svgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=ftsvgtaxtree
 mvn exec:exec@db -Dname=borrelia -Dgoal=ftsvgtaxtree
+fi
 
 # Times the generation of one database and records it, but only if that database is not there yet.
 # Genestrip treats an existing database as already made, so re-running the goal does nothing at all:
@@ -108,7 +143,8 @@ timed_db_goal() {
 }
 
 # DB Build Performance
-for db in viral tick-borne protozoa gut-protozoa parasites vineyard cdiff;
+echo "### building: ${projects}"
+for db in $projects;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=refseqfna
     mvn exec:exec@db -Dname=$db -Dgoal=fastasgenbankdl
@@ -121,12 +157,12 @@ for db in viral tick-borne protozoa gut-protozoa parasites vineyard cdiff;
 
 # Now that the DBs are built:
 # Stats for figures in "Introduction" section
-mvn exec:exec@db -Dname=viral -Dgoal=kmerrankstatscsv
-mvn exec:exec@db -Dname=viral -Dgoal=branchhistorankcsv
-mvn exec:exec@db -Dname=tick-borne -Dgoal=kmerrankstatscsv
-mvn exec:exec@db -Dname=tick-borne -Dgoal=branchhistorankcsv
-mvn exec:exec@db -Dname=protozoa -Dgoal=kmerrankstatscsv
-mvn exec:exec@db -Dname=protozoa -Dgoal=branchhistorankcsv
+for db in viral tick-borne protozoa; do
+  if wanted "$db"; then
+    mvn exec:exec@db -Dname=$db -Dgoal=kmerrankstatscsv
+    mvn exec:exec@db -Dname=$db -Dgoal=branchhistorankcsv
+  fi
+done
 
 # Intrinsic quality of DBs.
 #
@@ -136,7 +172,7 @@ mvn exec:exec@db -Dname=protozoa -Dgoal=branchhistorankcsv
 # isLeafNode() now defines a leaf as the deepest artificial node on its branch, which is what both
 # halves of the goal actually mean, and the two agree again. Nothing changes for the other databases:
 # with no file or id nodes the deepest artificial node *is* the data node.
-for db in viral tick-borne protozoa gut-protozoa parasites vineyard cdiff;
+for db in $projects;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=dbquality
     mvn exec:exec@db -Dname=$db -Dgoal=ftquality
@@ -154,7 +190,7 @@ done
 # Disk sizes of the unrefined and the refined databases. This must run while the
 # databases still exist, i.e. before clean_all.sh removes them. The script writes
 # its CSV to ${res_path} by itself, so it comes after the copy loop above.
-./bin/db_disk_sizes.sh
+./bin/db_disk_sizes.sh $projects
 
 # Wall time and memory of each database generation and of the refinement built on top
 # of it, gathered from the cgmemtime logs written above and joined with the disk sizes
@@ -162,7 +198,7 @@ done
 # directly, so the numbers it prints can no longer drift apart from the runs they come
 # from. This reads logs only and measures nothing itself, hence it may be re-run at any
 # time; it does need db_disk_sizes.sh to have gone first.
-./bin/db_gen_perf.sh
+./bin/db_gen_perf.sh $projects
 
 # The statistics the paper's Tables "Genestrip databases..." and "Subtree precision..." state, as
 # LaTeX macros. It runs last and reads what the copy loop above has just placed in ${res_path}, so
