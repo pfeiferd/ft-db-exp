@@ -64,10 +64,27 @@ echo "=== ${count} source file(s) named by the taxonomy of ${db} ==="
 # Where those files live. Searched rather than assumed: RefSeq chunks and GenBank assemblies sit in
 # different folders, and a project may add fastas of its own.
 index="${work}/index.txt"
-# -L so that a data folder symlinked onto a larger disk - which is the normal arrangement for these
-# sizes - is followed rather than passed over.
-find -L "${basedir}/data/common/refseq" "${basedir}/data/common/fasta" "${basedir}/data/projects/${db}/fasta" \
-     -maxdepth 1 -type f 2>/dev/null > "$index" || true
+# The whole of data/common rather than the folders one would name: Genestrip keeps the RefSeq
+# release, the Genbank assemblies and any hand-placed fastas in separate folders below it, and
+# naming them one by one is how the Genbank ones got missed. -L so that a data folder symlinked onto
+# a larger disk - the normal arrangement at these sizes - is followed rather than passed over.
+find -L "${basedir}/data/common" "${basedir}/data/projects/${db}/fasta" \
+     -maxdepth 2 -type f 2>/dev/null > "$index" || true
+
+# What a previous run already resolved is kept rather than read again: the scan is bound by
+# streaming hundreds of gigabytes, and a run that had to be repeated - because a folder was missed,
+# say - should only pay for what it missed. Set RESCAN=1 to read everything afresh.
+skipped=0
+if [ -f "$out" ] && [ -z "${RESCAN:-}" ]; then
+  awk -F';' 'NR > 1' "$out" > "${work}/hdr/00-previous.csv"
+  awk -F';' 'NR > 1 { print $2 }' "$out" | LC_ALL=C sort -u > "${work}/done.txt"
+  skipped=$(wc -l < "${work}/done.txt" | tr -d ' ')
+  if [ "$skipped" -gt 0 ]; then
+    echo "  ${skipped} file(s) already in ${out}, keeping those (RESCAN=1 to read them again)"
+    LC_ALL=C comm -23 "$wanted" "${work}/done.txt" > "${work}/wanted.new"
+    mv "${work}/wanted.new" "$wanted"
+  fi
+fi
 
 paths="${work}/paths.txt"
 : > "$paths"
@@ -84,8 +101,16 @@ while IFS= read -r name; do
   fi
 done < "$wanted"
 found=$(wc -l < "$paths" | tr -d ' ')
-echo "OK    ${found} found, ${missing} missing"
+echo "OK    ${found} to read, ${missing} missing"
 if [ "$found" -eq 0 ]; then
+  if [ "$skipped" -gt 0 ]; then
+    echo "  Nothing left to read; ${out} already covers every file that could be found."
+    if [ "$missing" -gt 0 ]; then
+      echo "  ${missing} file(s) remain unresolved - see the warnings above." >&2
+    fi
+    exit 0
+  fi
+  echo "  None of the ${count} file(s) named by the taxonomy could be found." >&2
   exit 1
 fi
 
