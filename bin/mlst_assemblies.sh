@@ -232,7 +232,9 @@ echo "  ${typedsofar}/${asmcount}"
   # mlst leaves the ST as `-' when the profile is novel or incomplete. That is a result, not a
   # failure, and it is passed through rather than dropped: a genome whose ST is unknown still
   # belongs in the table, and a cluster made only of such genomes is itself worth seeing.
-  awk -F'\t' -v OFS=';' '
+  # `scheme' has to be handed to awk explicitly; it is a shell variable and would otherwise be empty
+  # inside, which would leave the scheme column blank for an assembly missing from mlst's output.
+  awk -F'\t' -v OFS=';' -v scheme="$scheme" '
     NR == FNR {
       n = split($1, parts, "/"); key = parts[n]
       sub(/\.fa$/, "", key)
