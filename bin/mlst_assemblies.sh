@@ -33,6 +33,12 @@
 #     while `additional.txt' contributes leaves of its own -- for `cdiff' the human decoy under 9606,
 #     which the subtree filter drops because it is not below the requested species.
 #
+# One name may be several leaves. `fileNode()' creates its node under the tax id the region resolved
+# to, so a genome read under two of them -- the species and one of its strains, say -- becomes a
+# FILE node under each, both named after the same file. The names are therefore made unique before
+# typing: it is one genome and it has one sequence type, and since everything downstream joins on
+# the name, one row serves every leaf that carries it.
+#
 # THIS REPLACES A DETOUR, and the reason it does is worth keeping. The genomes used to be taken from
 # `data/projects/<db>/fasta', which `extractrefseqfasta' fills with one file per sequence accession:
 # a RefSeq release file is a chunk of many organisms, so it cannot be typed as it stands. Since a
@@ -68,10 +74,14 @@ mkdir -p "$res_path"
 # Held in the positional parameters rather than in a variable, which is the one list a POSIX shell
 # has that survives a path with a space in it. The two arguments this script takes have been read
 # into `db' and `scheme' above, so nothing is lost by overwriting them.
+#
+# data/common/refseq is deliberately NOT among them. A release file is a chunk of many organisms, so
+# a leaf named after one is not a genome and typing it would produce a sequence type for nothing in
+# particular. Leaving the folder out makes such a leaf turn up as unresolved, where it is reported,
+# rather than as a row that looks like a result.
 set -- "${basedir}/data/common/genbank" \
        "${basedir}/data/common/fasta" \
-       "${basedir}/data/projects/${db}/fasta" \
-       "${basedir}/data/common/refseq"
+       "${basedir}/data/projects/${db}/fasta"
 
 # install_tools.sh puts mlst below tools/bin, and its own `export PATH' lives no longer than that
 # script does. Prepending the directory here is what make_fastqs.sh does with the simulators for the
@@ -234,6 +244,15 @@ if [ "$missingcount" -gt 0 ]; then
   [ "$missingcount" -gt 10 ] && echo "    ... and $((missingcount - 10)) more" >&2
   echo "  Searched:" >&2
   printf '%s\n' "$@" | sed 's/^/    /' >&2
+  # The one cause worth naming, because it is not a missing file but a database built the other way.
+  chunks=$(grep -c '^[a-z_]*\.[0-9][0-9]*\.[0-9][0-9]*\.genomic\.fna\(\.gz\)\?$' "$missing" || true)
+  if [ "$chunks" -gt 0 ]; then
+    echo "  ${chunks} of them are named after RefSeq release files, so this database was filled" >&2
+    echo "  from the release ('refseq.filldb' is not false) and those leaves are chunks of many" >&2
+    echo "  organisms rather than genomes. They cannot carry a sequence type at all, and a" >&2
+    echo "  dendrogram over them clusters by accession order as much as by lineage - see" >&2
+    echo "  data/projects/cdiff/config.properties on why cdiff switched the release off." >&2
+  fi
 fi
 if [ "$foundcount" -eq 0 ]; then
   echo "Nothing to type." >&2
