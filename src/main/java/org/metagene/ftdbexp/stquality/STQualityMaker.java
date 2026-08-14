@@ -30,14 +30,47 @@ import java.util.Set;
  * {@code GSMaker.getExecutionContext} being protected.
  */
 public class STQualityMaker extends FinerTreeMaker<FTProject> {
+    /**
+     * A key whose goal is dropped when something it depends on is cleaned, as Genestrip's own report
+     * keys are ({@code ftdbinfo}, {@code ftsvgtaxtree}, ...).
+     * <p>
+     * {@code GoalKey.DefaultGoalKey} answers {@code false} to this, and a goal that answers
+     * {@code false} is reached by neither {@code -t clean} nor {@code -t cleanall}: the former applies
+     * only to the internal goal the maker aggregates the request into and never touches a real one,
+     * and the latter descends only into dependencies that permit it. Such a CSV would then survive a
+     * rebuilt database and describe the previous one.
+     */
+    private static final class ReportGoalKey implements GoalKey {
+        private final String name;
+
+        ReportGoalKey(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public boolean isTransClean() {
+            return true;
+        }
+
+        @Override
+        public String toString() {
+            return name;
+        }
+    }
+
     /** Key of the counting goal over the unrefined database. */
-    public static final GoalKey ST_QUALITY_COUNTS = new GoalKey.DefaultGoalKey("stqualcounts");
+    public static final GoalKey ST_QUALITY_COUNTS = new ReportGoalKey("stqualcounts");
     /** Key of the CSV goal over the unrefined database; also names {@code <db>_stquality.csv}. */
-    public static final GoalKey ST_QUALITY = new GoalKey.DefaultGoalKey("stquality");
+    public static final GoalKey ST_QUALITY = new ReportGoalKey("stquality");
     /** Key of the counting goal over the refined database. */
-    public static final GoalKey FT_ST_QUALITY_COUNTS = new GoalKey.DefaultGoalKey("ftstqualcounts");
+    public static final GoalKey FT_ST_QUALITY_COUNTS = new ReportGoalKey("ftstqualcounts");
     /** Key of the CSV goal over the refined database; also names {@code <db>_ftstquality.csv}. */
-    public static final GoalKey FT_ST_QUALITY = new GoalKey.DefaultGoalKey("ftstquality");
+    public static final GoalKey FT_ST_QUALITY = new ReportGoalKey("ftstquality");
 
     private final STGroundTruth groundTruth;
 

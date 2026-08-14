@@ -141,6 +141,19 @@
 								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.project.goal}</argument>
+								<!-- `make' unless asked otherwise. A goal whose *inputs* changed without its
+								     output file changing - a different `clusterMethod', say - is not noticed
+								     by the make system, so dropping the stale file is the only way to have it
+								     rebuilt. Mind which target does what, and check the chain before using one:
+								     `clean' aggregates the request into an internal goal and cleans only that,
+								     so it never touches a real goal at all. `cleanall <goal>' drops that goal's
+								     output and then descends into every dependency whose key permits transitive
+								     cleaning - and `db' does, so `cleanall dbinfo' DELETES THE DATABASE and the
+								     next make rebuilds it from the genomes. `cleantotal' cleans everything
+								     reachable, unconditionally. Deleting the one output file by hand is the
+								     predictable way to force a single goal to run again. -->
+								<argument>-t</argument>
+								<argument>${gs.target}</argument>
 								<argument>-C</argument>
 								<argument>threads=${gs.threads}</argument>
 							</arguments>

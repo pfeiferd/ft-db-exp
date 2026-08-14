@@ -204,6 +204,15 @@ public class STCounts implements Serializable {
     }
 
     /**
+     * Adds one reader's tally for this node.
+     *
+     * @param count the number of {@code (k-mer, sequence type)} pairs that reader found for this node
+     */
+    void addTpForNodePrecision(long count) {
+        tpForNodePrecision += count;
+    }
+
+    /**
      * Returns the accumulated {@code c_st} over this node's own k-mers.
      *
      * @return the number of distinct {@code (k-mer, sequence type)} pairs found for this node

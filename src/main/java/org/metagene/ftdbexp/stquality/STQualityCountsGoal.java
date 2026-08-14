@@ -19,6 +19,7 @@ import org.metagene.genestrip.refseq.AccessionMap;
 import org.metagene.genestrip.refseq.RefSeqCategory;
 import org.metagene.genestrip.store.Database;
 import org.metagene.genestrip.store.KMerStore;
+import org.metagene.genestrip.store.RadixKMerStore;
 import org.metagene.genestrip.tax.Rank;
 import org.metagene.genestrip.tax.SmallTaxTree;
 import org.metagene.genestrip.tax.TaxTree;
@@ -26,6 +27,7 @@ import org.metagene.genestrip.tax.TaxTree;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -60,6 +62,9 @@ import java.util.Set;
  */
 public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, FTProject>
         implements Goal.LogHeapInfo {
+    /** K-mers a reader buffers before one batched store lookup; the value AbstractKMerIndexGoal uses. */
+    private static final int BATCH_SIZE = 128;
+
     private final ObjectGoal<AccessionMap, FTProject> accessionMapGoal;
     private final ObjectGoal<Database, FTProject> storeGoal;
     private final STGroundTruth groundTruth;
@@ -71,12 +76,26 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
     private List<MyFastaReader> readersList;
     /**
      * Tax ids of the nodes the measure applies to, i.e. those at or below a requested tax id. See
-     * {@link #inScope}.
+     * {@link #inScope}. Used while the per-node arrays below are being built and not on the reading
+     * path, which addresses a node by its position.
      */
     private Set<String> scope;
     /** Per sequence type, the true positives and the pairs found at all; backs the recalls. */
     private long[] typeTp;
     private long[] typeTpPlusFn;
+
+    // Everything the reading path needs about a node, indexed by its dense position rather than
+    // looked up by tax id. A HashMap keyed by a String costs a string hash per access, and these are
+    // accessed a few billion times; SmallTaxTree numbers its nodes densely for exactly this purpose
+    // (see SmallTaxTree#getNodeCount).
+    private int nodeCount;
+    private SmallTaxTree.SmallTaxIdNode[] nodeByPos;
+    private STCounts[] countsByPos;
+    private boolean[] inScopeByPos;
+    /** The sequence type of the leaf at this position, or {@code -1} where there is none. */
+    private int[] stByPos;
+    /** Number of distinct sequence types, i.e. the width of the per-type tallies. */
+    private int typeCount;
 
     /**
      * Creates the goal.
@@ -125,16 +144,29 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             initScope();
 
             map = new HashMap<>();
+            nodeCount = tree.getNodeCount();
+            nodeByPos = new SmallTaxTree.SmallTaxIdNode[nodeCount];
+            countsByPos = new STCounts[nodeCount];
+            inScopeByPos = new boolean[nodeCount];
+            stByPos = new int[nodeCount];
+            Arrays.fill(stByPos, -1);
             int typedLeavesInTree = 0;
             int leavesInTree = 0;
             for (SmallTaxTree.SmallTaxIdNode node : tree) {
                 boolean leaf = isLeafNode(node);
                 STCounts counts = new STCounts(leaf, stats.getOrDefault(node.getTaxId(), 0L));
-                if (leaf && inScope(node)) {
+                int pos = node.getPosition();
+                nodeByPos[pos] = node;
+                countsByPos[pos] = counts;
+                inScopeByPos[pos] = inScope(node);
+                if (leaf && inScopeByPos[pos]) {
                     leavesInTree++;
+                    // The one join to the external typing, done once per leaf here so that the
+                    // reading path never hashes a file name again.
                     int stIndex = groundTruth.getSTIndex(node.getName());
                     if (stIndex >= 0) {
                         typedLeavesInTree++;
+                        stByPos[pos] = stIndex;
                         counts.addST(stIndex);
                     }
                 }
@@ -162,12 +194,13 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             // One entry per (k-mer, sequence type) pair, and a k-mer stored at n can pair with no
             // type that is not in S_n, so this sum is an upper bound and a tight one.
             //
-            // The obvious estimate - every k-mer on the path from a typed genome up to the root,
-            // summed over the genomes, as DBQualityCountsGoal makes it - is not usable here. It
-            // counts the k-mers of the shared ancestors once per genome, which is harmless while a
-            // leaf is one of a handful under its taxon and ruinous when it is one of 3,500: on
-            // `cdiff' it comes to 227 billion entries against the 12 billion below, and asks for a
-            // filter of 265 GB.
+            // Not the estimate DBQualityCountsGoal makes - every k-mer on the path from a genome up
+            // to the root, summed over the genomes. That one is exactly right for *its* unit: summed
+            // over leaves it comes to the same thing as this sum with |D_n| in place of |S_n|, and a
+            // (k-mer, genome) pair is what it counts. Here the unit is the lineage, several genomes
+            // share one, and |S_n| <= |D_n| throughout - on `cdiff' 196 types against 3,638 typed
+            // genomes, which is 227 billion entries and a 265 GB filter against the 3.9 billion and
+            // 4.5 GB this sum asks for.
             long size = 0;
             for (SmallTaxTree.SmallTaxIdNode node : tree) {
                 STCounts counts = map.get(node.getTaxId());
@@ -180,6 +213,7 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             }
             typeTp = new long[groundTruth.getSTCount()];
             typeTpPlusFn = new long[groundTruth.getSTCount()];
+            typeCount = groundTruth.getSTCount();
             kMerStore = storeGoal.get().convertKMerStore();
 
             readersList = new ArrayList<>();
@@ -187,6 +221,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
 
             long entries = 0;
             for (MyFastaReader reader : readersList) {
+                // The readers are done, so whatever the last (partial) batch still holds is looked up
+                // and counted here, single-threaded, before their tallies are merged.
+                reader.flushBatch();
+                reader.mergeInto(typeTp, typeTpPlusFn, countsByPos);
                 entries += reader.entries;
             }
             if (getLogger().isInfoEnabled()) {
@@ -210,6 +248,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             scope = null;
             typeTp = null;
             typeTpPlusFn = null;
+            nodeByPos = null;
+            countsByPos = null;
+            inScopeByPos = null;
+            stByPos = null;
             cleanUpThreads();
         }
     }
@@ -271,8 +313,8 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
      * union already built, so the genomes need not be walked again.
      */
     private void aggregateRecalls() {
-        for (SmallTaxTree.SmallTaxIdNode node : tree) {
-            STCounts counts = map.get(node.getTaxId());
+        for (int pos = 0; pos < nodeCount; pos++) {
+            STCounts counts = countsByPos[pos];
             for (int st = counts.nextST(0); st >= 0; st = counts.nextST(st + 1)) {
                 counts.addTypeRecall(typeTp[st], typeTpPlusFn[st]);
             }
@@ -288,14 +330,14 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
      * node than there are.
      */
     private void unionSTsUpwards() {
-        for (SmallTaxTree.SmallTaxIdNode node : tree) {
-            STCounts counts = map.get(node.getTaxId());
+        for (int pos = 0; pos < nodeCount; pos++) {
+            STCounts counts = countsByPos[pos];
             if (counts.isForLeaf() && counts.getSTCount() > 0) {
                 // Stops at the scope boundary rather than running to the root: a node above it gets
                 // no set, hence no measure and no share of the filter. See initScope().
-                for (SmallTaxTree.SmallTaxIdNode a = node.getParent(); a != null && inScope(a);
-                     a = a.getParent()) {
-                    map.get(a.getTaxId()).unionSTs(counts);
+                for (SmallTaxTree.SmallTaxIdNode a = nodeByPos[pos].getParent();
+                     a != null && inScopeByPos[a.getPosition()]; a = a.getParent()) {
+                    countsByPos[a.getPosition()].unionSTs(counts);
                 }
             }
         }
@@ -308,11 +350,12 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
      * @see STCounts#aggregateSubtree
      */
     private void aggregateSubtrees() {
-        for (SmallTaxTree.SmallTaxIdNode node : tree) {
-            STCounts counts = map.get(node.getTaxId());
+        for (int pos = 0; pos < nodeCount; pos++) {
+            STCounts counts = countsByPos[pos];
             if (counts.getSTCount() > 0) {
-                for (SmallTaxTree.SmallTaxIdNode a = node; a != null && inScope(a); a = a.getParent()) {
-                    map.get(a.getTaxId()).aggregateSubtree(counts);
+                for (SmallTaxTree.SmallTaxIdNode a = nodeByPos[pos];
+                     a != null && inScopeByPos[a.getPosition()]; a = a.getParent()) {
+                    countsByPos[a.getPosition()].aggregateSubtree(counts);
                 }
             }
         }
@@ -379,9 +422,24 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
      * Reader that credits each k-mer it finds in the database to the sequence type of the genome it
      * was read from, once per type.
      */
-    protected class MyFastaReader extends AbstractUpdateFastaReader {
+    protected class MyFastaReader extends AbstractUpdateFastaReader
+            implements RadixKMerStore.BatchValueConsumer<SmallTaxTree.SmallTaxIdNode> {
         /** Number of distinct (k-mer, sequence type) pairs this reader added to the filter. */
         protected long entries;
+
+        /**
+         * Buffers for the batched store lookup, or {@code null} when it cannot be used. The lookup is
+         * memory-latency bound and a batch lets many of its cache misses overlap - see
+         * {@link RadixKMerStore#getBatch}.
+         */
+        private final RadixKMerStore.BatchBuffers batch;
+        /** This reader's own tallies, merged by {@link #mergeInto} once every reader has finished. */
+        private final long[] readerTypeTp;
+        private final long[] readerTypeTpPlusFn;
+        private final long[] readerTpForNode;
+        /** The current region's leaf, resolved once per region rather than once per k-mer. */
+        private SmallTaxTree.SmallTaxIdNode cachedLeaf;
+        private int cachedLeafPos = -1;
 
         public MyFastaReader(int bufferSize, Set<TaxTree.TaxIdNode> taxNodes, AccessionMap accessionMap,
                              int k, int maxGenomesPerTaxId, Rank maxGenomesPerTaxIdRank, long maxKmersPerTaxId,
@@ -391,6 +449,15 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
                     maxKmersPerTaxId, maxDust, kMerSampling, assemblyAccessionsOnly, regionsPerTaxid,
                     enableLowerCaseBases, booleanConfigValue(GSConfigKey.ID_NODES),
                     booleanConfigValue(GSConfigKey.FILE_NODES), booleanConfigValue(GSConfigKey.DATA_NODES));
+            readerTypeTp = new long[typeCount];
+            readerTypeTpPlusFn = new long[typeCount];
+            readerTpForNode = new long[nodeCount];
+            // Batched only while no per-taxon limit binds: a batched k-mer is counted after
+            // handleStore() has returned, so its return value can no longer report the k-mer, and that
+            // value feeds the per-region counters those limits are enforced from.
+            boolean unlimited = maxGenomesPerTaxId == Integer.MAX_VALUE && maxKmersPerTaxId == Long.MAX_VALUE;
+            batch = (kMerStore instanceof RadixKMerStore && unlimited)
+                    ? new RadixKMerStore.BatchBuffers(BATCH_SIZE) : null;
         }
 
         @Override
@@ -398,23 +465,90 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             return tree;
         }
 
+        /**
+         * Adds this reader's tallies to the shared ones. Called once, after every reader has finished,
+         * so nothing here needs a lock - which is the point: locking per pair put every thread on the
+         * same two monitors for the nodes they all touch.
+         *
+         * @param tpTarget       per-type true positives to add to
+         * @param tpPlusFnTarget per-type pairs to add to
+         * @param nodeTarget     per-node tallies to add to
+         */
+        void mergeInto(long[] tpTarget, long[] tpPlusFnTarget, STCounts[] nodeTarget) {
+            for (int i = 0; i < typeCount; i++) {
+                tpTarget[i] += readerTypeTp[i];
+                tpPlusFnTarget[i] += readerTypeTpPlusFn[i];
+            }
+            for (int pos = 0; pos < nodeCount; pos++) {
+                if (readerTpForNode[pos] != 0) {
+                    nodeTarget[pos].addTpForNodePrecision(readerTpForNode[pos]);
+                }
+            }
+        }
+
+        /**
+         * Looks the buffered k-mers up in one batch and counts those the database holds.
+         */
+        protected void flushBatch() {
+            if (batch != null && !batch.isEmpty()) {
+                ((RadixKMerStore<SmallTaxTree.SmallTaxIdNode>) kMerStore).getBatch(batch, this);
+            }
+        }
+
+        /**
+         * Resolves the region's leaf as usual and remembers its position, so that the reading path
+         * costs an indexed read per k-mer instead of hashing the leaf's file name in the typing.
+         */
+        @Override
+        protected void updateLeafNode() {
+            super.updateLeafNode();
+            if (leafNode != cachedLeaf) {
+                cachedLeaf = leafNode;
+                cachedLeafPos = leafNode == null ? -1 : leafNode.getPosition();
+            }
+        }
+
         @Override
         protected boolean handleStore(long kmer) {
-            if (leafNode == null) {
+            // An untyped genome contributes no unit, so it can neither raise nor lower c_st - and
+            // stByPos says so without a lookup.
+            if (cachedLeafPos < 0 || stByPos[cachedLeafPos] < 0) {
                 return false;
             }
-            int stIndex = groundTruth.getSTIndex(leafNode.getName());
-            if (stIndex < 0) {
-                // An untyped genome contributes no unit, so it can neither raise nor lower c_st.
+            if (batch != null) {
+                if (batch.add(kmer, cachedLeafPos)) {
+                    flushBatch();
+                }
                 return false;
             }
             SmallTaxTree.SmallTaxIdNode storedNode = kMerStore.getLong(kmer, null);
-            if (storedNode == null || !inScope(storedNode)) {
+            if (storedNode == null) {
+                return false;
+            }
+            return count(kmer, cachedLeafPos, storedNode);
+        }
+
+        /**
+         * Counts one k-mer of a flushed batch, which by construction the database holds.
+         *
+         * @param kmer       the k-mer that was looked up
+         * @param leafPos    the position of the leaf it was read in, as buffered with it
+         * @param storedNode the node the database stores it at
+         */
+        @Override
+        public void accept(long kmer, int leafPos, SmallTaxTree.SmallTaxIdNode storedNode) {
+            count(kmer, leafPos, storedNode);
+        }
+
+        private boolean count(long kmer, int leafPos, SmallTaxTree.SmallTaxIdNode storedNode) {
+            int storedPos = storedNode.getPosition();
+            if (!inScopeByPos[storedPos]) {
                 // Out of scope is not a miss: the measure simply does not reach above the requested
                 // tax ids, so such a k-mer is left out of both the precision and the recall rather
                 // than counted as a k-mer this lineage failed to claim.
                 return false;
             }
+            int stIndex = stByPos[leafPos];
             // Keyed by the type and not by the genome: that is the whole of what separates c_st from
             // c. Fifty genomes of one lineage carrying this k-mer add one to the tally, not fifty.
             if (!filter.putLong(KMerIndexFilterHelper.combine(kmer, stIndex))) {
@@ -422,25 +556,15 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             }
             entries++;
             // Path correctness says the genomes carrying a k-mer all lie below the node it is stored
-            // at, so this walk succeeds for every genome of the type and it does not matter which of
-            // them won the filter. Where it fails, the database claims the k-mer for a branch this
-            // genome is not on - the false negative the recall is there to count.
-            SmallTaxTree.SmallTaxIdNode pathNode = leafNode;
-            while (pathNode != null && pathNode != storedNode) {
-                pathNode = pathNode.getParent();
-            }
-            boolean onPath = pathNode == storedNode;
-            synchronized (typeTpPlusFn) {
-                typeTpPlusFn[stIndex]++;
-                if (onPath) {
-                    typeTp[stIndex]++;
-                }
-            }
+            // at, so this holds for every genome of the type and it does not matter which of them won
+            // the filter. Where it fails, the database claims the k-mer for a branch this genome is
+            // not on - the false negative the recall is there to count. The tree answers from the two
+            // depths, so an unrelated node costs no walk at all.
+            boolean onPath = tree.isAncestorOf(nodeByPos[leafPos], storedNode);
+            readerTypeTpPlusFn[stIndex]++;
             if (onPath) {
-                STCounts nodeCounts = map.get(storedNode.getTaxId());
-                synchronized (nodeCounts) {
-                    nodeCounts.incTpForNodePrecision();
-                }
+                readerTypeTp[stIndex]++;
+                readerTpForNode[storedPos]++;
                 return true;
             }
             return false;
