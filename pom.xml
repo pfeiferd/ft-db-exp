@@ -26,6 +26,11 @@
 		     experiment of the paper runs with the same thread count. Pin it to reproduce a
 		     specific run, e.g. -Dgs.threads=19 . -->
 		<gs.threads>-1</gs.threads>
+		<!-- The typing that the `stquality' execution measures against, and which of the two
+		     database variants to measure. Defaulted so that -Dname=cdiff alone does the usual
+		     thing; override with -Dgs.st.csv=... / -Dgs.st.which=db|ftdb . -->
+		<gs.st.csv>results/${name}_mlst.csv</gs.st.csv>
+		<gs.st.which>both</gs.st.which>
 		<!-- Generation target of the `match' execution. The performance measurement sets
 		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
 		     finding its result files already in place and reporting a runtime of zero. -->
@@ -138,6 +143,30 @@
 								<argument>${gs.project.goal}</argument>
 								<argument>-C</argument>
 								<argument>threads=${gs.threads}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<!-- Intrinsic database quality at the sequence type level, for a database
+						     refined below the species rank. It needs an external typing of the
+						     genomes, which is what `stcsv' points at; bin/cdiff_eval.sh produces it.
+						     Both database variants are measured unless `stwhich' says otherwise. -->
+						<id>stquality</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.stquality.STQualityMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.st.csv}</argument>
+								<argument>${gs.st.which}</argument>
 							</arguments>
 						</configuration>
 					</execution>
