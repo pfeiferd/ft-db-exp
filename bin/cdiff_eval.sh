@@ -2,27 +2,30 @@
 #
 # The evaluation of the `cdiff' database, which is refined *below* the species rank and therefore
 # needs a ground truth the taxonomy cannot supply. This script carries it as far as that ground
-# truth: it extracts the genomes the database was filled from and assigns a sequence type to each.
+# truth: it makes sure the database's inventory of nodes exists and assigns a sequence type to every
+# genome that became a leaf of it.
 #
-#   sh ./bin/cdiff_eval.sh              # extract if needed, then type
-#   sh ./bin/cdiff_eval.sh --force      # extract again even if the fasta folder is populated
+#   sh ./bin/cdiff_eval.sh              # write dbinfo if missing, then type
+#   sh ./bin/cdiff_eval.sh --force      # write dbinfo again even if it is already there
 #
 # Run it after the database exists, i.e. after run_exps.sh has built `cdiff'.
 #
-# WHY THE EXTRACTION IS PART OF THIS. The genomes are not lying about ready to be typed. `cdiff'
-# draws on two sources at once -- some 320 GenBank assemblies under data/common/genbank and some 190
-# RefSeq release files under data/common/refseq -- and a RefSeq release file is a chunk of many
-# organisms rather than a genome, so typing it as it stands would be meaningless. The extraction
-# writes one fasta per sequence region that actually went into the database, from both sources, and
-# that is what can be typed.
+# WHY dbinfo IS PART OF THIS. What has to be typed is one genome per leaf of the dendrogram, and the
+# database is the only place that records which genomes those are: `genbank.maxPerTaxid' admits a
+# subset of the assemblies, and `additional.txt' contributes leaves under other taxa. `dbinfo' writes
+# the tree out with one row per node, so bin/mlst_assemblies.sh can read the FILE nodes below the
+# requested tax ids straight off it -- see there for why the join key that comes with them is the
+# whole point.
 #
-# THE GOAL TO ASK FOR IS `extractrefseqcsv'. The extraction itself is `extractrefseqfasta', but that
-# one is an ObjectGoal, and Maker.make() aggregates the requested goals as dependencies of an
-# internal goal whose make() skips every weak dependency -- which every ObjectGoal is by default.
-# Asking for it directly therefore prints BUILD SUCCESS after a second and leaves the folder empty.
-# `extractrefseqcsv' is a FileListGoal, so it runs, and it pulls the extraction in as its own
-# dependency. It writes the map from sequence description to tax id as well, which is what tells an
-# extracted file which taxon it came from.
+# THE EXTRACTION IS GONE, and it is worth saying what it was for. `cdiff' used to be filled from the
+# RefSeq release as well, and a release file is a chunk of many organisms rather than a genome, so
+# typing it as it stands would have been meaningless; `extractrefseqcsv' wrote one fasta per sequence
+# region instead, which then had to be regrouped into assemblies by parsing accessions. With
+# `refseq.filldb=false' and one Genbank fasta per assembly there is no chunk to unpack and no group
+# to reconstruct, and the detour cost the join: its rows were keyed by an accession stem, which is
+# not what a leaf is called. Should a project need it again, the goal to ask for is
+# `extractrefseqcsv' and not `extractrefseqfasta' -- the latter is an ObjectGoal, which Maker.make()
+# skips as a weak dependency, so it reports success within a second and does nothing at all.
 set -e
 
 scriptdir=$(dirname "$0")
@@ -33,35 +36,29 @@ db=cdiff
 force=""
 [ "$1" = "--force" ] && force=1
 
-fastadir="${basedir}/data/projects/${db}/fasta"
+dbinfo="${basedir}/data/projects/${db}/csv/${db}_dbinfo.csv"
 
-echo "############ 1/2  extracting the genomes of ${db} ############"
-# Counting rather than testing for the folder: Genestrip creates it early and leaves it empty when
-# the extraction did not run, which is exactly the state this script exists to get out of.
-extracted=0
-if [ -d "$fastadir" ]; then
-  extracted=$(find "$fastadir" -maxdepth 1 -type f \( -name '*.fa' -o -name '*.fa.gz' \) 2>/dev/null | wc -l)
-fi
-if [ "$extracted" -gt 0 ] && [ -z "$force" ]; then
-  echo "  SKIP  ${extracted} fasta file(s) already in ${fastadir}"
-  echo "        (pass --force to extract them again)"
+echo "############ 1/2  the node inventory of ${db} ############"
+if [ -f "$dbinfo" ] && [ -z "$force" ]; then
+  echo "  SKIP  ${dbinfo} is already there"
+  echo "        (pass --force to write it again; do that whenever the database was rebuilt,"
+  echo "         since a dbinfo older than the database beside it describes another tree)"
 else
-  echo "  this reads every source file of the database and takes a while"
-  mvn exec:exec@db -Dname="$db" -Dgoal=extractrefseqcsv
-  extracted=$(find "$fastadir" -maxdepth 1 -type f \( -name '*.fa' -o -name '*.fa.gz' \) 2>/dev/null | wc -l)
-  echo "  extracted ${extracted} fasta file(s) into ${fastadir}"
-  if [ "$extracted" -eq 0 ]; then
-    echo "  WARNING: the extraction produced nothing. The goal reports what it read on stderr;" >&2
-    echo "           a run of a second or two means it did nothing at all." >&2
+  mvn exec:exec@db -Dname="$db" -Dgoal=dbinfo
+  if [ ! -f "$dbinfo" ]; then
+    echo "  WARNING: the goal did not write ${dbinfo}." >&2
     exit 1
   fi
+  echo "  wrote ${dbinfo}"
 fi
 
-echo "############ 2/2  typing them ############"
+echo "############ 2/2  typing the leaves ############"
 sh ./bin/mlst_assemblies.sh "$db"
 
 echo
-echo "Done. results/${db}_mlst.csv holds one sequence type per extracted genome."
+echo "Done. results/${db}_mlst.csv holds one sequence type per leaf of the database, keyed by the"
+echo "leaf's name - which is the fasta file the genome was read from, so it joins to the dendrogram"
+echo "directly."
 echo "Still missing for the evaluation: the classification of the isolate reads of PRJNA1148956"
 echo "against the unrefined and the refined database, and the sub-species precision scored against"
 echo "these sequence types. Fetch the reads with bin/fetch_cdiff.sh."

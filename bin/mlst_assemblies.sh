@@ -1,7 +1,7 @@
 #!/bin/sh
 #
-# Assigns a multi-locus sequence type to every genome the `cdiff' database was built from, and
-# writes the result to results/cdiff_mlst.csv.
+# Assigns a multi-locus sequence type to every genome that became a leaf of the `cdiff' database,
+# and writes the result to results/cdiff_mlst.csv.
 #
 #   sh ./bin/mlst_assemblies.sh                    # the cdiff project
 #   sh ./bin/mlst_assemblies.sh <project> <scheme> # any other project and PubMLST scheme
@@ -19,9 +19,28 @@
 #     at the assigned node, is what makes the measure definable at all. Without this file there is
 #     no gated measure below the species.
 #
-# THE JOIN IS FREE. `fileNodes=true' names each artificial node after the fasta file it came from
-# (TaxTree.fileNode(node, file.getName(), ...)), and `mlst' reports one row per fasta file. So the
-# ST table joins to the dendrogram's leaves on the file name, with nothing to reconcile by hand.
+# WHAT GETS TYPED, AND WHY IT IS READ OUT OF THE DATABASE. The unit of this table has to be the unit
+# of the dendrogram, which is a leaf: `fileNodes=true' puts one artificial node of rank FILE under
+# the tax id a genome's k-mers map to, named after the fasta file it was read from
+# (`TaxTree.fileNode(node, file.getName(), ...)'). So the list of genomes to type is taken from
+# `<db>_dbinfo.csv' -- every FILE node inside the subtree of the requested tax ids -- and not from a
+# folder. Two things follow that a folder cannot give:
+#
+#   - the join key is right by construction. A row is keyed by the leaf's name, which *is* the file
+#     name, `.gz' and all, so the table joins to the dendrogram with nothing to reconcile.
+#   - nothing is typed that is not in the tree, and nothing in the tree is missed. `genbank.maxPerTaxid'
+#     admits a subset of the assemblies and the database is the only place that records which subset,
+#     while `additional.txt' contributes leaves of its own -- for `cdiff' the human decoy under 9606,
+#     which the subtree filter drops because it is not below the requested species.
+#
+# THIS REPLACES A DETOUR, and the reason it does is worth keeping. The genomes used to be taken from
+# `data/projects/<db>/fasta', which `extractrefseqfasta' fills with one file per sequence accession:
+# a RefSeq release file is a chunk of many organisms, so it cannot be typed as it stands. Since a
+# seven-locus profile is practically never complete on a single WGS contig, those files then had to
+# be regrouped into assemblies by parsing accessions, and the resulting rows were keyed by an
+# accession stem -- which is not what a leaf is called, so the join to the dendrogram silently
+# matched nothing. With one Genbank fasta per assembly there is no chunk to unpack and no group to
+# reconstruct: one file is one assembly is one leaf.
 #
 # VALIDATE THE PIPELINE BEFORE TRUSTING IT. The source study typed its own 37 isolates; assembling
 # their Illumina reads and running this over the result must reproduce the STs of its Table 2. If
@@ -40,10 +59,19 @@ db=${1:-cdiff}
 # some other species that happens to score better on a poor assembly.
 scheme=${2:-cdifficile}
 
-fastadir="${basedir}/data/projects/${db}/fasta"
 res_path="${basedir}/results"
 out="${res_path}/${db}_mlst.csv"
 mkdir -p "$res_path"
+
+# Where a leaf's fasta may be found, in the order searched. Genbank first, since that is where the
+# per-assembly genomes come from; the others cover a project that also lists fastas of its own.
+# Held in the positional parameters rather than in a variable, which is the one list a POSIX shell
+# has that survives a path with a space in it. The two arguments this script takes have been read
+# into `db' and `scheme' above, so nothing is lost by overwriting them.
+set -- "${basedir}/data/common/genbank" \
+       "${basedir}/data/common/fasta" \
+       "${basedir}/data/projects/${db}/fasta" \
+       "${basedir}/data/common/refseq"
 
 # install_tools.sh puts mlst below tools/bin, and its own `export PATH' lives no longer than that
 # script does. Prepending the directory here is what make_fastqs.sh does with the simulators for the
@@ -58,14 +86,26 @@ if ! command -v mlst >/dev/null 2>&1; then
   echo "output for '5/5  mlst' if it appeared to succeed." >&2
   exit 1
 fi
-if [ ! -d "$fastadir" ]; then
-  echo "Missing ${fastadir}." >&2
-  echo "The genomes a database was filled from are not in that folder until they are extracted" >&2
-  echo "there, which bin/cdiff_eval.sh does, or by hand:" >&2
-  echo "  mvn exec:exec@db -Dname=${db} -Dgoal=extractrefseqcsv" >&2
-  echo "Ask for that goal rather than for 'extractrefseqfasta': the latter is an ObjectGoal, which" >&2
-  echo "Maker.make() skips as a weak dependency, so it reports success within a second and does" >&2
-  echo "nothing at all." >&2
+
+# The database's own inventory of nodes. Written by `dbinfo' into the project's csv folder, and
+# copied to results/ by run_exps.sh afterwards - either will do, so both are looked at.
+dbinfo=""
+for cand in "${basedir}/data/projects/${db}/csv/${db}_dbinfo.csv" "${res_path}/${db}_dbinfo.csv"; do
+  if [ -f "$cand" ]; then
+    dbinfo="$cand"
+    break
+  fi
+done
+if [ -z "$dbinfo" ]; then
+  echo "No ${db}_dbinfo.csv, so there is no list of what the database's leaves are." >&2
+  echo "Build it from the database (which must exist) with:" >&2
+  echo "  mvn exec:exec@db -Dname=${db} -Dgoal=dbinfo" >&2
+  exit 1
+fi
+
+taxidfile="${basedir}/data/projects/${db}/taxids.txt"
+if [ ! -f "$taxidfile" ]; then
+  echo "Missing ${taxidfile}, so the subtree to type cannot be determined." >&2
   exit 1
 fi
 
@@ -112,67 +152,106 @@ if ! printf '%s\n' "$schemes" | grep -qx "$scheme"; then
 fi
 rm -f "$mlst_stderr"
 
-# RefSeq deposits a draft genome as hundreds of WGS contigs, and the extraction writes one file per
-# accession. A seven-locus scheme is practically never complete on a single contig, so typing the
-# files one by one leaves everything but the finished chromosomes untyped -- on the C. difficile
-# database that was 640 of 463906 files. The contigs of one assembly are recognisable by their
-# accession, which is <letters><2-digit assembly version><contig number>, and are concatenated and
-# typed together. That is both a far better ground truth and far less work: 13184 typings instead
-# of 463906.
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-lists="${work}/lists"
 asmdir="${work}/asm"
-mkdir -p "$lists" "$asmdir"
+mkdir -p "$asmdir"
 
-echo "=== grouping the files of ${db} into assemblies ==="
-# find rather than a glob: some projects hold hundreds of thousands of files, which a glob expands
-# into one argument list.
-members="${work}/members.tsv"
-find "$fastadir" -maxdepth 1 -type f \( -name '*.fna.gz' -o -name '*.fa.gz' -o -name '*.fasta.gz' \
-        -o -name '*.fna' -o -name '*.fa' -o -name '*.fasta' \) \
-  | LC_ALL=C sort \
-  | awk -v lists="$lists" '
-      {
-        path = $0
-        n = split(path, parts, "/"); name = parts[n]
-        acc = name
-        sub(/\.(fna|fa|fasta)(\.gz)?$/, "", acc)
-        sub(/\.[0-9]+$/, "", acc)              # accession version
-        core = acc
-        sub(/^[A-Z][A-Z]_/, "", core)          # RefSeq NZ_ / NC_ prefix
-        key = acc
-        if (match(core, /^[A-Z]+[0-9]+$/)) {
-          letters = core; sub(/[0-9].*$/, "", letters)
-          digits = substr(core, length(letters) + 1)
-          # Two digits of assembly version plus at least six of contig number make a WGS contig.
-          # Anything shorter is an accession in its own right: a finished chromosome or a plasmid.
-          if (length(digits) >= 8) {
-            key = letters substr(digits, 1, 2)
-          }
+echo "=== reading the leaves of ${db} from $(basename "$dbinfo") ==="
+# dbinfo lists the tree in pre-order with a depth column, so a subtree is the run of rows that
+# follows its root and is deeper than it. Entering at a requested tax id and leaving at the first
+# row no deeper than the one entered at therefore delimits exactly what belongs to it - which is
+# what keeps the human decoy of additional.txt, a FILE node under 9606, out of a C. difficile
+# typing. The TOTAL row is a summary and carries a checksum where a tax id belongs, hence skipped.
+leaves="${work}/leaves.txt"
+awk -F';' -v taxidfile="$taxidfile" '
+    BEGIN {
+      while ((getline line < taxidfile) > 0) {
+        sub(/#.*$/, "", line)
+        gsub(/[[:space:]]/, "", line)
+        if (line != "") {
+          want[line] = 1
         }
-        # The key doubles as a file name, so it must not carry a path separator. Accessions do not,
-        # but a stray one would silently write outside the work directory.
-        gsub(/[^A-Za-z0-9._-]/, "_", key)
-        print path >> (lists "/" key)
-        close(lists "/" key)
-        print key "\t" name
-      }' > "$members"
+      }
+    }
+    NR == 1 || $3 == "TOTAL" { next }
+    {
+      level = $2 + 0
+      if (inside && level <= rootlevel) {
+        inside = 0
+      }
+      if (!inside) {
+        if ($5 in want) {
+          inside = 1
+          rootlevel = level
+        }
+        next
+      }
+      if ($4 == "FILE") {
+        print $3
+      }
+    }' "$dbinfo" | LC_ALL=C sort -u > "$leaves"
 
-count=$(wc -l < "$members" | tr -d ' ')
-if [ "$count" -eq 0 ]; then
-  echo "No fasta files in ${fastadir}." >&2
+leafcount=$(wc -l < "$leaves" | tr -d ' ')
+if [ "$leafcount" -eq 0 ]; then
+  echo "No FILE nodes below the requested tax ids of ${db}." >&2
+  echo "Either the database was built with 'fileNodes=false', in which case there is nothing to" >&2
+  echo "type here, or ${dbinfo} is from an older build than the database beside it." >&2
   exit 1
 fi
-asmcount=$(find "$lists" -type f | wc -l | tr -d ' ')
-echo "OK    ${count} file(s) in ${asmcount} assembl(y/ies)"
+echo "OK    ${leafcount} leaf/leaves"
+
+# Each leaf is named after the file it was read from, so resolving it is a lookup over the search
+# path rather than a parse. A name that resolves nowhere is reported and not passed over: it means
+# the database was filled from something this script cannot see, and a ground truth quietly missing
+# those genomes is worse than one that says so.
+echo "=== locating their fasta files ==="
+resolved="${work}/resolved.tsv"
+missing="${work}/missing.txt"
+: > "$resolved"
+: > "$missing"
+while IFS= read -r leaf; do
+  found=""
+  for dir in "$@"; do
+    if [ -f "${dir}/${leaf}" ]; then
+      found="${dir}/${leaf}"
+      break
+    fi
+  done
+  if [ -n "$found" ]; then
+    printf '%s\t%s\n' "$leaf" "$found" >> "$resolved"
+  else
+    printf '%s\n' "$leaf" >> "$missing"
+  fi
+done < "$leaves"
+
+foundcount=$(wc -l < "$resolved" | tr -d ' ')
+missingcount=$(wc -l < "$missing" | tr -d ' ')
+echo "OK    ${foundcount} located, ${missingcount} not found"
+if [ "$missingcount" -gt 0 ]; then
+  echo "  These leaves have no fasta on the search path, so they cannot be typed:" >&2
+  head -10 "$missing" | sed 's/^/    /' >&2
+  [ "$missingcount" -gt 10 ] && echo "    ... and $((missingcount - 10)) more" >&2
+  echo "  Searched:" >&2
+  printf '%s\n' "$@" | sed 's/^/    /' >&2
+fi
+if [ "$foundcount" -eq 0 ]; then
+  echo "Nothing to type." >&2
+  exit 1
+fi
 
 # mlst reads plain fasta; `gzip -cdf' decompresses what is compressed and copies through what is
-# not, so one invocation per assembly concatenates its contigs whatever they are stored as.
+# not, so one invocation per genome unpacks it whatever it is stored as.
 #
-# The assemblies are typed in batches rather than one per invocation: mlst loads the scheme's allele
+# The genomes are typed in batches rather than one per invocation: mlst loads the scheme's allele
 # database on every start, which for a single genome costs more than the typing itself. The batch is
-# also what bounds the extra disk -- only the assemblies of the current batch exist unpacked.
+# also what bounds the extra disk -- only the genomes of the current batch exist unpacked.
+#
+# The unpacked file is named by a serial number and not after its leaf, with a map beside it. A leaf
+# name is a file name of someone else's choosing, and letting it name a file again - after being
+# concatenated with a suffix, passed through the shell unquoted into an mlst argument list and split
+# back off the tool's output - is a chain of assumptions about characters it may contain. A serial
+# number assumes nothing and the map is exact.
 BATCH=${MLST_BATCH:-50}
 threadopt=""
 if mlst --help 2>&1 | grep -q -- "--threads"; then
@@ -180,20 +259,23 @@ if mlst --help 2>&1 | grep -q -- "--threads"; then
 fi
 
 rawout="${work}/mlst.tsv"
+map="${work}/map.tsv"
 : > "$rawout"
+: > "$map"
 batch=""
 nbatch=0
 typedsofar=0
+serial=0
 
 run_batch() {
   [ "$nbatch" -gt 0 ] || return 0
-  # A batch that dies takes no more than its own assemblies with it: they are recorded without an
-  # ST, exactly as an assembly mlst could not type, and the run goes on.
+  # A batch that dies takes no more than its own genomes with it: they are recorded without an ST,
+  # exactly as a genome mlst could not type, and the run goes on.
   # Not named `out': that is the result CSV this script writes at the end.
   if batchout=$(mlst --quiet --scheme "$scheme" $threadopt $batch 2>/dev/null); then
     printf '%s\n' "$batchout" >> "$rawout"
   else
-    echo "  WARNING: mlst failed on a batch of ${nbatch} assembl(y/ies)" >&2
+    echo "  WARNING: mlst failed on a batch of ${nbatch} genome(s)" >&2
     for a in $batch; do
       printf '%s\t%s\t-\n' "$a" "$scheme" >> "$rawout"
     done
@@ -203,37 +285,37 @@ run_batch() {
   nbatch=0
 }
 
-echo "=== typing ${asmcount} assembl(y/ies) of ${db} under scheme ${scheme} ==="
-for lst in "$lists"/*; do
-  [ -e "$lst" ] || continue
-  key=${lst##*/}
-  asmfile="${asmdir}/${key}.fa"
-  xargs gzip -cdf < "$lst" > "$asmfile"
+echo "=== typing ${foundcount} genome(s) of ${db} under scheme ${scheme} ==="
+while IFS="$(printf '\t')" read -r leaf path; do
+  serial=$((serial + 1))
+  id=$(printf 'g%08d' "$serial")
+  printf '%s\t%s\n' "$id" "$leaf" >> "$map"
+  asmfile="${asmdir}/${id}.fa"
+  gzip -cdf "$path" > "$asmfile"
   batch="${batch} ${asmfile}"
   nbatch=$((nbatch + 1))
   typedsofar=$((typedsofar + 1))
   if [ "$nbatch" -ge "$BATCH" ]; then
     run_batch
-    echo "  ${typedsofar}/${asmcount}"
+    echo "  ${typedsofar}/${foundcount}"
   fi
-done
+done < "$resolved"
 run_batch
-echo "  ${typedsofar}/${asmcount}"
+echo "  ${typedsofar}/${foundcount}"
 
 # Semicolon-separated, as every other CSV this project writes, so that the paper's \csvreader and
 # the reports read it the same way. The allele columns are kept whole in one field: their number
 # varies with the scheme, and a fixed header cannot describe them.
 #
-# One row per file, not per assembly: the join key of everything downstream is the accession, which
-# is what Genestrip knows a genome by. Every contig of an assembly therefore carries the ST of the
-# assembly it belongs to, and the assembly it was typed as is named beside it.
+# One row per leaf, and the leaf's name is the key: that is what the dendrogram calls the genome, so
+# everything downstream joins on it directly.
 {
-  echo "file;assembly;scheme;st;alleles;"
+  echo "leaf;scheme;st;alleles;"
   # mlst leaves the ST as `-' when the profile is novel or incomplete. That is a result, not a
   # failure, and it is passed through rather than dropped: a genome whose ST is unknown still
   # belongs in the table, and a cluster made only of such genomes is itself worth seeing.
   # `scheme' has to be handed to awk explicitly; it is a shell variable and would otherwise be empty
-  # inside, which would leave the scheme column blank for an assembly missing from mlst's output.
+  # inside, which would leave the scheme column blank for a genome missing from mlst's output.
   awk -F'\t' -v OFS=';' -v scheme="$scheme" '
     NR == FNR {
       n = split($1, parts, "/"); key = parts[n]
@@ -248,22 +330,23 @@ echo "  ${typedsofar}/${asmcount}"
       next
     }
     {
-      key = $1
-      print $2, key, (key in sch ? sch[key] : scheme), (key in st ? st[key] : "-"), all[key], ""
-    }' "$rawout" "$members"
+      id = $1
+      print $2, (id in sch ? sch[id] : scheme), (id in st ? st[id] : "-"), all[id], ""
+    }' "$rawout" "$map"
 } > "$out"
 
-typed=$(awk -F';' 'NR > 1 && $4 != "-" && $4 != "" { n++ } END { print n + 0 }' "$out")
-novel=$(awk -F';' 'NR > 1 && $4 == "-" { n++ } END { print n + 0 }' "$out")
-asmtyped=$(awk -F';' 'NR > 1 && $4 != "-" && $4 != "" { print $2 }' "$out" | sort -u | wc -l | tr -d ' ')
-sts=$(awk -F';' 'NR > 1 && $4 != "-" && $4 != "" { print $4 }' "$out" | sort -u | wc -l | tr -d ' ')
+typed=$(awk -F';' 'NR > 1 && $3 != "-" && $3 != "" { n++ } END { print n + 0 }' "$out")
+novel=$(awk -F';' 'NR > 1 && $3 == "-" { n++ } END { print n + 0 }' "$out")
+sts=$(awk -F';' 'NR > 1 && $3 != "-" && $3 != "" { print $3 }' "$out" | sort -u | wc -l | tr -d ' ')
 echo
 echo "Wrote ${out}"
-echo "  ${asmtyped} of ${asmcount} assembl(y/ies) typed, ${sts} distinct ST(s)."
-echo "  ${typed} sequence file(s) carry an ST, ${novel} do not."
+echo "  ${typed} of ${leafcount} leaf/leaves carry an ST, in ${sts} distinct ST(s)."
 if [ "$novel" -gt 0 ]; then
-  echo "  An ST of '-' means a novel or incomplete profile, or a plasmid that was typed on its own." >&2
+  echo "  ${novel} do not. An ST of '-' means a novel or incomplete profile." >&2
   echo "  Those genomes are kept in the table; they cannot contribute a candidate ST to a" >&2
   echo "  sub-species measure and have to be counted as their own unit or excluded deliberately --" >&2
   echo "  not ignored by accident." >&2
+fi
+if [ "$missingcount" -gt 0 ]; then
+  echo "  ${missingcount} further leaf/leaves had no fasta at all and are absent from the table." >&2
 fi
