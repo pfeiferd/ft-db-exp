@@ -1,0 +1,155 @@
+# The 37 Clostridioides difficile isolates of
+#
+#   Bejaoui S, Nielsen SH, Rasmussen A, Coia JE, Andersen DT, Pedersen TB, Moller MV,
+#   Nielsen MTK, Frees D, Persson S. "Comparison of Illumina and Oxford Nanopore sequencing
+#   data quality for Clostridioides difficile genome analysis and their application for
+#   epidemiological surveillance." BMC Genomics 2025. doi:10.1186/s12864-025-11267-9
+#
+# deposited under BioProject PRJNA1148956 (the paper's data statement calls it ENA; the accession
+# is an NCBI one and both archives mirror it). 74 runs: every isolate was sequenced twice, once on
+# an Illumina NextSeq 500 and once on an ONT MinION, with no isolate missing either platform.
+#
+# WHY THESE ARE HERE. Every other real read collection in this project is a metagenome with no
+# ground truth -- which is the whole reason for the calibration of the paper's section on
+# estimating the gain without it. These are pure isolates of one known organism, typed by MLST and
+# cgMLST in the source study, so they carry ground truth *below the species* and are the only data
+# here that can check a sub-species refinement against something other than itself. They are not a
+# substitute for the saliva or tick samples: classifying a pure culture against a single-species
+# database is trivially easy, and presenting it as a real-sample result would overstate it.
+#
+# KEYS are the study's own isolate identifiers, B11 to B51, which are also the `sample_alias'
+# values in the archive -- so a key joins directly to the source study's Table 2 for the sequence
+# type. An `np' suffix marks the Nanopore run of the same isolate, as in the study. Illumina
+# isolates therefore occupy two lines, one per mate, exactly as saliva_real.txt does.
+#
+# THE FILES ARE LOCAL, not URLs, and have to be fetched first:
+#
+#   sh ./bin/fetch_cdiff.sh
+#
+# A URL map would be the shorter route but it is not safe for paired data: Genestrip names a
+# download after the map key alone (FastqMapTransformGoal.fillMap), so two URLs under one key
+# would both be written to the same file and one mate would silently overwrite the other. That is
+# why ticks_real.txt gets away with URLs -- single-end -- and the paired saliva runs do not.
+#
+# TWO PROPERTIES OF THE DATA worth knowing before drawing conclusions from read counts:
+#   - 25 of the 37 Nanopore runs stop within a few hundred bases above exactly 500,000,000, the
+#     signature of subsampling to 500 Mbp with the crossing read kept whole; the remaining 12 fall
+#     below that cap. The deposited long reads are therefore at a uniform ~120x depth by
+#     construction and say nothing about what a MinION run actually yields.
+#   - Mean Nanopore read length over the project is 3,824 bp, which is essentially the 3,926 bp the
+#     first Genestrip paper reports for its NanoSim reads. The two are directly comparable.
+#
+# --- Illumina NextSeq 500, 2 x 150 bp, paired (two lines per isolate) ---
+B11 SRR30483194_1.fastq.gz
+B11 SRR30483194_2.fastq.gz
+B12 SRR30483193_1.fastq.gz
+B12 SRR30483193_2.fastq.gz
+B13 SRR30483182_1.fastq.gz
+B13 SRR30483182_2.fastq.gz
+B14 SRR30483171_1.fastq.gz
+B14 SRR30483171_2.fastq.gz
+B15 SRR30483160_1.fastq.gz
+B15 SRR30483160_2.fastq.gz
+B16 SRR30483149_1.fastq.gz
+B16 SRR30483149_2.fastq.gz
+B17 SRR30483138_1.fastq.gz
+B17 SRR30483138_2.fastq.gz
+B18 SRR30483127_1.fastq.gz
+B18 SRR30483127_2.fastq.gz
+B19 SRR30483122_1.fastq.gz
+B19 SRR30483122_2.fastq.gz
+B20 SRR30483121_1.fastq.gz
+B20 SRR30483121_2.fastq.gz
+B21 SRR30483192_1.fastq.gz
+B21 SRR30483192_2.fastq.gz
+B22 SRR30483191_1.fastq.gz
+B22 SRR30483191_2.fastq.gz
+B23 SRR30483190_1.fastq.gz
+B23 SRR30483190_2.fastq.gz
+B24 SRR30483189_1.fastq.gz
+B24 SRR30483189_2.fastq.gz
+B25 SRR30483188_1.fastq.gz
+B25 SRR30483188_2.fastq.gz
+B26 SRR30483187_1.fastq.gz
+B26 SRR30483187_2.fastq.gz
+B27 SRR30483186_1.fastq.gz
+B27 SRR30483186_2.fastq.gz
+B28 SRR30483185_1.fastq.gz
+B28 SRR30483185_2.fastq.gz
+B29 SRR30483184_1.fastq.gz
+B29 SRR30483184_2.fastq.gz
+B30 SRR30483183_1.fastq.gz
+B30 SRR30483183_2.fastq.gz
+B31 SRR30483181_1.fastq.gz
+B31 SRR30483181_2.fastq.gz
+B32 SRR30483180_1.fastq.gz
+B32 SRR30483180_2.fastq.gz
+B33 SRR30483179_1.fastq.gz
+B33 SRR30483179_2.fastq.gz
+B34 SRR30483178_1.fastq.gz
+B34 SRR30483178_2.fastq.gz
+B39 SRR30483177_1.fastq.gz
+B39 SRR30483177_2.fastq.gz
+B40 SRR30483176_1.fastq.gz
+B40 SRR30483176_2.fastq.gz
+B41 SRR30483175_1.fastq.gz
+B41 SRR30483175_2.fastq.gz
+B42 SRR30483174_1.fastq.gz
+B42 SRR30483174_2.fastq.gz
+B43 SRR30483173_1.fastq.gz
+B43 SRR30483173_2.fastq.gz
+B44 SRR30483172_1.fastq.gz
+B44 SRR30483172_2.fastq.gz
+B45 SRR30483170_1.fastq.gz
+B45 SRR30483170_2.fastq.gz
+B46 SRR30483169_1.fastq.gz
+B46 SRR30483169_2.fastq.gz
+B47 SRR30483168_1.fastq.gz
+B47 SRR30483168_2.fastq.gz
+B48 SRR30483167_1.fastq.gz
+B48 SRR30483167_2.fastq.gz
+B49 SRR30483166_1.fastq.gz
+B49 SRR30483166_2.fastq.gz
+B50 SRR30483165_1.fastq.gz
+B50 SRR30483165_2.fastq.gz
+B51 SRR30483164_1.fastq.gz
+B51 SRR30483164_2.fastq.gz
+
+# --- Oxford Nanopore MinION (single-end); keys carry the 'np' suffix of the study ---
+B11np SRR30483163_1.fastq.gz
+B12np SRR30483162_1.fastq.gz
+B13np SRR30483161_1.fastq.gz
+B14np SRR30483159_1.fastq.gz
+B15np SRR30483158_1.fastq.gz
+B16np SRR30483157_1.fastq.gz
+B17np SRR30483156_1.fastq.gz
+B18np SRR30483155_1.fastq.gz
+B19np SRR30483154_1.fastq.gz
+B20np SRR30483153_1.fastq.gz
+B21np SRR30483152_1.fastq.gz
+B22np SRR30483151_1.fastq.gz
+B23np SRR30483150_1.fastq.gz
+B24np SRR30483148_1.fastq.gz
+B25np SRR30483147_1.fastq.gz
+B26np SRR30483146_1.fastq.gz
+B27np SRR30483145_1.fastq.gz
+B28np SRR30483144_1.fastq.gz
+B29np SRR30483143_1.fastq.gz
+B30np SRR30483142_1.fastq.gz
+B31np SRR30483141_1.fastq.gz
+B32np SRR30483140_1.fastq.gz
+B33np SRR30483139_1.fastq.gz
+B34np SRR30483137_1.fastq.gz
+B39np SRR30483136_1.fastq.gz
+B40np SRR30483135_1.fastq.gz
+B41np SRR30483134_1.fastq.gz
+B42np SRR30483133_1.fastq.gz
+B43np SRR30483132_1.fastq.gz
+B44np SRR30483131_1.fastq.gz
+B45np SRR30483130_1.fastq.gz
+B46np SRR30483129_1.fastq.gz
+B47np SRR30483128_1.fastq.gz
+B48np SRR30483126_1.fastq.gz
+B49np SRR30483125_1.fastq.gz
+B50np SRR30483124_1.fastq.gz
+B51np SRR30483123_1.fastq.gz
