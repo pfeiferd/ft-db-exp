@@ -31,6 +31,10 @@
 		     thing; override with -Dgs.st.csv=... / -Dgs.st.which=db|ftdb . -->
 		<gs.st.csv>results/${name}_mlst.csv</gs.st.csv>
 		<gs.st.which>both</gs.st.which>
+		<!-- The linkage methods that `linkagesweep' contrasts, space separated. Empty means the
+		     three the paper contrasts: SINGLE_LINKAGE, UPGMA and COMPLETE_LINKAGE. Override with
+		     -Dgs.linkages="UPGMA WPGMA" to sweep others. -->
+		<gs.linkages></gs.linkages>
 		<!-- Generation target of the `match' execution. The performance measurement sets
 		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
 		     finding its result files already in place and reporting a runtime of zero. -->
@@ -180,6 +184,33 @@
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.st.csv}</argument>
 								<argument>${gs.st.which}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<!-- The same measure under several linkage methods, filing each result as
+						     results/<db>_ftstquality_<linkage>.csv. It resets only what encodes the
+						     dendrogram between passes, so the k-mer index of `kmerindexbloom' - the
+						     pass over the genomes that dominates a refinement - is built once and
+						     shared by all of them. Do NOT reach for `clean'/`cleanall' to get the
+						     same effect: the former reaches only the internal goal a request is
+						     aggregated into, the latter takes the unrefined database with it. -->
+						<id>linkagesweep</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.stquality.LinkageSweepMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.st.csv}</argument>
+								<argument>${gs.linkages}</argument>
 							</arguments>
 						</configuration>
 					</execution>
