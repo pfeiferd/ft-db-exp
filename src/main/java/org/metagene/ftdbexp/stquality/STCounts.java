@@ -172,6 +172,13 @@ public class STCounts implements Serializable {
      * convention the data-taxon level uses. Path correctness makes this one for a database whose fill
      * saw every genome; it falls below one where it did not - a genome outside the reference set, or
      * one the per-taxon limits dropped - and that is what it is worth reporting for.
+     * <p>
+     * The unit is the sequence type, not the genome: {@code STQualityCountsGoal} counts a
+     * {@code (k-mer, type)} pair once, so of the genomes of one type only whichever reader reached the
+     * pair first has its path checked. This recall therefore states that each <em>lineage</em> can
+     * claim its k-mers, not that each genome can - unlike {@code DBQualityCountsGoal}, which keys its
+     * filter by the leaf and so checks every genome. Where the two could differ, the goal counts the
+     * unchecked occurrences separately and warns; see its {@code readerPathViolations}.
      *
      * @return the pooled recall, or {@link Double#NaN} if no pair was found below this node
      */

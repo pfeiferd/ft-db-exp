@@ -220,15 +220,30 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             readFastas();
 
             long entries = 0;
+            long pathViolations = 0;
             for (MyFastaReader reader : readersList) {
                 // The readers are done, so whatever the last (partial) batch still holds is looked up
                 // and counted here, single-threaded, before their tallies are merged.
                 reader.flushBatch();
                 reader.mergeInto(typeTp, typeTpPlusFn, countsByPos);
                 entries += reader.entries;
+                pathViolations += reader.getPathViolations();
             }
             if (getLogger().isInfoEnabled()) {
                 getLogger().info("Filter entries: " + entries);
+            }
+            // A recall of one alongside a non-zero count here means the recall is right about the
+            // lineages and silent about the genomes: some genome carries a k-mer the database stores
+            // off its path, and the per-type dedup handed the check to a sibling that was on it. The
+            // placement in `ftupdatedb' is what puts a k-mer off a path - see the OTHER slot in
+            // `UpdateStoreGoal.coversAll' - so a database that reports this is one to distrust before
+            // any precision figure is read from it.
+            if (pathViolations > 0 && getLogger().isWarnEnabled()) {
+                getLogger().warn(pathViolations + " genome occurrence(s) whose k-mer is not stored on"
+                        + " their path, found among the (k-mer, sequence type) pairs the filter had"
+                        + " already seen and the recall therefore never checked. The recall below is"
+                        + " per sequence type and stays 1 in this case; path correctness per genome"
+                        + " does NOT hold for this database.");
             }
             if (entries > 2 * size && getLogger().isErrorEnabled()) {
                 getLogger().error("Entries exceed filter size by over factor 2. Something went wrong!");
@@ -437,6 +452,12 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
         private final long[] readerTypeTp;
         private final long[] readerTypeTpPlusFn;
         private final long[] readerTpForNode;
+        /**
+         * Genome occurrences whose k-mer the database does not store on their path, counted only for
+         * the pairs the per-type filter had already seen - see {@link #count}. Never enters the
+         * recall; it exists to say whether the recall's per-type unit is hiding anything.
+         */
+        private long readerPathViolations;
         /** The current region's leaf, resolved once per region rather than once per k-mer. */
         private SmallTaxTree.SmallTaxIdNode cachedLeaf;
         private int cachedLeafPos = -1;
@@ -474,6 +495,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
          * @param tpPlusFnTarget per-type pairs to add to
          * @param nodeTarget     per-node tallies to add to
          */
+        long getPathViolations() {
+            return readerPathViolations;
+        }
+
         void mergeInto(long[] tpTarget, long[] tpPlusFnTarget, STCounts[] nodeTarget) {
             for (int i = 0; i < typeCount; i++) {
                 tpTarget[i] += readerTypeTp[i];
@@ -552,6 +577,20 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             // Keyed by the type and not by the genome: that is the whole of what separates c_st from
             // c. Fifty genomes of one lineage carrying this k-mer add one to the tally, not fifty.
             if (!filter.putLong(KMerIndexFilterHelper.combine(kmer, stIndex))) {
+                // Another genome of this type already brought the pair, and only that one had its path
+                // checked below. The recall is therefore blind here, and blind in a way that matters:
+                // path correctness holds per GENOME, and the assumption that it then holds for every
+                // genome of the type is the very thing the recall is meant to establish. Whichever
+                // genome won the filter is a race between the reader threads, so a violation confined
+                // to one genome of a well-represented type would show up only by chance.
+                //
+                // Checking it here and not before the dedup keeps this free on the common path - the
+                // dedup exists to avoid exactly this work - and still reaches every occurrence the
+                // recall does not see. Counted separately and never folded into tp/tp+fn: those are
+                // the paper's numbers and this must not move them.
+                if (!tree.isAncestorOf(nodeByPos[leafPos], storedNode)) {
+                    readerPathViolations++;
+                }
                 return false;
             }
             entries++;
