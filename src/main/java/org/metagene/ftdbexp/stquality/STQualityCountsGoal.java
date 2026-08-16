@@ -25,6 +25,8 @@ import org.metagene.genestrip.tax.SmallTaxTree;
 import org.metagene.genestrip.tax.TaxTree;
 
 import java.io.File;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -131,12 +133,21 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
 
     @Override
     protected void doMakeThis() {
-        // Without artificial nodes the k-mers sit directly on the tax ids, every tax id is its own
-        // leaf, and there is no genome to join a sequence type to.
-        if (!booleanConfigValue(GSConfigKey.DATA_NODES)
-                && !booleanConfigValue(GSConfigKey.FILE_NODES)
-                && !booleanConfigValue(GSConfigKey.ID_NODES)) {
-            throw new IllegalStateException("This goal requires data, file or id nodes");
+        // Data nodes, and not merely one of the three kinds of artificial node. What a leaf is has to
+        // agree between the fill and this measure, and `dataNodes' is what makes that agreement
+        // simple: with it on, ReworkingStoreFastaReader.reworkNode() files every genome at a DATA
+        // node or deeper, so no taxonomy node ever holds a genome's k-mers and a node without
+        // children is exactly a node the fill filed a genome at. isLeafNode() is then one test and
+        // needs to know nothing about ranks.
+        //
+        // Requiring it is not what used to shut this goal out of a database refined below the
+        // species -- that was the second half of the old guard, which REJECTED `fileNodes' while
+        // only a DATA node could be recognised as a leaf. Both halves went at once; only the first
+        // is coming back. `fileNodes' and `idNodes' stay free, and the `cdiff' project of
+        // ft-db-exp2, which needs file nodes because the taxonomy supplies no children below the
+        // species, has data nodes on as every project here does.
+        if (!booleanConfigValue(GSConfigKey.DATA_NODES)) {
+            throw new IllegalStateException("This goal requires data nodes (dataNodes=true)");
         }
         try {
             tree = storeGoal.get().getTaxTree();
@@ -377,42 +388,31 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
     }
 
     /**
-     * Whether the given node is where a genomic file's k-mers come to rest, and therefore a genome
-     * that a sequence type can be attached to.
+     * Whether the given node is a leaf, i.e. one the database fill filed a genome at.
      * <p>
-     * The fill nests the artificial nodes - {@code ReworkingStoreFastaReader.reworkNode()} descends a
-     * tax id into its DATA child, that into a FILE child, that into an ID child, as far as the three
-     * flags are enabled - and reading back, {@code AbstractUpdateFastaReader.updateLeafNode()} walks
-     * the same chain from the other end. Both land on the deepest of them, which is what this
-     * identifies: an origin-rank node with no origin-rank child. REFINED is deliberately not an origin
-     * rank: a refined node is inserted <em>above</em> the origin nodes and is internal in exactly the
-     * way a taxonomy node is.
+     * With data nodes on -- which {@link #doMakeThis()} requires -- that is exactly a node without
+     * children: {@code ReworkingStoreFastaReader.reworkNode()} files every genome at a DATA node or
+     * at something below it, so no taxonomy node ever holds a genome's k-mers, and whatever the
+     * refinement inserts between a node and its original children gives that node children and so
+     * keeps it internal.
+     * <p>
+     * Asking about the children's <em>ranks</em> instead is what got this wrong: after a refinement
+     * a data node's file nodes are no longer its children, the data node passed for a leaf, and its
+     * k-mers -- the ones a refinement has the most to gain on -- dropped out of every average
+     * restricted to what sits above the data taxa. On cdiff that alone lifted the reported sp* from
+     * 0.236 to 0.338 with no k-mer moving.
      * <p>
      * This mirrors {@code DBQualityCountsGoal.isLeafNode}, which is protected and cannot be reached
      * from here. It is repeated rather than exposed because the definition belongs to the database
-     * layout and this project may not change genestrip-ft; should the layout ever change, both have to
-     * move together.
+     * layout and this project may not change genestrip-ft; should the layout ever change, both have
+     * to move together.
      *
      * @param node the node to test
-     * @return whether the node is the deepest artificial node on its branch
+     * @return whether the fill files genomes at this node
      */
     static boolean isLeafNode(SmallTaxTree.SmallTaxIdNode node) {
-        if (!isOriginRank(node.getRank())) {
-            return false;
-        }
         SmallTaxTree.SmallTaxIdNode[] subNodes = node.getSubNodes();
-        if (subNodes != null) {
-            for (SmallTaxTree.SmallTaxIdNode subNode : subNodes) {
-                if (isOriginRank(subNode.getRank())) {
-                    return false;
-                }
-            }
-        }
-        return true;
-    }
-
-    private static boolean isOriginRank(Rank rank) {
-        return Rank.DATA.equals(rank) || Rank.FILE.equals(rank) || Rank.ID.equals(rank);
+        return subNodes == null || subNodes.length == 0;
     }
 
     @Override
