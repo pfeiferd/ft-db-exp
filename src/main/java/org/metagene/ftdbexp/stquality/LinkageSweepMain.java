@@ -19,46 +19,41 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Runs the sequence-type quality of one database under several linkage methods and files each
- * result under its own name, so that the linkage question is settled by one comparison rather than
- * by three runs that have to be kept apart by hand.
+ * Rebuilds the refined database under ONE linkage method and files the resulting sequence-type
+ * quality under its own name, so that the linkage question is settled by comparing the files rather
+ * than by keeping three runs apart by hand.
  * <p>
- * Invoked directly:
+ * Invoked directly, once per linkage:
  * <pre>
- *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv
- *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv UPGMA WPGMA
+ *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv SINGLE_LINKAGE
+ *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv UPGMA
+ *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv COMPLETE_LINKAGE
  * </pre>
- * With no linkage named it sweeps {@code SINGLE_LINKAGE}, {@code UPGMA} and {@code COMPLETE_LINKAGE},
- * which are the three the paper contrasts. Results land in {@code results/} as
- * {@code <db>_ftstquality_<linkage>.csv}, the linkage appended so the files sort together and the
- * unsuffixed name stays free for whatever the project's own configuration produces. The unrefined
- * measure does not depend on the linkage and is therefore taken once, as
- * {@code results/<db>_stquality.csv}.
+ * The result lands in {@code results/} as {@code <db>_ftstquality_<linkage>.csv}, the linkage
+ * appended so the files sort together and the unsuffixed name stays free for whatever the project's
+ * own configuration produces. The unrefined measure does not depend on the linkage; take it once
+ * with {@code STQualityMain}.
  * <p>
- * WHAT MAKES IT ECONOMICAL. The costly part of a refinement is not the clustering but the two passes
- * over the genomes around it: the one that fills the k-mer index of {@code kmerindexbloom}, and the
- * one that measures the result. The index is built before any clustering and is untouched by the
- * linkage, so this sweep keeps it: between two linkages only the goals that encode the dendrogram are
- * reset, never {@code storekmerindex}, {@code kmerindexbloom} or the unrefined database. Doing that
- * by hand means deleting exactly the right files and no others, and the make targets are no help --
+ * ONE PROCESS PER LINKAGE, and this is not a matter of taste. {@code Database.convertKMerStore()}
+ * returns a view that <em>shares the underlying buckets</em> with the store it converts -- see the
+ * layout comment in {@code RadixKMerStore}, which warns that entries keep their marks and that a
+ * copy decoding with a different mask reads a mark as part of the value index. A run that first
+ * measures the unrefined database and then rebuilds the refined one from that same in-memory store
+ * therefore has the two sharing mutable state. Doing exactly that produced, on 2026-08-16, a refined
+ * database whose tree and per-taxon statistics were correct while every k-mer lookup missed: the
+ * measure read 347 files for eighteen minutes and counted {@code Filter entries: 0}. Sharing the
+ * k-mer index across linkages is safe and is what makes the repetition cheap, since it lives on disk
+ * as {@code <db>_storekmerindex.ser.gz} and every process reuses it; sharing a JVM is not.
+ * <p>
+ * WHAT IS RESET, and nothing else: the goals whose output encodes the dendrogram. Never
+ * {@code storekmerindex}, {@code kmerindexbloom} or the unrefined database. Doing that by hand means
+ * deleting exactly the right files and no others, and the make targets are no help --
  * {@code clean} reaches only the internal goal a request is aggregated into, while {@code cleanall}
  * descends into every dependency that permits it and takes the unrefined database with it.
- * <p>
- * WHAT IT STILL PAYS PER LINKAGE. The measure re-reads the genomes, because the tree it scores has
- * changed. And {@code intersectcount} is an {@link ObjectGoal}, which frees its value once all its
- * dependents are made; whether it survives from one linkage to the next is therefore not something
- * this class can promise, so it reports which of the two happened instead of leaving it to be
- * guessed.
  */
 public class LinkageSweepMain {
     private static final File BASE_DIR = new File("./data");
     private static final File RESULTS_DIR = new File("./results");
-
-    private static final SimpleAggloClustering.Method[] DEFAULT_SWEEP = {
-            SimpleAggloClustering.Method.SINGLE_LINKAGE,
-            SimpleAggloClustering.Method.UPGMA,
-            SimpleAggloClustering.Method.COMPLETE_LINKAGE
-    };
 
     /**
      * The goals whose output encodes the dendrogram, and hence the ones that have to go before the
@@ -68,8 +63,8 @@ public class LinkageSweepMain {
      * {@code FT_ST_QUALITY} and its counting goal are here because a report describing the previous
      * dendrogram is worse than none. {@code FTDB}, {@code FTDBINFO} and {@code FT_SVG_TAX_TREE} are
      * the files that hold the refined tree. {@code LOAD_FTDB}, {@code UPDATE_STORE_GOAL} and
-     * {@code DENDROGRAM} are in-memory values that would otherwise be reused within this one JVM,
-     * which is the failure mode a sweep in a single process has and three separate runs do not.
+     * {@code DENDROGRAM} are in-memory values, dropped so that a run started against an existing
+     * refined database rebuilds it rather than measuring the previous linkage under this one's name.
      */
     private static final GoalKey[] DENDROGRAM_DEPENDENT = {
             STQualityMaker.FT_ST_QUALITY,
@@ -83,18 +78,19 @@ public class LinkageSweepMain {
     };
 
     /**
-     * Runs the sweep.
+     * Rebuilds and measures under one linkage.
      *
-     * @param args {@code <db> <sequence type csv> [<linkage> ...]}
+     * @param args {@code <db> <sequence type csv> <linkage>}
      * @throws Exception if the database or the typing cannot be read, or a goal fails
      */
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            System.err.println("Usage: LinkageSweepMain <db> <sequence type csv> [<linkage> ...]");
+        if (args.length < 3) {
+            System.err.println("Usage: LinkageSweepMain <db> <sequence type csv> <linkage>");
             System.err.println("  <db>                  name of the database project under data/projects");
             System.err.println("  <sequence type csv>   the CSV written by bin/mlst_assemblies.sh");
-            System.err.println("  <linkage> ...         any of SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA,");
-            System.err.println("                        WPGMA; the first three by default");
+            System.err.println("  <linkage>             SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA or WPGMA");
+            System.err.println();
+            System.err.println("One linkage per invocation, in its own JVM - see the class comment for why.");
             System.exit(1);
         }
         String db = args[0];
@@ -104,28 +100,13 @@ public class LinkageSweepMain {
             System.err.println("Produce it with bin/cdiff_eval.sh.");
             System.exit(1);
         }
-
-        // Split on whitespace as well as taking one per argument: Maven hands the whole of
-        // `gs.linkages' over as a single argument, and an unset property arrives as the empty string.
-        List<SimpleAggloClustering.Method> sweep = new ArrayList<>();
-        for (int i = 2; i < args.length; i++) {
-            for (String token : args[i].trim().split("\\s+")) {
-                if (token.isEmpty()) {
-                    continue;
-                }
-                try {
-                    sweep.add(SimpleAggloClustering.Method.valueOf(token.toUpperCase(Locale.ROOT)));
-                } catch (IllegalArgumentException e) {
-                    System.err.println("Not a linkage method: " + token);
-                    System.err.println("Expected one of: SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA, WPGMA");
-                    System.exit(1);
-                }
-            }
-        }
-        if (sweep.isEmpty()) {
-            for (SimpleAggloClustering.Method m : DEFAULT_SWEEP) {
-                sweep.add(m);
-            }
+        SimpleAggloClustering.Method method = null;
+        try {
+            method = SimpleAggloClustering.Method.valueOf(args[2].trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            System.err.println("Not a linkage method: " + args[2]);
+            System.err.println("Expected one of: SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA, WPGMA");
+            System.exit(1);
         }
 
         STGroundTruth groundTruth = new STGroundTruth(stCsv);
@@ -148,28 +129,19 @@ public class LinkageSweepMain {
         STQualityMaker maker = new STQualityMaker(project, groundTruth);
         List<String> written = new ArrayList<>();
         try {
-            // Once, and first: it does not depend on the linkage, and a broken join or a missing
-            // genome shows up here at a fraction of the cost of finding it three dendrograms later.
-            System.out.println("=== unrefined database, once for all linkages ===");
-            STQualityCSVGoal baseline = (STQualityCSVGoal) maker.getCSVGoal(false);
-            baseline.make();
-            written.addAll(fileInto(baseline, db, null));
-
-            for (SimpleAggloClustering.Method method : sweep) {
-                System.out.println();
-                System.out.println("=== refined database, clusterMethod=" + method + " ===");
-                if (!project.initConfigParam(FTConfigKey.CLUSTER_METHOD, method)) {
-                    throw new IllegalStateException("The configuration refused the linkage " + method
-                            + ". Without it taking effect every pass of this sweep would cluster the"
-                            + " same way and the comparison would be between three copies of one run.");
-                }
-                reset(maker);
-                reportIndexReuse(maker);
-
-                STQualityCSVGoal goal = (STQualityCSVGoal) maker.getCSVGoal(true);
-                goal.make();
-                written.addAll(fileInto(goal, db, method));
+            System.out.println();
+            System.out.println("=== refined database, clusterMethod=" + method + " ===");
+            if (!project.initConfigParam(FTConfigKey.CLUSTER_METHOD, method)) {
+                throw new IllegalStateException("The configuration refused the linkage " + method
+                        + ". Without it taking effect the run would cluster the way the project's own"
+                        + " configuration says and be filed under a name it does not have.");
             }
+            reset(maker);
+            reportIndexReuse(maker);
+
+            STQualityCSVGoal goal = (STQualityCSVGoal) maker.getCSVGoal(true);
+            goal.make();
+            written.addAll(fileInto(goal, db, method));
         } finally {
             maker.dumpAll();
         }
@@ -180,8 +152,9 @@ public class LinkageSweepMain {
             System.out.println("  " + name);
         }
         System.out.println();
-        System.out.println("The unrefined file is the baseline every refined one is to be read against:"
-                + " p_st can only be judged as a change from what the taxonomy already gave.");
+        System.out.println("The unrefined baseline is linkage-independent and is NOT taken here; produce"
+                + " it once with STQualityMain. p_st can only be judged as a change from what the"
+                + " taxonomy already gave, so the comparison needs it.");
     }
 
     /**

@@ -31,10 +31,19 @@
 		     thing; override with -Dgs.st.csv=... / -Dgs.st.which=db|ftdb . -->
 		<gs.st.csv>results/${name}_mlst.csv</gs.st.csv>
 		<gs.st.which>both</gs.st.which>
-		<!-- The linkage methods that `linkagesweep' contrasts, space separated. Empty means the
-		     three the paper contrasts: SINGLE_LINKAGE, UPGMA and COMPLETE_LINKAGE. Override with
-		     -Dgs.linkages="UPGMA WPGMA" to sweep others. -->
-		<gs.linkages></gs.linkages>
+		<!-- The held-out classification of `isolatest': which fastq map of isolates to classify,
+		     where the per-isolate result goes, and which database variant to classify against.
+		     Defaulted so that -Dname=cdiff alone does the usual thing. The isolates' sequence types
+		     are read from the map's path with '.st.csv' appended; see IsolateSTTruth. -->
+		<gs.isolate.map>data/fastq/${name}_isolates.txt</gs.isolate.map>
+		<gs.isolate.out>results/${name}_isolate_st.csv</gs.isolate.out>
+		<gs.isolate.variant>ftdb</gs.isolate.variant>
+		<!-- The linkage method `linkagesweep' rebuilds under. ONE per invocation and one JVM per
+		     invocation, which is not a matter of taste: measuring the unrefined database and then
+		     rebuilding the refined one in the same process has the two sharing the k-mer store's
+		     buckets, and the result is a refined database whose lookups all miss. See the class
+		     comment of LinkageSweepMain. Run it three times, once per method. -->
+		<gs.linkage>UPGMA</gs.linkage>
 		<!-- Generation target of the `match' execution. The performance measurement sets
 		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
 		     finding its result files already in place and reporting a runtime of zero. -->
@@ -188,13 +197,46 @@
 						</configuration>
 					</execution>
 					<execution>
-						<!-- The same measure under several linkage methods, filing each result as
-						     results/<db>_ftstquality_<linkage>.csv. It resets only what encodes the
-						     dendrogram between passes, so the k-mer index of `kmerindexbloom' - the
-						     pass over the genomes that dominates a refinement - is built once and
-						     shared by all of them. Do NOT reach for `clean'/`cleanall' to get the
-						     same effect: the former reaches only the internal goal a request is
-						     aggregated into, the latter takes the unrefined database with it. -->
+						<!-- Classifies the reads of isolates the database was NOT built from and asks
+						     whether the classification names the lineage each isolate belongs to. The
+						     held-out counterpart of `stquality', which re-reads the database's own
+						     genomes and therefore cannot answer that. Every node of the database acts
+						     as a predictor of sequence type and the isolate is called by naive Bayes
+						     over its reads; the plain majority call is reported beside it, and their
+						     difference is what weighting a read by what its node adds over the prior
+						     is worth. Run it for both variants, since what the refinement is worth is
+						     the difference between them: -Dgs.isolate.variant=db writes the unrefined
+						     comparison. -->
+						<id>isolatest</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.stquality.IsolateSTAccuracyMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.isolate.map}</argument>
+								<argument>${gs.isolate.out}</argument>
+								<argument>${gs.isolate.variant}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<!-- Rebuilds the refined database under ONE linkage method and files the
+						     result as results/<db>_ftstquality_<linkage>.csv. Run it once per method:
+						     -Dgs.linkage=SINGLE_LINKAGE, then UPGMA, then COMPLETE_LINKAGE. The k-mer
+						     index of `kmerindexbloom' lives on disk and every invocation reuses it,
+						     so the repetition costs the clustering and the measure but not the pass
+						     over the genomes. The unrefined baseline is linkage-independent; take it
+						     once with `stquality'. Do NOT reach for `clean'/`cleanall': the former
+						     reaches only the internal goal a request is aggregated into, the latter
+						     takes the unrefined database with it. -->
 						<id>linkagesweep</id>
 						<goals>
 							<goal>exec</goal>
@@ -210,7 +252,7 @@
 								<argument>org.metagene.ftdbexp.stquality.LinkageSweepMain</argument>
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.st.csv}</argument>
-								<argument>${gs.linkages}</argument>
+								<argument>${gs.linkage}</argument>
 							</arguments>
 						</configuration>
 					</execution>
