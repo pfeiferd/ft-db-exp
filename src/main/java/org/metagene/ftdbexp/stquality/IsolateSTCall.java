@@ -33,8 +33,12 @@ public class IsolateSTCall {
         WRONG,
         /** No read was classified, so nothing was predicted. */
         NO_CALL,
-        /** The isolate carries no ground truth, so nothing can be said about it. */
-        UNTYPED
+        /**
+         * The isolate carries no ground truth, so nothing can be said about it. Not to be confused
+         * with {@link NaiveBayesSTModel#STAR}, which is a class the scheme does not cover and which
+         * is scored like any other: this one is an absence of truth, that one a kind of answer.
+         */
+        NOT_SCORED
     }
 
     private final String key;
@@ -254,7 +258,7 @@ public class IsolateSTCall {
      */
     public Verdict getVerdict(String calledST) {
         if (trueST == null) {
-            return Verdict.UNTYPED;
+            return Verdict.NOT_SCORED;
         }
         if (calledST == null) {
             return Verdict.NO_CALL;

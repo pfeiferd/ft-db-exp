@@ -107,7 +107,7 @@ public class IsolateSTCallTest {
     public void anUntypedIsolateIsNotScored() {
         IsolateSTCall c = new IsolateSTCall("B11", null);
         reads(c, 80, "1", 1);
-        assertEquals(Verdict.UNTYPED, c.getMajorityVerdict());
+        assertEquals(Verdict.NOT_SCORED, c.getMajorityVerdict());
     }
 
     @Test
@@ -219,6 +219,16 @@ public class IsolateSTCallTest {
         assertEquals("1", truth.getST("B11np"));
         assertEquals("11", truth.getST("B12"));
         assertNull(truth.getST("B99"));
+
+        // An isolate the scheme does not type is scored against the model's own class, not dropped.
+        File star = new File(dir, "star.csv");
+        Files.write(star.toPath(), ("isolate;st;\nB11;-;\nB12;;\nB13;11;\n")
+                .getBytes(StandardCharsets.UTF_8));
+        IsolateSTTruth withStar = new IsolateSTTruth(star);
+        assertEquals(NaiveBayesSTModel.STAR, withStar.getST("B11"));
+        assertNull("a blank type says nothing and must leave the isolate unscored",
+                withStar.getST("B12"));
+        assertEquals("11", withStar.getST("B13"));
 
         File clash = new File(dir, "clash.csv");
         Files.write(clash.toPath(), ("isolate;st;\nB11;1;\nB11;2;\n").getBytes(StandardCharsets.UTF_8));

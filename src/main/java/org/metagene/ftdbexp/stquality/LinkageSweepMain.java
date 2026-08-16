@@ -34,16 +34,19 @@ import java.util.Locale;
  * own configuration produces. The unrefined measure does not depend on the linkage; take it once
  * with {@code STQualityMain}.
  * <p>
- * ONE PROCESS PER LINKAGE, and this is not a matter of taste. {@code Database.convertKMerStore()}
- * returns a view that <em>shares the underlying buckets</em> with the store it converts -- see the
- * layout comment in {@code RadixKMerStore}, which warns that entries keep their marks and that a
- * copy decoding with a different mask reads a mark as part of the value index. A run that first
- * measures the unrefined database and then rebuilds the refined one from that same in-memory store
- * therefore has the two sharing mutable state. Doing exactly that produced, on 2026-08-16, a refined
- * database whose tree and per-taxon statistics were correct while every k-mer lookup missed: the
- * measure read 347 files for eighteen minutes and counted {@code Filter entries: 0}. Sharing the
- * k-mer index across linkages is safe and is what makes the repetition cheap, since it lives on disk
- * as {@code <db>_storekmerindex.ser.gz} and every process reuses it; sharing a JVM is not.
+ * THE DATABASE IS RE-READ FROM DISK BETWEEN BUILDING AND MEASURING, and that is not tidiness but a
+ * correctness requirement. {@code UpdateStoreGoal.afterKMerStoreWork()} changes the {@code Database}
+ * in place and publishes that same object, and doing so adds the refined nodes as store values, so
+ * {@code getNValues()} grows. {@code RadixKMerStore.initLayout()} derives {@code valueIndexMask} from
+ * that count and runs only in the constructors and in {@code readObject} -- never again afterwards.
+ * An in-memory refined database therefore decodes its value indices with the mask of the collection
+ * it had BEFORE the refinement, and every lookup comes back wrong; a serialisation round trip
+ * recomputes the mask and the same database is fine. Measured on 2026-08-16: a run that built and
+ * measured in one go read 347 files for eighteen minutes and counted {@code Filter entries: 0},
+ * while its tree and per-taxon statistics were correct throughout, and {@code loadftdb} reported
+ * {@code took 0 s} with the heap unchanged -- the tell that no zip had been read. So {@code ftdb} is
+ * made first, {@code Maker.dump()} drops every in-memory value while leaving the files and the
+ * reader threads alone, and only then is the measure asked for, which reloads the zip.
  * <p>
  * WHAT IS RESET, and nothing else: the goals whose output encodes the dendrogram. Never
  * {@code storekmerindex}, {@code kmerindexbloom} or the unrefined database. Doing that by hand means
@@ -138,6 +141,14 @@ public class LinkageSweepMain {
             }
             reset(maker);
             reportIndexReuse(maker);
+
+            // Phase one: build the refined database and write the zip.
+            maker.getGoal(FTGoalKey.FTDB).make();
+            // Phase two, and the whole reason for the split - see the class comment. dump() and not
+            // dumpAll(): the latter shuts the execution context down as well, and the measure still
+            // needs its reader threads.
+            System.out.println("  re-reading the refined database from disk before measuring");
+            maker.dump();
 
             STQualityCSVGoal goal = (STQualityCSVGoal) maker.getCSVGoal(true);
             goal.make();

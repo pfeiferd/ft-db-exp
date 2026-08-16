@@ -20,6 +20,10 @@ import java.util.Set;
  * that also contributed a genome to the database would make the experiment worthless, so the two
  * files are expected to be disjoint and {@code IsolateSTAccuracyMain} says so if they are not.
  * <p>
+ * An isolate the scheme does not type carries {@code -}, which is read as the class
+ * {@link NaiveBayesSTModel#STAR} and scored like any other; a row whose type is left blank says
+ * nothing about the isolate and leaves it out of the scoring altogether.
+ * <p>
  * The format is one row per fastq key, semicolon separated, with a header line and {@code #}
  * comments:
  * <pre>
@@ -35,6 +39,9 @@ import java.util.Set;
  * archive carries as {@code sample_alias} -- so the join is by name and needs no accession lookup.
  */
 public class IsolateSTTruth {
+    /** The value {@code mlst} writes when a profile is novel or incomplete. */
+    private static final String NO_TYPE = "-";
+
     private final Map<String, String> stByKey = new LinkedHashMap<>();
 
     /**
@@ -65,7 +72,16 @@ public class IsolateSTTruth {
                 }
                 String key = parts[0].trim();
                 String st = parts[1].trim();
-                if (key.isEmpty() || st.isEmpty()) {
+                if (key.isEmpty()) {
+                    continue;
+                }
+                if (NO_TYPE.equals(st)) {
+                    // An isolate the scheme does not cover is not an isolate without ground truth:
+                    // it belongs to the class the model writes as NaiveBayesSTModel.STAR and is
+                    // scored against it like any other. A row left blank, by contrast, says nothing
+                    // and leaves the isolate unscored.
+                    st = NaiveBayesSTModel.STAR;
+                } else if (st.isEmpty()) {
                     continue;
                 }
                 String previous = stByKey.put(key, st);

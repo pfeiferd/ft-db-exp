@@ -232,6 +232,7 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
 
             long entries = 0;
             long pathViolations = 0;
+            long[] probe = new long[4];
             for (MyFastaReader reader : readersList) {
                 // The readers are done, so whatever the last (partial) batch still holds is looked up
                 // and counted here, single-threaded, before their tallies are merged.
@@ -239,9 +240,17 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
                 reader.mergeInto(typeTp, typeTpPlusFn, countsByPos);
                 entries += reader.entries;
                 pathViolations += reader.getPathViolations();
+                long[] p = reader.getProbeCounters();
+                for (int i = 0; i < probe.length; i++) {
+                    probe[i] += p[i];
+                }
             }
             if (getLogger().isInfoEnabled()) {
                 getLogger().info("Filter entries: " + entries);
+                getLogger().info("Where the k-mers went: " + probe[0] + " offered by the readers, "
+                        + probe[1] + " found in the store (" + (probe[0] - probe[1]) + " missed), "
+                        + probe[2] + " out of scope, " + probe[3] + " already seen for their type, "
+                        + entries + " counted.");
             }
             // A recall of one alongside a non-zero count here means the recall is right about the
             // lineages and silent about the genomes: some genome carries a k-mer the database stores
@@ -458,6 +467,13 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
          * recall; it exists to say whether the recall's per-type unit is hiding anything.
          */
         private long readerPathViolations;
+        // Diagnostic: where a k-mer is lost between being read and being counted. The reading pass
+        // has been seen to end with `Filter entries: 0' while the store answered every lookup a probe
+        // put to it, so the loss is at one of these four points and guessing which has not worked.
+        private long probeOffered;
+        private long probeAccepted;
+        private long probeOutOfScope;
+        private long probeDuplicate;
         /** The current region's leaf, resolved once per region rather than once per k-mer. */
         private SmallTaxTree.SmallTaxIdNode cachedLeaf;
         private int cachedLeafPos = -1;
@@ -497,6 +513,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
          */
         long getPathViolations() {
             return readerPathViolations;
+        }
+
+        long[] getProbeCounters() {
+            return new long[] { probeOffered, probeAccepted, probeOutOfScope, probeDuplicate };
         }
 
         void mergeInto(long[] tpTarget, long[] tpPlusFnTarget, STCounts[] nodeTarget) {
@@ -540,6 +560,7 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             if (cachedLeafPos < 0 || stByPos[cachedLeafPos] < 0) {
                 return false;
             }
+            probeOffered++;
             if (batch != null) {
                 if (batch.add(kmer, cachedLeafPos)) {
                     flushBatch();
@@ -566,8 +587,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
         }
 
         private boolean count(long kmer, int leafPos, SmallTaxTree.SmallTaxIdNode storedNode) {
+            probeAccepted++;
             int storedPos = storedNode.getPosition();
             if (!inScopeByPos[storedPos]) {
+                probeOutOfScope++;
                 // Out of scope is not a miss: the measure simply does not reach above the requested
                 // tax ids, so such a k-mer is left out of both the precision and the recall rather
                 // than counted as a k-mer this lineage failed to claim.
@@ -588,6 +611,7 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
                 // dedup exists to avoid exactly this work - and still reaches every occurrence the
                 // recall does not see. Counted separately and never folded into tp/tp+fn: those are
                 // the paper's numbers and this must not move them.
+                probeDuplicate++;
                 if (!tree.isAncestorOf(nodeByPos[leafPos], storedNode)) {
                     readerPathViolations++;
                 }

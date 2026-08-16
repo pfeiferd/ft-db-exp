@@ -264,11 +264,11 @@ public class IsolateSTAccuracyMain {
                 if (uniqueVerdict == IsolateSTCall.Verdict.CORRECT) {
                     uniqueCorrect++;
                 }
-                if (kmerVerdict != IsolateSTCall.Verdict.UNTYPED) {
+                if (kmerVerdict != IsolateSTCall.Verdict.NOT_SCORED) {
                     kMersCorrect += Math.round(call.getKMerAccuracy() * call.getMatchedKMers());
                     kMersMatched += call.getMatchedKMers();
                 }
-                if (verdict != IsolateSTCall.Verdict.UNTYPED) {
+                if (verdict != IsolateSTCall.Verdict.NOT_SCORED) {
                     readsCorrect += call.getCorrectReads();
                     readsClassified += call.getClassified();
                 }
