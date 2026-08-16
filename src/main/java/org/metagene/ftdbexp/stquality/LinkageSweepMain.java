@@ -34,20 +34,6 @@ import java.util.Locale;
  * own configuration produces. The unrefined measure does not depend on the linkage; take it once
  * with {@code STQualityMain}.
  * <p>
- * THE DATABASE IS RE-READ FROM DISK BETWEEN BUILDING AND MEASURING, and that is not tidiness but a
- * correctness requirement. {@code UpdateStoreGoal.afterKMerStoreWork()} changes the {@code Database}
- * in place and publishes that same object, and doing so adds the refined nodes as store values, so
- * {@code getNValues()} grows. {@code RadixKMerStore.initLayout()} derives {@code valueIndexMask} from
- * that count and runs only in the constructors and in {@code readObject} -- never again afterwards.
- * An in-memory refined database therefore decodes its value indices with the mask of the collection
- * it had BEFORE the refinement, and every lookup comes back wrong; a serialisation round trip
- * recomputes the mask and the same database is fine. Measured on 2026-08-16: a run that built and
- * measured in one go read 347 files for eighteen minutes and counted {@code Filter entries: 0},
- * while its tree and per-taxon statistics were correct throughout, and {@code loadftdb} reported
- * {@code took 0 s} with the heap unchanged -- the tell that no zip had been read. So {@code ftdb} is
- * made first, {@code Maker.dump()} drops every in-memory value while leaving the files and the
- * reader threads alone, and only then is the measure asked for, which reloads the zip.
- * <p>
  * WHAT IS RESET, and nothing else: the goals whose output encodes the dendrogram. Never
  * {@code storekmerindex}, {@code kmerindexbloom} or the unrefined database. Doing that by hand means
  * deleting exactly the right files and no others, and the make targets are no help --
@@ -142,14 +128,6 @@ public class LinkageSweepMain {
             reset(maker);
             reportIndexReuse(maker);
 
-            // Phase one: build the refined database and write the zip.
-            maker.getGoal(FTGoalKey.FTDB).make();
-            // Phase two, and the whole reason for the split - see the class comment. dump() and not
-            // dumpAll(): the latter shuts the execution context down as well, and the measure still
-            // needs its reader threads.
-            System.out.println("  re-reading the refined database from disk before measuring");
-            maker.dump();
-
             STQualityCSVGoal goal = (STQualityCSVGoal) maker.getCSVGoal(true);
             goal.make();
             written.addAll(fileInto(goal, db, method));
@@ -188,11 +166,15 @@ public class LinkageSweepMain {
                         + " linkage's.");
                 continue;
             }
-            if (goal instanceof ObjectGoal) {
-                ((ObjectGoal<?, FTProject>) goal).dump();
-            } else {
-                goal.cleanThis();
-            }
+            // cleanThis() throughout, and never dump(). They are not interchangeable: for an object
+            // goal both discard the value, but FastaReaderGoal.dump() additionally sets the flag its
+            // consumer threads watch and interrupts them, and nothing clears that flag when the goal
+            // is made again -- only readyForAnotherPass() does, which is for goals that deliberately
+            // read twice. A goal dumped here would then run its reading pass with the flag still set:
+            // the files are queued, every consumer stops before touching one, and the pass finishes
+            // in seconds having read nothing. That is what produced `Filter entries: 0' on 2026-08-16
+            // while the store, the filter and the database hand-off were all in order.
+            goal.cleanThis();
             System.out.println("  reset " + key.getName());
         }
     }
