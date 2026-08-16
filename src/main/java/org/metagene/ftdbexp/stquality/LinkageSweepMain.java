@@ -19,20 +19,25 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Rebuilds the refined database under ONE linkage method and files the resulting sequence-type
- * quality under its own name, so that the linkage question is settled by comparing the files rather
- * than by keeping three runs apart by hand.
+ * Rebuilds the refined database under each of several linkage methods and files the resulting
+ * sequence-type quality under its own name, so that the linkage question is settled by comparing the
+ * files rather than by keeping three runs apart by hand.
  * <p>
- * Invoked directly, once per linkage:
+ * The linkages are given as one comma-separated argument and default to the three the paper reports:
  * <pre>
- *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv SINGLE_LINKAGE
+ *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv
  *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv UPGMA
- *   java ... org.metagene.ftdbexp.stquality.LinkageSweepMain cdiff results/cdiff_mlst.csv COMPLETE_LINKAGE
  * </pre>
  * The result lands in {@code results/} as {@code <db>_ftstquality_<linkage>.csv}, the linkage
  * appended so the files sort together and the unsuffixed name stays free for whatever the project's
  * own configuration produces. The unrefined measure does not depend on the linkage; take it once
  * with {@code STQualityMain}.
+ * <p>
+ * All linkages run in ONE process, which is what makes the sweep worth having: the k-mer index and
+ * the pairwise intersection counts are built from the genomes once and every further linkage only
+ * re-cuts the dendrogram. What that requires is that {@link #reset} drops the previous dendrogram
+ * without poisoning the goals that read -- see the comment there, which records how it was got wrong.
+ * A linkage that fails does not stop the others; the exit status says whether any did.
  * <p>
  * WHAT IS RESET, and nothing else: the goals whose output encodes the dendrogram. Never
  * {@code storekmerindex}, {@code kmerindexbloom} or the unrefined database. Doing that by hand means
@@ -66,20 +71,27 @@ public class LinkageSweepMain {
             FTGoalKey.DENDROGRAM
     };
 
+    /** The linkages the sweep takes when the call names none. */
+    private static final SimpleAggloClustering.Method[] DEFAULT_METHODS = {
+            SimpleAggloClustering.Method.SINGLE_LINKAGE,
+            SimpleAggloClustering.Method.UPGMA,
+            SimpleAggloClustering.Method.COMPLETE_LINKAGE
+    };
+
     /**
-     * Rebuilds and measures under one linkage.
+     * Rebuilds and measures under each requested linkage.
      *
-     * @param args {@code <db> <sequence type csv> <linkage>}
-     * @throws Exception if the database or the typing cannot be read, or a goal fails
+     * @param args {@code <db> <sequence type csv> [<linkage>[,<linkage>...]]}
+     * @throws Exception if the database or the typing cannot be read
      */
     public static void main(String[] args) throws Exception {
-        if (args.length < 3) {
-            System.err.println("Usage: LinkageSweepMain <db> <sequence type csv> <linkage>");
+        if (args.length < 2) {
+            System.err.println("Usage: LinkageSweepMain <db> <sequence type csv> [<linkage>[,<linkage>...]]");
             System.err.println("  <db>                  name of the database project under data/projects");
             System.err.println("  <sequence type csv>   the CSV written by bin/mlst_assemblies.sh");
-            System.err.println("  <linkage>             SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA or WPGMA");
-            System.err.println();
-            System.err.println("One linkage per invocation, in its own JVM - see the class comment for why.");
+            System.err.println("  <linkage>             SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA or WPGMA;");
+            System.err.println("                        several comma separated, all in one process.");
+            System.err.println("                        Left out: SINGLE_LINKAGE, UPGMA, COMPLETE_LINKAGE.");
             System.exit(1);
         }
         String db = args[0];
@@ -89,14 +101,7 @@ public class LinkageSweepMain {
             System.err.println("Produce it with bin/cdiff_eval.sh.");
             System.exit(1);
         }
-        SimpleAggloClustering.Method method = null;
-        try {
-            method = SimpleAggloClustering.Method.valueOf(args[2].trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            System.err.println("Not a linkage method: " + args[2]);
-            System.err.println("Expected one of: SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA, WPGMA");
-            System.exit(1);
-        }
+        List<SimpleAggloClustering.Method> methods = parseMethods(args);
 
         STGroundTruth groundTruth = new STGroundTruth(stCsv);
         System.out.println("Read " + groundTruth.getTypedLeaves() + " typed genome(s) in "
@@ -117,20 +122,33 @@ public class LinkageSweepMain {
 
         STQualityMaker maker = new STQualityMaker(project, groundTruth);
         List<String> written = new ArrayList<>();
+        List<SimpleAggloClustering.Method> failed = new ArrayList<>();
         try {
-            System.out.println();
-            System.out.println("=== refined database, clusterMethod=" + method + " ===");
-            if (!project.initConfigParam(FTConfigKey.CLUSTER_METHOD, method)) {
-                throw new IllegalStateException("The configuration refused the linkage " + method
-                        + ". Without it taking effect the run would cluster the way the project's own"
-                        + " configuration says and be filed under a name it does not have.");
-            }
-            reset(maker);
-            reportIndexReuse(maker);
+            for (SimpleAggloClustering.Method method : methods) {
+                System.out.println();
+                System.out.println("=== refined database, clusterMethod=" + method + " ===");
+                try {
+                    if (!project.initConfigParam(FTConfigKey.CLUSTER_METHOD, method)) {
+                        throw new IllegalStateException("The configuration refused the linkage " + method
+                                + ". Without it taking effect the run would cluster the way the project's"
+                                + " own configuration says and be filed under a name it does not have.");
+                    }
+                    reset(maker);
+                    reportIndexReuse(maker);
 
-            STQualityCSVGoal goal = (STQualityCSVGoal) maker.getCSVGoal(true);
-            goal.make();
-            written.addAll(fileInto(goal, db, method));
+                    STQualityCSVGoal goal = (STQualityCSVGoal) maker.getCSVGoal(true);
+                    goal.make();
+                    written.addAll(fileInto(goal, db, method));
+                } catch (Exception e) {
+                    // One linkage failing is no reason to lose the others: they are independent
+                    // re-cuts of the same dendrogram input, and the next pass resets everything the
+                    // failed one could have left behind.
+                    failed.add(method);
+                    System.out.println();
+                    System.err.println("Linkage " + method + " failed, going on with the rest:");
+                    e.printStackTrace();
+                }
+            }
         } finally {
             maker.dumpAll();
         }
@@ -144,6 +162,49 @@ public class LinkageSweepMain {
         System.out.println("The unrefined baseline is linkage-independent and is NOT taken here; produce"
                 + " it once with STQualityMain. p_st can only be judged as a change from what the"
                 + " taxonomy already gave, so the comparison needs it.");
+        if (!failed.isEmpty()) {
+            System.err.println();
+            System.err.println("FAILED: " + failed + " - the file(s) above do not cover " + failed.size()
+                    + " of the " + methods.size() + " requested linkage(s).");
+            System.exit(1);
+        }
+    }
+
+    /**
+     * Reads the requested linkages off the command line, accepting them either as separate arguments
+     * or comma separated within one, since the Maven property that carries them is a single string.
+     *
+     * @param args the command line, the linkages starting at index 2
+     * @return the linkages to sweep, {@link #DEFAULT_METHODS} if none were named
+     */
+    private static List<SimpleAggloClustering.Method> parseMethods(String[] args) {
+        List<SimpleAggloClustering.Method> methods = new ArrayList<>();
+        for (int i = 2; i < args.length; i++) {
+            for (String name : args[i].split(",")) {
+                name = name.trim();
+                if (name.isEmpty()) {
+                    continue;
+                }
+                try {
+                    SimpleAggloClustering.Method method =
+                            SimpleAggloClustering.Method.valueOf(name.toUpperCase(Locale.ROOT));
+                    if (!methods.contains(method)) {
+                        methods.add(method);
+                    }
+                } catch (IllegalArgumentException e) {
+                    System.err.println("Not a linkage method: " + name);
+                    System.err.println("Expected one of: SINGLE_LINKAGE, COMPLETE_LINKAGE, UPGMA, WPGMA");
+                    System.exit(1);
+                }
+            }
+        }
+        if (methods.isEmpty()) {
+            for (SimpleAggloClustering.Method method : DEFAULT_METHODS) {
+                methods.add(method);
+            }
+        }
+        System.out.println("Sweeping " + methods.size() + " linkage(s) in this process: " + methods);
+        return methods;
     }
 
     /**

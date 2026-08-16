@@ -38,12 +38,11 @@
 		<gs.isolate.map>data/fastq/${name}_isolates.txt</gs.isolate.map>
 		<gs.isolate.out>results/${name}_isolate_st.csv</gs.isolate.out>
 		<gs.isolate.variant>ftdb</gs.isolate.variant>
-		<!-- The linkage method `linkagesweep' rebuilds under. ONE per invocation and one JVM per
-		     invocation, which is not a matter of taste: measuring the unrefined database and then
-		     rebuilding the refined one in the same process has the two sharing the k-mer store's
-		     buckets, and the result is a refined database whose lookups all miss. See the class
-		     comment of LinkageSweepMain. Run it three times, once per method. -->
-		<gs.linkage>UPGMA</gs.linkage>
+		<!-- The linkage methods `linkagesweep' rebuilds under, comma separated and all in one
+		     process, so that the k-mer index and the pairwise intersection counts are paid for once.
+		     Override with e.g. -Dgs.linkage=UPGMA to take a single one. The unrefined baseline does
+		     not depend on the linkage and is NOT part of the sweep; take it with `stquality'. -->
+		<gs.linkage>SINGLE_LINKAGE,UPGMA,COMPLETE_LINKAGE</gs.linkage>
 		<!-- Generation target of the `match' execution. The performance measurement sets
 		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
 		     finding its result files already in place and reporting a runtime of zero. -->
@@ -228,15 +227,16 @@
 						</configuration>
 					</execution>
 					<execution>
-						<!-- Rebuilds the refined database under ONE linkage method and files the
-						     result as results/<db>_ftstquality_<linkage>.csv. Run it once per method:
-						     -Dgs.linkage=SINGLE_LINKAGE, then UPGMA, then COMPLETE_LINKAGE. The k-mer
-						     index of `kmerindexbloom' lives on disk and every invocation reuses it,
-						     so the repetition costs the clustering and the measure but not the pass
-						     over the genomes. The unrefined baseline is linkage-independent; take it
-						     once with `stquality'. Do NOT reach for `clean'/`cleanall': the former
-						     reaches only the internal goal a request is aggregated into, the latter
-						     takes the unrefined database with it. -->
+						<!-- Rebuilds the refined database under each linkage of ${gs.linkage} and
+						     files the results as results/<db>_ftstquality_<linkage>.csv. All of them
+						     in one process: the k-mer index of `kmerindexbloom' and the pairwise
+						     intersection counts are built from the genomes once and every further
+						     linkage only re-cuts the dendrogram, so the sweep costs one pass over the
+						     genomes rather than three. A linkage that fails does not stop the others
+						     and the exit status reports it. The unrefined baseline is
+						     linkage-independent; take it once with `stquality'. Do NOT reach for
+						     `clean'/`cleanall': the former reaches only the internal goal a request is
+						     aggregated into, the latter takes the unrefined database with it. -->
 						<id>linkagesweep</id>
 						<goals>
 							<goal>exec</goal>
