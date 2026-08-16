@@ -129,7 +129,7 @@ public class IsolateSTAccuracyMain {
         }
         NaiveBayesSTModel model = new NaiveBayesSTModel(tree, new STGroundTruth(mlst));
         System.out.println("Model over " + model.getTypes().size() + " sequence type(s) and "
-                + model.getPriorTotal() + " genome(s).");
+                + model.getCollectionTotal() + " genome(s).");
 
         Map<String, IsolateSTCall> result = new LinkedHashMap<>();
         // One tally per matcher thread rather than one behind a lock: the callback runs for every

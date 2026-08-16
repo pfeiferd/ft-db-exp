@@ -227,14 +227,15 @@ public class LinkageSweepMain {
                         + " linkage's.");
                 continue;
             }
-            // cleanThis() throughout, and never dump(). They are not interchangeable: for an object
-            // goal both discard the value, but FastaReaderGoal.dump() additionally sets the flag its
-            // consumer threads watch and interrupts them, and nothing clears that flag when the goal
-            // is made again -- only readyForAnotherPass() does, which is for goals that deliberately
-            // read twice. A goal dumped here would then run its reading pass with the flag still set:
-            // the files are queued, every consumer stops before touching one, and the pass finishes
-            // in seconds having read nothing. That is what produced `Filter entries: 0' on 2026-08-16
-            // while the store, the filter and the database hand-off were all in order.
+            // cleanThis(), not dump(): for an object goal both discard the value, but
+            // FastaReaderGoal.dump() additionally ends the consumer threads of a pass that is not
+            // running, which this reset has no reason to do.
+            //
+            // Neither of them, though, is what made the second linkage read nothing. A pass ends by
+            // setting the flag its consumers watch -- every reader goal does that itself once it has
+            // its result -- and nothing put the flag back, so a goal that had read once could not read
+            // again whatever it was reset with. That is fixed where it belongs, in
+            // FastaReaderGoal.readFastas(), which now readies itself; see the comment there.
             goal.cleanThis();
             System.out.println("  reset " + key.getName());
         }

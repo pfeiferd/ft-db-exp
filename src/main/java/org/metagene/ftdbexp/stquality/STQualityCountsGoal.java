@@ -278,7 +278,6 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             countsByPos = null;
             inScopeByPos = null;
             stByPos = null;
-            cleanUpThreads();
         }
     }
 
