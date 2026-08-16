@@ -163,6 +163,20 @@ public class NaiveBayesSTModelTest {
     }
 
     @Test
+    public void theCollectionsCompositionDoesNotDecideOnItsOwn() throws IOException {
+        // Nine ST 1 genomes against one ST 2, and a single read on the node holding only the ST 2
+        // one. Weighted by how many genomes the collection happens to hold, ST 1 would win on the
+        // strength of being frequent in a reference set; the classifier must not do that, because
+        // the population the isolates come from is not the population the database records.
+        Built b = build(leaves("a.fna", "1", "b.fna", "1", "c.fna", "1", "d.fna", "1", "e.fna", "1",
+                               "f.fna", "1", "g.fna", "1", "h.fna", "1", "i.fna", "1"),
+                        leaves("j.fna", "2"));
+        Map<Integer, Long> reads = new LinkedHashMap<>();
+        reads.put(b.group(1), 1L);
+        assertEquals("2", b.model.classify(reads));
+    }
+
+    @Test
     public void classificationCanSettleOnUntyped() throws IOException {
         Built b = build(leaves("a.fna", "1", "b.fna", "1", "c.fna", "1",
                 "d.fna", "-", "e.fna", "-"));

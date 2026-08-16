@@ -217,7 +217,18 @@ public class NaiveBayesSTModel {
         String best = null;
         double bestScore = Double.NEGATIVE_INFINITY;
         for (String type : types) {
-            double score = Math.log((priorCounts.getOrDefault(type, 0) + 1.0) / (priorTotal + types.size()));
+            // Uniform over the classes, hence a constant and hence omitted: it cannot change which
+            // class wins. The prior belonging here is the one over the ISOLATE's class, and the
+            // reference collection is the wrong population to read it from -- it records what has
+            // been deposited, not what walks into a ward. In this collection ST 1 holds 71 genomes
+            // and none of the 37 isolates is ST 1, while ST 11 is the most frequent among them.
+            //
+            // Not to be confused with the prior in getLogRatio's denominator, which is a different
+            // quantity and stays: that one is the prior already contained in the node's own estimate
+            // P(s | v), and dividing it out is what turns a posterior back into a likelihood ratio.
+            // Removing it as well would multiply the collection's composition in n times over
+            // instead of cancelling it.
+            double score = 0;
             for (Map.Entry<Integer, Long> e : readsPerNode.entrySet()) {
                 score += e.getValue() * getLogRatio(e.getKey(), type);
             }

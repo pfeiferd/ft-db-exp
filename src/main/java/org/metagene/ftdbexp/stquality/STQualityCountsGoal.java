@@ -232,7 +232,7 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
 
             long entries = 0;
             long pathViolations = 0;
-            long[] probe = new long[4];
+            long[] probe = new long[8];
             for (MyFastaReader reader : readersList) {
                 // The readers are done, so whatever the last (partial) batch still holds is looked up
                 // and counted here, single-threaded, before their tallies are merged.
@@ -247,6 +247,9 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
             }
             if (getLogger().isInfoEnabled()) {
                 getLogger().info("Filter entries: " + entries);
+                getLogger().info("Before the store: " + probe[4] + " region(s) seen, " + probe[5]
+                        + " with no leaf resolved, " + probe[6] + " k-mer(s) reached handleStore, "
+                        + probe[7] + " of them dropped for an untyped leaf.");
                 getLogger().info("Where the k-mers went: " + probe[0] + " offered by the readers, "
                         + probe[1] + " found in the store (" + (probe[0] - probe[1]) + " missed), "
                         + probe[2] + " out of scope, " + probe[3] + " already seen for their type, "
@@ -470,6 +473,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
         // Diagnostic: where a k-mer is lost between being read and being counted. The reading pass
         // has been seen to end with `Filter entries: 0' while the store answered every lookup a probe
         // put to it, so the loss is at one of these four points and guessing which has not worked.
+        private long probeRegions;
+        private long probeNoLeaf;
+        private long probeEntered;
+        private long probeNoType;
         private long probeOffered;
         private long probeAccepted;
         private long probeOutOfScope;
@@ -516,7 +523,8 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
         }
 
         long[] getProbeCounters() {
-            return new long[] { probeOffered, probeAccepted, probeOutOfScope, probeDuplicate };
+            return new long[] { probeOffered, probeAccepted, probeOutOfScope, probeDuplicate,
+                    probeRegions, probeNoLeaf, probeEntered, probeNoType };
         }
 
         void mergeInto(long[] tpTarget, long[] tpPlusFnTarget, STCounts[] nodeTarget) {
@@ -547,6 +555,10 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
         @Override
         protected void updateLeafNode() {
             super.updateLeafNode();
+            probeRegions++;
+            if (leafNode == null) {
+                probeNoLeaf++;
+            }
             if (leafNode != cachedLeaf) {
                 cachedLeaf = leafNode;
                 cachedLeafPos = leafNode == null ? -1 : leafNode.getPosition();
@@ -557,7 +569,11 @@ public class STQualityCountsGoal extends FastaReaderGoal<Map<String, STCounts>, 
         protected boolean handleStore(long kmer) {
             // An untyped genome contributes no unit, so it can neither raise nor lower c_st - and
             // stByPos says so without a lookup.
+            probeEntered++;
             if (cachedLeafPos < 0 || stByPos[cachedLeafPos] < 0) {
+                if (cachedLeafPos >= 0) {
+                    probeNoType++;
+                }
                 return false;
             }
             probeOffered++;
