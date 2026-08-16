@@ -148,11 +148,58 @@ public class IsolateSTCallTest {
     }
 
     @Test
+    public void kMersAreTalliedPerNodeAndScoredSeparately() {
+        IsolateSTCall c = new IsolateSTCall("B11", "42");
+        // The read level sees one broad node; the k-mer level sees that most of the matched k-mers
+        // sit at a node specific to the isolate. That is the case this second predictor exists for.
+        reads(c, 100, "1", 58, 3);
+        c.recordKMers(3, 200, 50, "1");
+        c.recordKMers(9, 800, 150, "42");
+        assertEquals(1000, c.getMatchedKMers());
+        assertEquals(0.8, c.getKMerAccuracy(), 1e-9);
+        assertEquals(0.0, c.getReadAccuracy(), 1e-9);
+        assertEquals(800, c.getKMersPerNode().get(9).longValue());
+        assertEquals(200, c.getKMersPerNode().get(3).longValue());
+        // Dieselbe Evidenz einmal je distinktem k-mer gezaehlt faellt hier anders aus, weil die
+        // Multiplizitaet ungleich verteilt ist - genau der Unterschied, den beide Spalten zeigen.
+        assertEquals(200, c.getMatchedUniqueKMers());
+        assertEquals(0.75, c.getUniqueKMerAccuracy(), 1e-9);
+    }
+
+    @Test
+    public void kMerCountsOfZeroAreIgnored() {
+        IsolateSTCall c = new IsolateSTCall("B11", "42");
+        c.recordKMers(5, 0, 0, "42");
+        assertEquals(0, c.getMatchedKMers());
+        assertTrue(c.getKMersPerNode().isEmpty());
+    }
+
+    @Test
+    public void mergingCoversTheKMerLevelToo() {
+        IsolateSTCall a = new IsolateSTCall("B11", "42");
+        a.recordKMers(9, 300, 30, "42");
+        a.recordKMers(3, 100, 10, "1");
+        IsolateSTCall b = new IsolateSTCall("B11", "42");
+        b.recordKMers(9, 500, 50, "42");
+        a.add(b);
+        assertEquals(900, a.getMatchedKMers());
+        assertEquals(800, a.getKMersPerNode().get(9).longValue());
+        assertEquals(800.0 / 900, a.getKMerAccuracy(), 1e-9);
+        assertEquals(90, a.getMatchedUniqueKMers());
+        assertEquals(80.0 / 90, a.getUniqueKMerAccuracy(), 1e-9);
+    }
+
+    @Test
     public void resetEmptiesTheTallyForReuse() {
         IsolateSTCall c = new IsolateSTCall("B11", "42");
         reads(c, 30, "42", 1);
+        c.recordKMers(9, 100, 20, "42");
         c.reset();
         assertTrue(c.getReadsPerNode().isEmpty());
+        assertTrue(c.getKMersPerNode().isEmpty());
+        assertTrue(c.getUniqueKMersPerNode().isEmpty());
+        assertEquals(0, c.getMatchedKMers());
+        assertEquals(0, c.getMatchedUniqueKMers());
         assertEquals(0, c.getReads());
         assertEquals(0, c.getClassified());
         assertEquals(0, c.getCorrectReads());

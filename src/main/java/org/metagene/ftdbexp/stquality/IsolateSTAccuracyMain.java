@@ -7,6 +7,7 @@ import org.metagene.genestrip.finertree.FTProject;
 import org.metagene.genestrip.finertree.FinerTreeMaker;
 import org.metagene.genestrip.goals.MatchResultGoal;
 import org.metagene.genestrip.match.FastqKMerMatcher;
+import org.metagene.genestrip.match.CountsPerTaxid;
 import org.metagene.genestrip.match.MatchingResult;
 import org.metagene.genestrip.make.GoalKey;
 import org.metagene.genestrip.make.ObjectGoal;
@@ -164,6 +165,20 @@ public class IsolateSTAccuracyMain {
             @Override
             public void afterKey(String key, MatchingResult res) {
                 IsolateSTCall merged = new IsolateSTCall(key, truth.getST(key));
+                // The k-mer level, taken from the matcher's own per-taxon tally rather than from the
+                // reads: both counts hold every k-mer the database keeps at that node and the isolate
+                // carries, whether or not the read carrying it was classified there. `kmers' counts
+                // them with multiplicity and `unique kmers' once each; see IsolateSTCall for what
+                // each is robust against.
+                for (Map.Entry<String, CountsPerTaxid> e : res.getTaxid2Stats().entrySet()) {
+                    SmallTaxTree.SmallTaxIdNode node = tree.getNodeByTaxId(e.getKey());
+                    if (node == null) {
+                        continue;
+                    }
+                    int pos = node.getPosition();
+                    merged.recordKMers(pos, e.getValue().getKMers(), e.getValue().getUniqueKMers(),
+                            model.getMajorityST(pos));
+                }
                 for (IsolateSTCall threadTally : threadTallies) {
                     merged.add(threadTally);
                     // Reset, not discard: the thread still holds this instance in its ThreadLocal
@@ -215,14 +230,24 @@ public class IsolateSTAccuracyMain {
         int noCall = 0;
         int untyped = 0;
         int majorityCorrect = 0;
+        int kmerCorrect = 0;
+        int uniqueCorrect = 0;
+        long kMersCorrect = 0;
+        long kMersMatched = 0;
         long readsCorrect = 0;
         long readsClassified = 0;
         try (PrintStream out = new PrintStream(outCsv)) {
-            out.println("db;variant;isolate;true st;bayes st;bayes verdict;majority st;majority verdict;"
-                    + "majority share;read accuracy;mean candidates;reads;classified;correct reads;");
+            out.println("db;variant;isolate;true st;bayes st;bayes verdict;kmer st;kmer verdict;"
+                    + "unique kmer st;unique kmer verdict;majority st;majority verdict;majority share;"
+                    + "read accuracy;kmer accuracy;unique kmer accuracy;mean candidates;reads;"
+                    + "classified;correct reads;matched kmers;matched unique kmers;");
             for (IsolateSTCall call : calls.values()) {
                 String bayes = model.classify(call.getReadsPerNode());
+                String kmer = model.classify(call.getKMersPerNode());
+                String uniqueKmer = model.classify(call.getUniqueKMersPerNode());
                 IsolateSTCall.Verdict verdict = call.getVerdict(bayes);
+                IsolateSTCall.Verdict kmerVerdict = call.getVerdict(kmer);
+                IsolateSTCall.Verdict uniqueVerdict = call.getVerdict(uniqueKmer);
                 IsolateSTCall.Verdict majority = call.getMajorityVerdict();
                 switch (verdict) {
                     case CORRECT: correct++; break;
@@ -232,6 +257,16 @@ public class IsolateSTAccuracyMain {
                 }
                 if (majority == IsolateSTCall.Verdict.CORRECT) {
                     majorityCorrect++;
+                }
+                if (kmerVerdict == IsolateSTCall.Verdict.CORRECT) {
+                    kmerCorrect++;
+                }
+                if (uniqueVerdict == IsolateSTCall.Verdict.CORRECT) {
+                    uniqueCorrect++;
+                }
+                if (kmerVerdict != IsolateSTCall.Verdict.UNTYPED) {
+                    kMersCorrect += Math.round(call.getKMerAccuracy() * call.getMatchedKMers());
+                    kMersMatched += call.getMatchedKMers();
                 }
                 if (verdict != IsolateSTCall.Verdict.UNTYPED) {
                     readsCorrect += call.getCorrectReads();
@@ -249,6 +284,14 @@ public class IsolateSTAccuracyMain {
                 out.print(';');
                 out.print(verdict);
                 out.print(';');
+                out.print(kmer == null ? "" : kmer);
+                out.print(';');
+                out.print(kmerVerdict);
+                out.print(';');
+                out.print(uniqueKmer == null ? "" : uniqueKmer);
+                out.print(';');
+                out.print(uniqueVerdict);
+                out.print(';');
                 out.print(call.getCalledST() == null ? "" : call.getCalledST());
                 out.print(';');
                 out.print(majority);
@@ -257,6 +300,10 @@ public class IsolateSTAccuracyMain {
                 out.print(';');
                 out.printf("%.8f", call.getReadAccuracy());
                 out.print(';');
+                out.printf("%.8f", call.getKMerAccuracy());
+                out.print(';');
+                out.printf("%.8f", call.getUniqueKMerAccuracy());
+                out.print(';');
                 out.printf("%.4f", call.getMeanCandidates());
                 out.print(';');
                 out.print(call.getReads());
@@ -264,6 +311,10 @@ public class IsolateSTAccuracyMain {
                 out.print(call.getClassified());
                 out.print(';');
                 out.print(call.getCorrectReads());
+                out.print(';');
+                out.print(call.getMatchedKMers());
+                out.print(';');
+                out.print(call.getMatchedUniqueKMers());
                 out.println(';');
             }
         }
@@ -275,11 +326,23 @@ public class IsolateSTAccuracyMain {
         System.out.println("  correct / wrong / none  : " + correct + " / " + wrong + " / " + noCall);
         System.out.printf("  isolate accuracy (Bayes): %.4f%n",
                 typed == 0 ? Double.NaN : ((double) correct) / typed);
+        System.out.printf("  isolate accuracy (k-mer): %.4f%n",
+                typed == 0 ? Double.NaN : ((double) kmerCorrect) / typed);
+        System.out.printf("  isolate accuracy (uniq) : %.4f%n",
+                typed == 0 ? Double.NaN : ((double) uniqueCorrect) / typed);
         System.out.printf("  isolate accuracy (major): %.4f%n",
                 typed == 0 ? Double.NaN : ((double) majorityCorrect) / typed);
         System.out.printf("  read accuracy (pooled)  : %.4f  over %,d classified read(s)%n",
                 readsClassified == 0 ? Double.NaN : ((double) readsCorrect) / readsClassified,
                 readsClassified);
+        System.out.printf("  k-mer accuracy (pooled) : %.4f  over %,d matched k-mer(s)%n",
+                kMersMatched == 0 ? Double.NaN : ((double) kMersCorrect) / kMersMatched, kMersMatched);
+        System.out.println();
+        System.out.println("The k-mer level sits ON TOP of the read level and is not a substitute for it:"
+                + " a read is classified to the lowest node its k-mers agree on, so a single specific"
+                + " k-mer is outvoted by its own read and never reaches the read-level classifier."
+                + " Where the k-mer accuracy exceeds the read accuracy, that is the evidence the read"
+                + " classification is discarding.");
         System.out.println();
         System.out.println("The read accuracy measures the database, since it is the nodes that predict."
                 + " The two isolate accuracies differ only in how a read is weighted: the majority call"

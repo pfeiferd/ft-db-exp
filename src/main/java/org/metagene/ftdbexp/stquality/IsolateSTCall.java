@@ -42,6 +42,26 @@ public class IsolateSTCall {
     private final Map<String, Long> predictions = new LinkedHashMap<>();
     /** Reads per node, by dense node position; what the naive Bayes classifier is scored from. */
     private final Map<Integer, Long> readsPerNode = new LinkedHashMap<>();
+    /**
+     * Matched k-mers per node, by dense node position, counted with multiplicity. The second
+     * observation unit: a read is classified to one node, the lowest its k-mers agree on, so a
+     * single k-mer sitting at a far more specific node is outvoted by the rest of its read and its
+     * evidence never reaches the read-level classifier. Counted per k-mer, that evidence survives.
+     */
+    private final Map<Integer, Long> kMersPerNode = new LinkedHashMap<>();
+    private long matchedKMers;
+    private long correctKMers;
+    /**
+     * The same per node, counted once per distinct k-mer. The two differ in what they are robust
+     * against and neither dominates, which is why both are reported. Multiplicity is the honest
+     * observation count and it damps sequencing error, a spurious k-mer appearing once where a real
+     * one appears as often as the coverage allows; it is in exchange sensitive to depth -- the
+     * Nanopore runs here are subsampled to a uniform 120-fold and the Illumina ones are not -- and
+     * it over-weights repeats. Distinctness is the reverse on both counts.
+     */
+    private final Map<Integer, Long> uniqueKMersPerNode = new LinkedHashMap<>();
+    private long matchedUniqueKMers;
+    private long correctUniqueKMers;
     private long reads;
     private long classified;
     private long correctReads;
@@ -86,6 +106,34 @@ public class IsolateSTCall {
     }
 
     /**
+     * Records the distinct k-mers the matcher found at one node, independently of how the reads
+     * carrying them were classified.
+     *
+     * @param nodePos     the dense position of the node
+     * @param count       how many k-mers of the isolate the database holds at that node, with
+     *                    multiplicity
+     * @param unique      the same counted once per distinct k-mer
+     * @param predictedST the majority sequence type of that node, or {@code null} if none
+     */
+    public void recordKMers(int nodePos, long count, long unique, String predictedST) {
+        boolean correct = predictedST != null && predictedST.equals(trueST);
+        if (count > 0) {
+            kMersPerNode.merge(nodePos, count, Long::sum);
+            matchedKMers += count;
+            if (correct) {
+                correctKMers += count;
+            }
+        }
+        if (unique > 0) {
+            uniqueKMersPerNode.merge(nodePos, unique, Long::sum);
+            matchedUniqueKMers += unique;
+            if (correct) {
+                correctUniqueKMers += unique;
+            }
+        }
+    }
+
+    /**
      * Adds another tally of the same isolate, which is how the per-thread tallies of one fastq file
      * are merged. Every field is a count, so the sum is exactly what one thread would have produced.
      *
@@ -102,6 +150,16 @@ public class IsolateSTCall {
         for (Map.Entry<Integer, Long> e : other.readsPerNode.entrySet()) {
             readsPerNode.merge(e.getKey(), e.getValue(), Long::sum);
         }
+        for (Map.Entry<Integer, Long> e : other.kMersPerNode.entrySet()) {
+            kMersPerNode.merge(e.getKey(), e.getValue(), Long::sum);
+        }
+        for (Map.Entry<Integer, Long> e : other.uniqueKMersPerNode.entrySet()) {
+            uniqueKMersPerNode.merge(e.getKey(), e.getValue(), Long::sum);
+        }
+        matchedKMers += other.matchedKMers;
+        correctKMers += other.correctKMers;
+        matchedUniqueKMers += other.matchedUniqueKMers;
+        correctUniqueKMers += other.correctUniqueKMers;
     }
 
     /**
@@ -112,6 +170,12 @@ public class IsolateSTCall {
     public void reset() {
         predictions.clear();
         readsPerNode.clear();
+        kMersPerNode.clear();
+        uniqueKMersPerNode.clear();
+        matchedKMers = 0;
+        correctKMers = 0;
+        matchedUniqueKMers = 0;
+        correctUniqueKMers = 0;
         reads = 0;
         classified = 0;
         correctReads = 0;
@@ -264,6 +328,64 @@ public class IsolateSTCall {
      */
     public Map<Integer, Long> getReadsPerNode() {
         return readsPerNode;
+    }
+
+    /**
+     * Returns the matched k-mers per node, with multiplicity, by dense node position.
+     *
+     * @return the k-mers per node position
+     */
+    public Map<Integer, Long> getKMersPerNode() {
+        return kMersPerNode;
+    }
+
+    /**
+     * Returns the distinct matched k-mers per node, by dense node position.
+     *
+     * @return the distinct k-mers per node position
+     */
+    public Map<Integer, Long> getUniqueKMersPerNode() {
+        return uniqueKMersPerNode;
+    }
+
+    /**
+     * Returns how many distinct k-mers of the isolate the database matched anywhere.
+     *
+     * @return the number of distinct matched k-mers
+     */
+    public long getMatchedUniqueKMers() {
+        return matchedUniqueKMers;
+    }
+
+    /**
+     * Returns the share of distinct matched k-mers sitting at a node that predicts the isolate's
+     * type.
+     *
+     * @return the distinct-k-mer accuracy, or {@link Double#NaN} if nothing matched
+     */
+    public double getUniqueKMerAccuracy() {
+        return matchedUniqueKMers == 0 ? Double.NaN : ((double) correctUniqueKMers) / matchedUniqueKMers;
+    }
+
+    /**
+     * Returns how many k-mers of the isolate the database matched anywhere, with multiplicity.
+     *
+     * @return the number of matched k-mers
+     */
+    public long getMatchedKMers() {
+        return matchedKMers;
+    }
+
+    /**
+     * Returns the share of matched k-mers sitting at a node that predicts the isolate's type. It is
+     * the k-mer-level counterpart of {@link #getReadAccuracy()} and the two are worth reading
+     * together: where it is the higher of the two, the read classification is discarding evidence
+     * its own k-mers carry.
+     *
+     * @return the k-mer accuracy, or {@link Double#NaN} if nothing matched
+     */
+    public double getKMerAccuracy() {
+        return matchedKMers == 0 ? Double.NaN : ((double) correctKMers) / matchedKMers;
     }
 
     /**
