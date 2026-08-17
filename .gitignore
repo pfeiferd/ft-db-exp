@@ -27,6 +27,10 @@
 # Written by hand rather than generated: bin/fetch_cdiff.sh only downloads the files it names, and
 # the mapping from an isolate to its runs is what the study's sequence types are joined through.
 !/data/fastq/cdiff_isolates.txt
+# ... and the sequence type of every isolate in that map, read off Table 2 of the source study.
+# Input as much as the map is, and the ground truth the classification experiment is scored against:
+# nothing regenerates it, so left out of the repository it is simply gone.
+!/data/fastq/cdiff_isolates.txt.st.csv
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*

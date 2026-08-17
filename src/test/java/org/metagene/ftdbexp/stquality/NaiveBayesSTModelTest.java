@@ -140,40 +140,55 @@ public class NaiveBayesSTModelTest {
     @Test
     public void anUntypedGenomeDilutesTheEstimateOfTheTypedOnes() throws IOException {
         // Both nodes hold two ST 1 genomes; the second holds an untyped one beside them. Compared
-        // within one model, so the prior and the smoothing are identical and only the dilution
+        // within one model, so the baseline and the smoothing are identical and only the dilution
         // separates the two.
         Built b = build(leaves("a.fna", "1", "b.fna", "1"),
                         leaves("c.fna", "1", "d.fna", "1", "e.fna", "-"),
                         leaves("f.fna", "2", "g.fna", "2"));
-        // What decides is the margin between the classes at a node, not one class's likelihood on its
-        // own: P(v | s) is normalised per class, so the untyped genome does not lower the ST 1 term
-        // -- both nodes cover two of the four ST 1 genomes and both give ST 1 the same factor. The
-        // dilution shows up where it belongs, in what the competing class gets out of the node.
-        double pure = b.model.getLogLikelihood(b.group(0), "1")
-                - b.model.getLogLikelihood(b.group(0), NaiveBayesSTModel.STAR);
-        double diluted = b.model.getLogLikelihood(b.group(1), "1")
-                - b.model.getLogLikelihood(b.group(1), NaiveBayesSTModel.STAR);
-        assertTrue("a node diluted by an untyped genome must not speak more strongly for ST 1 than a"
-                + " pure one: " + diluted + " vs " + pure, diluted < pure);
+        double pure = b.model.getLogLift(b.group(0), "1");
+        double diluted = b.model.getLogLift(b.group(1), "1");
+        assertTrue("a node diluted by an untyped genome must not speak more strongly for ST 1: "
+                + diluted + " vs " + pure, diluted < pure);
         // And it speaks for the untyped class where the pure node does not.
-        assertTrue(b.model.getLogLikelihood(b.group(1), NaiveBayesSTModel.STAR)
-                > b.model.getLogLikelihood(b.group(0), NaiveBayesSTModel.STAR));
+        assertTrue(b.model.getLogLift(b.group(1), NaiveBayesSTModel.STAR)
+                > b.model.getLogLift(b.group(0), NaiveBayesSTModel.STAR));
     }
 
     @Test
-    public void aClassNothingHasBeenSeenOfDoesNotWinEverywhere() throws IOException {
-        // Every genome typed, so the untyped class is empty -- which is the situation in the cdiff
-        // database. An estimate that is not normalised per class hands such a class a factor of one
-        // at every node, the largest any class can reach, and it then takes every isolate. Here a
-        // read on a node holding nothing but ST 2 must call ST 2.
+    public void aNodeCoveringEveryGenomeIsExactlyNeutral() throws IOException {
+        // The property the whole classifier rests on, and the one an earlier version lost. Nearly
+        // every read of a sample lands at the node holding the shared k-mers of the species, which
+        // covers every genome of every class. If its contribution were merely small rather than zero,
+        // a few million reads would multiply it into a verdict of their own: at a tenth of a nat per
+        // read, half a million nats for whichever class the residue happened to favour, and every
+        // isolate would be called that. Exactly zero is therefore not a nicety.
+        Built b = build(leaves("a.fna", "1", "b.fna", "1", "c.fna", "1"),
+                        leaves("d.fna", "2", "e.fna", "-"));
+        for (String type : b.model.getTypes()) {
+            assertEquals("the node above every genome must not move class " + type,
+                    0.0, b.model.getLogLift(b.dataNode(), type), 0.0);
+        }
+        // And it stays neutral however many reads rest there: a majority over them would answer with
+        // the collection's most frequent type, the classifier answers with nothing at all.
+        Map<Integer, Long> reads = new LinkedHashMap<>();
+        reads.put(b.dataNode(), 5_000_000L);
+        reads.put(b.group(1), 1L);
+        assertEquals("2", b.model.classify(reads));
+    }
+
+    @Test
+    public void aClassWithNoGenomeIsNotACandidate() throws IOException {
+        // Every genome typed, so nothing is untyped and the untyped class has no distribution to
+        // estimate. Left in and smoothed, it is the one class no node can speak against and it takes
+        // every isolate; left out, the question does not arise. The same holds for the sequence types
+        // the typing file knows of but this database holds no genome of.
         Built b = build(leaves("a.fna", "1", "b.fna", "1", "c.fna", "1"), leaves("d.fna", "2"));
-        assertTrue(b.model.getTypes().contains(NaiveBayesSTModel.STAR));
+        assertTrue("an empty class must not be a candidate",
+                !b.model.getTypes().contains(NaiveBayesSTModel.STAR));
+        assertEquals(2, b.model.getTypes().size());
         Map<Integer, Long> reads = new LinkedHashMap<>();
         reads.put(b.group(1), 1L);
         assertEquals("2", b.model.classify(reads));
-        // And a probability over the nodes is what it claims to be: below one everywhere.
-        assertTrue(b.model.getLogLikelihood(b.group(1), NaiveBayesSTModel.STAR) < 0);
-        assertTrue(b.model.getLogLikelihood(b.group(1), "2") < 0);
     }
 
     @Test

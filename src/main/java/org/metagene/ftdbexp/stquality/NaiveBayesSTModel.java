@@ -15,9 +15,9 @@ import java.util.Map;
  * follows from taking the reads of one isolate as independent observations of such nodes.
  * <p>
  * The node a read is classified to is what is observed; the isolate's class is what is to be
- * inferred. The classes are the sequence types of the collection together with {@link #STAR}, for
- * the genomes the scheme does not cover. Taking the reads as independent observations given the
- * class gives
+ * inferred. The classes are the sequence types the collection holds a genome of, together with
+ * {@link #STAR} where some genome carries none. Taking the reads as independent observations given
+ * the class gives
  * <pre>
  *   P(s | v_1..v_n)  ~  P(s) * PRODUCT_i  P(v_i | s)
  * </pre>
@@ -28,38 +28,36 @@ import java.util.Map;
  * {@code P(s)} is the prior over the ISOLATE's class and is taken uniform; see {@link #classify},
  * where the reasons sit next to the line that drops it.
  * <p>
- * {@code P(v | s)} is what the database supplies. Writing {@code g(s|v)} for the number of genomes
- * of class {@code s} below node {@code v} and {@code V} for the nodes of the database, a read of an
- * isolate of class {@code s} is taken to land at {@code v} in proportion to how many of that class's
- * genomes the node covers:
+ * Each factor is evaluated as the node's LIFT for the class, {@code P(s|v) / P(s)}, which Bayes makes
+ * equal to {@code P(v|s) / P(v)} and hence to {@code P(v|s)} up to the class-independent {@code P(v)}
+ * that the comparison drops anyway. Writing {@code g(s|v)} for the genomes of class {@code s} below
+ * node {@code v} and {@code g(v)} for all of them,
  * <pre>
- *   P(v | s)  =  ( g(s|v) + 1 )  /  SUM_v' ( g(s|v') + 1 )
+ *   P(s|v) = ( g(s|v) + a ) / ( g(v) + 1 )        P(s) = ( g(s) + a ) / ( g + 1 )
  * </pre>
- * The added one is Laplace smoothing, which keeps a class alive that a node does not happen to hold:
- * without it a single read classified to a node whose subtree holds no genome of the true class
- * would send that class to zero and no number of later reads could recover it, and a read may come
- * from sequence the isolate shares with another lineage. The denominator is then no more than what
- * makes the numerators sum to one over the nodes.
+ * with {@code a = SMOOTHING / |S'|}, the collection standing in for the all-covering node.
  * <p>
- * That normalisation is not a formality. Divide instead by {@code g(s) + 1}, the number of genomes
- * the class has in the collection, giving the intuitive "share of them below v", and a class with no
- * genome at all scores {@code 1} at every node, which is the largest value any class can reach
- * anywhere: it then wins or ties against every real class on every read, and every isolate is called
- * untyped. The equivalent ratio form {@code P(s|v)/P(s)} inherits the defect unchanged, since the two
- * differ only by a factor common to all classes. Normalised over the nodes such a class is spread
- * uniformly at {@code 1/|V|} instead, which says what it should: a class nothing has been seen of
- * explains no node in particular. In the cdiff database every genome carries a type, so {@link #STAR}
- * is exactly such a class and the distinction decides the whole experiment rather than an edge case.
+ * That arrangement is not a matter of taste, and getting it wrong is what made an earlier version of
+ * this class call every isolate ST 1. Nearly every read of a sample lands at the node holding the
+ * shared {@code k}-mers of the species -- in cdiff between 97 and 99 percent of them -- and that node
+ * covers every genome of every class. Its lift is then exactly one: numerator and denominator are the
+ * same expression over the same counts, so the quotient is the bit pattern {@code 1.0} and its
+ * logarithm is {@code 0.0}, not merely something small. Millions of uninformative reads therefore
+ * contribute nothing at all, and the decision is left to the few that landed lower. Estimate the same
+ * quantity as a distribution over the nodes instead, and the all-covering node keeps a residue that
+ * differs between classes -- by class size if the smoothing is coarse, by the mean depth of the
+ * class's genomes even if it is not. Multiplied by a few million reads, a residue of a tenth of a nat
+ * is half a million nats, and whichever class it favours wins every isolate regardless of the
+ * evidence. A property that holds only approximately is worth nothing at this sample size.
  * <p>
- * The form of the product is worth reading twice. Take a node whose genomes carry the collection's
- * own class distribution, so that {@code g(s|v) = g(s) g(v) / g} for every class: up to the smoothing
- * the factor it contributes is {@code g(v)/g} divided by the number of nodes a genome of that class
- * lies under on average. It does not depend on how frequent the class is in the collection at all,
- * only on how deep its genomes sit, so for classes at a comparable depth such a node cannot move the
- * decision however many reads land there. It is not evidence, and it is not counted as any. Only a
- * node that concentrates one class more than the collection does moves the estimate, and it moves it
- * the further the rarer the class it favours -- which is what a majority vote over reads gets wrong
- * when most reads rest on a node that has narrowed nothing.
+ * A class with no genome in the collection is left out rather than smoothed, see the constructor: it
+ * has no distribution to estimate, and any convention chosen for it decides instead of describing.
+ * <p>
+ * The form of the product is worth reading twice. A node whose genomes carry the collection's own
+ * class distribution contributes a factor of one to every class: it is not evidence, and it is not
+ * counted as any. Only a node that concentrates one class more than the collection does moves the
+ * estimate, and it moves it the further the rarer the class it favours -- which is what a majority
+ * vote over reads gets wrong when most reads rest on a node that has narrowed nothing.
  * <p>
  * The independence assumption is false here and is worth saying so. Reads of one isolate come from
  * one genome, so they are heavily correlated, and the resulting scores are far too confident to be
@@ -108,14 +106,21 @@ public class NaiveBayesSTModel {
     /** Genomes in the whole collection, i.e. {@code g}. */
     private int collectionTotal;
     /**
-     * Per type, {@code SUM_v g(s|v)}: how often a genome of that type is counted over all nodes,
-     * which is the sum over its genomes of the number of nodes each lies under. Together with the
-     * node count it is the denominator of {@link #getLogLikelihood} -- the two add up to
-     * {@code SUM_v ( g(s|v) + 1 )} -- and hence what normalises it over the nodes.
+     * One pseudo-genome, spread evenly over the classes, added to every count before a share is
+     * taken of it -- Lidstone smoothing with {@code SMOOTHING / |S'|} per class rather than the
+     * textbook one per class.
+     * <p>
+     * The size matters and one per class is far too much. A node holding 35 genomes would then
+     * receive 58 imaginary ones, which outweigh what is actually there: a class the node does not
+     * hold at all comes out above its own baseline, so a read landing there is counted as evidence
+     * FOR a lineage that is absent. With one pseudo-genome in total the same read tells against it
+     * by 1.84 nats, and with a hundredth of one by 4.61 -- the latter being more confidence than
+     * this data supports, since a single read misplaced by a false positive of the k-mer index would
+     * then all but rule the true lineage out. What the value cannot affect is the neutrality of an
+     * all-covering node, which holds for every {@code SMOOTHING} because the baseline is that node's
+     * own estimate.
      */
-    private final Map<String, Integer> incidencesByType = new HashMap<>();
-    /** The number of nodes, i.e. {@code |V|}, the observation space a read is drawn from. */
-    private int nodeCount;
+    private static final double SMOOTHING = 1.0;
 
     /**
      * Builds the model from a database's taxonomy and the typing of the genomes it was filled from.
@@ -124,10 +129,6 @@ public class NaiveBayesSTModel {
      * @param genomeTypes the type of every genome the database was filled from
      */
     public NaiveBayesSTModel(SmallTaxTree tree, STGroundTruth genomeTypes) {
-        List<String> classes = new ArrayList<>(genomeTypes.getSTNames());
-        classes.add(STAR);
-        this.types = classes;
-
         // One post-order pass: a node's counts are the sum of its children's, a leaf contributes its
         // own genome. Iterative because a refined subtree is routinely hundreds of levels deep, which
         // is the very shape this model is built to evaluate.
@@ -141,7 +142,6 @@ public class NaiveBayesSTModel {
         while (!stack.isEmpty()) {
             SmallTaxTree.SmallTaxIdNode node = stack.pop();
             order.push(node);
-            nodeCount++;
             SmallTaxTree.SmallTaxIdNode[] subNodes = node.getSubNodes();
             if (subNodes != null) {
                 for (SmallTaxTree.SmallTaxIdNode sub : subNodes) {
@@ -173,9 +173,6 @@ public class NaiveBayesSTModel {
             }
             countsByPos.put(node.getPosition(), own);
             candidatesByPos.put(node.getPosition(), own.size());
-            for (Map.Entry<String, Integer> e : own.entrySet()) {
-                incidencesByType.merge(e.getKey(), e.getValue(), Integer::sum);
-            }
             String majority = null;
             int best = -1;
             for (Map.Entry<String, Integer> e : own.entrySet()) {
@@ -197,6 +194,31 @@ public class NaiveBayesSTModel {
                 collectionCounts.putAll(own);
             }
         }
+
+        // The classes are those the database actually holds a genome of, read off the collection and
+        // not off the typing file. The file types every genome the wider collection knows of -- for
+        // cdiff 196 sequence types against the 58 that were built into this database -- and a class
+        // with no genome here is not a class this model can weigh. It has no distribution to estimate,
+        // so whatever convention were chosen for it would decide rather than describe: that is how
+        // the untyped class came to win every isolate before, being the one class no node could
+        // speak against. STAR is therefore a class here exactly when some genome of the database
+        // carries no type, and in cdiff it does not.
+        List<String> classes = new ArrayList<>();
+        for (String name : genomeTypes.getSTNames()) {
+            if (collectionCounts.containsKey(name)) {
+                classes.add(name);
+            }
+        }
+        if (collectionCounts.containsKey(STAR)) {
+            classes.add(STAR);
+        }
+        if (classes.isEmpty()) {
+            throw new IllegalStateException("The database holds no genome of any class the typing"
+                    + " knows of, so there is nothing to predict. Most likely the typing keys its rows"
+                    + " differently from the way the database names its file nodes, in which case every"
+                    + " genome looks untyped and even the untyped class stays empty.");
+        }
+        this.types = classes;
     }
 
     /**
@@ -229,13 +251,22 @@ public class NaiveBayesSTModel {
      * @param type    the sequence type
      * @return the log likelihood, always negative since it is a probability over the nodes
      */
-    public double getLogLikelihood(int nodePos, String type) {
+    public double getLogLift(int nodePos, String type) {
         Map<String, Integer> counts = countsByPos.get(nodePos);
-        // A node with no genome below it is not a special case: it gets the smoothed numerator like
-        // any node the class does not reach. What it must not get is a factor of one, which is what
-        // an unnormalised estimate hands the classes nothing has been seen of.
-        int atNode = counts == null ? 0 : counts.getOrDefault(type, 0);
-        return Math.log((atNode + 1.0) / (incidencesByType.getOrDefault(type, 0) + (double) nodeCount));
+        if (counts == null) {
+            return 0;
+        }
+        int below = 0;
+        for (int v : counts.values()) {
+            below += v;
+        }
+        if (below == 0) {
+            return 0;
+        }
+        double alpha = SMOOTHING / types.size();
+        double atNode = (counts.getOrDefault(type, 0) + alpha) / (below + SMOOTHING);
+        double inCollection = (collectionCounts.getOrDefault(type, 0) + alpha) / (collectionTotal + SMOOTHING);
+        return Math.log(atNode / inCollection);
     }
 
     /**
@@ -260,7 +291,7 @@ public class NaiveBayesSTModel {
             // a second one but the normaliser of P(v | s) over the nodes.
             double score = 0;
             for (Map.Entry<Integer, Long> e : readsPerNode.entrySet()) {
-                score += e.getValue() * getLogLikelihood(e.getKey(), type);
+                score += e.getValue() * getLogLift(e.getKey(), type);
             }
             if (score > bestScore) {
                 bestScore = score;
