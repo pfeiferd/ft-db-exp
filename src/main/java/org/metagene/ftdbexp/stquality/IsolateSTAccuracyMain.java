@@ -194,7 +194,16 @@ public class IsolateSTAccuracyMain {
                 }
             }
         });
-        matchGoal.make();
+        try {
+            matchGoal.make();
+        } finally {
+            // Shuts the shared thread pool down, which is what lets the virtual machine exit. Its
+            // threads are created with plain `new Thread', so they are not daemons and keep the
+            // process alive on their own once main() has returned: the run then prints its results,
+            // reports success and hangs, and under Maven it is the forked JVM that never ends. Only
+            // dumpAll() reaches ExecutionContext.dump() and hence executorService.shutdown().
+            maker.dumpAll();
+        }
         return new Classified(result, model);
     }
 
