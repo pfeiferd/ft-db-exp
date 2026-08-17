@@ -34,12 +34,18 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * isolates outside the database, and the question is the clinical one: does the classification name
  * the lineage the isolate belongs to?
  * <p>
- * Every node of the database is a predictor: the types in question at it are the ones its genomes
- * carry, and it predicts the most frequent of them. A read therefore always yields a prediction and
- * nothing has to be thresholded -- what would otherwise be a convention about how many reads make a
- * call becomes a plain count of how many reads were predicted right. See {@link IsolateSTCall} for
- * what follows from that, and why the per-read accuracy and the per-isolate call answer different
- * questions.
+ * The rule is the one Genestrip already classifies a read with, applied to a whole isolate: see
+ * {@link PathVoteSTModel}. It places the isolate at a node of the taxonomy, and the answer is the
+ * types that node still leaves in question -- one where the node holds a single lineage, several
+ * where it holds several. An answer of several is not a failure to answer but a weaker answer, and
+ * it is scored as one: {@code 1/n} where the isolate's own type is among the {@code n}, nothing
+ * where it is not, which is the paper's {@code p_st} applied to an isolate rather than to a k-mer.
+ * Placing an isolate at the species therefore earns almost nothing instead of counting as right.
+ * <p>
+ * The same rule is scored in three currencies -- one vote per read, per matched k-mer, and per
+ * distinct matched k-mer -- and against the majority call as a control. {@link NaiveBayesSTModel} is
+ * the weighted alternative and can be selected instead; it is not the default, since it answers a
+ * different question and lost the comparison it was built for.
  * <p>
  * Invoked directly:
  * <pre>
@@ -51,6 +57,29 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 public class IsolateSTAccuracyMain {
     private static final File BASE_DIR = new File("./data");
+    /** The rule Genestrip itself classifies a read with, applied to the isolate; the default. */
+    private static final String PATH = "path";
+    /** The weighted alternative. Kept because it is a different question, not because it is better. */
+    private static final String BAYES = "bayes";
+
+    /**
+     * Creates the requested rule.
+     *
+     * @param name        {@link #PATH} or {@link #BAYES}
+     * @param composition the counted database
+     * @return the classifier
+     * @throws IllegalArgumentException if the name is neither
+     */
+    private static STClassifier createClassifier(String name, STComposition composition) {
+        if (PATH.equals(name)) {
+            return new PathVoteSTModel(composition);
+        }
+        if (BAYES.equals(name)) {
+            return new NaiveBayesSTModel(composition);
+        }
+        throw new IllegalArgumentException("Not a classifier: '" + name + "'. Expected '" + PATH
+                + "' or '" + BAYES + "'.");
+    }
 
     /**
      * Runs the experiment.
@@ -66,6 +95,9 @@ public class IsolateSTAccuracyMain {
             System.err.println("                data/fastq/cdiff_isolates.txt");
             System.err.println("  <out csv>     where the per-isolate result is written");
             System.err.println("  ftdb|db       which database variant to classify against; default 'ftdb'");
+            System.err.println("  path|bayes    which rule to classify with; default 'path', the rule");
+            System.err.println("                Genestrip itself uses on a read, over the isolate's");
+            System.err.println("                pooled counts. 'bayes' is the weighted alternative.");
             System.err.println();
             System.err.println("The isolates' sequence types are read from <fastq map>.st.csv, i.e. the");
             System.err.println("map's path with '.st.csv' appended - see IsolateSTTruth for the format.");
@@ -75,6 +107,7 @@ public class IsolateSTAccuracyMain {
         File fqMap = new File(args[1]);
         File outCsv = new File(args[2]);
         boolean refined = args.length <= 3 || args[3].isEmpty() || "ftdb".equals(args[3]);
+        String classifier = args.length <= 4 || args[4].isEmpty() ? PATH : args[4].trim();
 
         if (!fqMap.exists()) {
             System.err.println("No such fastq map: " + fqMap.getAbsolutePath());
@@ -95,7 +128,7 @@ public class IsolateSTAccuracyMain {
             System.exit(1);
         }
 
-        Classified classified = classify(db, fqMap, refined, truth);
+        Classified classified = classify(db, fqMap, refined, truth, classifier);
         write(classified.calls, classified.model, outCsv, db, refined);
     }
 
@@ -110,7 +143,7 @@ public class IsolateSTAccuracyMain {
      * @throws IOException if the database or the reads cannot be read
      */
     private static Classified classify(String db, File fqMap, boolean refined,
-                                       IsolateSTTruth truth) throws IOException {
+                                       IsolateSTTruth truth, String classifier) throws IOException {
         FTProject project = new FTProject(new GSCommon(BASE_DIR), db, null, null, fqMap.getPath(),
                 null, null, null, null, null, null, false);
         project.initConfigParam(GSConfigKey.THREADS, -1);
@@ -127,9 +160,13 @@ public class IsolateSTAccuracyMain {
             throw new IOException("No such typing of the database's genomes: " + mlst.getAbsolutePath()
                     + ". Produce it with bin/" + db + "_eval.sh; without it no node predicts anything.");
         }
-        NaiveBayesSTModel model = new NaiveBayesSTModel(tree, new STGroundTruth(mlst));
-        System.out.println("Model over " + model.getTypes().size() + " sequence type(s) and "
-                + model.getCollectionTotal() + " genome(s).");
+        // Counted once, whichever rule is scored against it, so that two result files differ by the
+        // rule and never by two readings of the same database.
+        STComposition composition = new STComposition(tree, new STGroundTruth(mlst));
+        STClassifier model = createClassifier(classifier, composition);
+        System.out.println("Classifying with '" + model.getName() + "'.");
+        System.out.println("Model over " + composition.getTypes().size() + " sequence type(s) and "
+                + composition.getCollectionTotal() + " genome(s).");
 
         Map<String, IsolateSTCall> result = new LinkedHashMap<>();
         // One tally per matcher thread rather than one behind a lock: the callback runs for every
@@ -158,7 +195,7 @@ public class IsolateSTAccuracyMain {
                     tally.recordUnclassified();
                 } else {
                     int pos = node.getPosition();
-                    tally.recordClassified(pos, model.getMajorityST(pos), model.getCandidates(pos));
+                    tally.recordClassified(pos, composition.getMajorityST(pos), composition.getCandidates(pos));
                 }
             }
 
@@ -177,7 +214,7 @@ public class IsolateSTAccuracyMain {
                     }
                     int pos = node.getPosition();
                     merged.recordKMers(pos, e.getValue().getKMers(), e.getValue().getUniqueKMers(),
-                            model.getMajorityST(pos));
+                            composition.getMajorityST(pos));
                 }
                 for (IsolateSTCall threadTally : threadTallies) {
                     merged.add(threadTally);
@@ -210,9 +247,9 @@ public class IsolateSTAccuracyMain {
     /** The tallies and the model they are to be scored with. */
     private static final class Classified {
         private final Map<String, IsolateSTCall> calls;
-        private final NaiveBayesSTModel model;
+        private final STClassifier model;
 
-        Classified(Map<String, IsolateSTCall> calls, NaiveBayesSTModel model) {
+        Classified(Map<String, IsolateSTCall> calls, STClassifier model) {
             this.calls = calls;
             this.model = model;
         }
@@ -228,7 +265,7 @@ public class IsolateSTAccuracyMain {
      * @param refined whether the refined database was classified against
      * @throws IOException if the file cannot be written
      */
-    private static void write(Map<String, IsolateSTCall> calls, NaiveBayesSTModel model, File outCsv,
+    private static void write(Map<String, IsolateSTCall> calls, STClassifier model, File outCsv,
                               String db, boolean refined) throws IOException {
         File parent = outCsv.getParentFile();
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
@@ -245,15 +282,40 @@ public class IsolateSTAccuracyMain {
         long kMersMatched = 0;
         long readsCorrect = 0;
         long readsClassified = 0;
+        double readPrecSum = 0;
+        double kmerPrecSum = 0;
+        double uniquePrecSum = 0;
         try (PrintStream out = new PrintStream(outCsv)) {
-            out.println("db;variant;isolate;true st;bayes st;bayes verdict;kmer st;kmer verdict;"
-                    + "unique kmer st;unique kmer verdict;majority st;majority verdict;majority share;"
+            // The rule's own name in the header, so that two result files scored under different
+            // rules cannot be mistaken for one another.
+            String n = model.getName();
+            out.println("db;variant;isolate;true st;"
+                    + n + " read st;" + n + " read cand;" + n + " read prec;"
+                    + n + " kmer st;" + n + " kmer cand;" + n + " kmer prec;"
+                    + n + " unique st;" + n + " unique cand;" + n + " unique prec;"
+                    + "majority st;majority verdict;majority share;"
                     + "read accuracy;kmer accuracy;unique kmer accuracy;mean candidates;reads;"
                     + "classified;correct reads;matched kmers;matched unique kmers;");
             for (IsolateSTCall call : calls.values()) {
+                // The same rule in all three currencies: one vote per read, one per matched k-mer,
+                // one per distinct matched k-mer.
                 String bayes = model.classify(call.getReadsPerNode());
                 String kmer = model.classify(call.getKMersPerNode());
                 String uniqueKmer = model.classify(call.getUniqueKMersPerNode());
+                int readCand = model.getCandidates(call.getReadsPerNode());
+                int kmerCand = model.getCandidates(call.getKMersPerNode());
+                int uniqueCand = model.getCandidates(call.getUniqueKMersPerNode());
+                // An answer leaving n types in question earns 1/n where the isolate's own type is
+                // among them and nothing where it is not -- the paper's p_st, applied to an isolate
+                // instead of to a k-mer. Naming every type of the database is therefore not a way of
+                // always being right.
+                boolean scored = call.getTrueST() != null;
+                double readPrec = scored ? model.getPrecision(call.getReadsPerNode(), call.getTrueST()) : 0;
+                double kmerPrec = scored ? model.getPrecision(call.getKMersPerNode(), call.getTrueST()) : 0;
+                double uniquePrec = scored ? model.getPrecision(call.getUniqueKMersPerNode(), call.getTrueST()) : 0;
+                readPrecSum += readPrec;
+                kmerPrecSum += kmerPrec;
+                uniquePrecSum += uniquePrec;
                 IsolateSTCall.Verdict verdict = call.getVerdict(bayes);
                 IsolateSTCall.Verdict kmerVerdict = call.getVerdict(kmer);
                 IsolateSTCall.Verdict uniqueVerdict = call.getVerdict(uniqueKmer);
@@ -291,15 +353,21 @@ public class IsolateSTAccuracyMain {
                 out.print(';');
                 out.print(bayes == null ? "" : bayes);
                 out.print(';');
-                out.print(verdict);
+                out.print(readCand);
+                out.print(';');
+                out.printf("%.6f", readPrec);
                 out.print(';');
                 out.print(kmer == null ? "" : kmer);
                 out.print(';');
-                out.print(kmerVerdict);
+                out.print(kmerCand);
+                out.print(';');
+                out.printf("%.6f", kmerPrec);
                 out.print(';');
                 out.print(uniqueKmer == null ? "" : uniqueKmer);
                 out.print(';');
-                out.print(uniqueVerdict);
+                out.print(uniqueCand);
+                out.print(';');
+                out.printf("%.6f", uniquePrec);
                 out.print(';');
                 out.print(call.getCalledST() == null ? "" : call.getCalledST());
                 out.print(';');
@@ -333,7 +401,7 @@ public class IsolateSTAccuracyMain {
         System.out.println("  isolates typed          : " + typed
                 + (untyped > 0 ? " (" + untyped + " untyped, not scored)" : ""));
         System.out.println("  correct / wrong / none  : " + correct + " / " + wrong + " / " + noCall);
-        System.out.printf("  isolate accuracy (Bayes): %.4f%n",
+        System.out.printf("  isolate accuracy (reads) : %.4f%n",
                 typed == 0 ? Double.NaN : ((double) correct) / typed);
         System.out.printf("  isolate accuracy (k-mer): %.4f%n",
                 typed == 0 ? Double.NaN : ((double) kmerCorrect) / typed);
@@ -341,6 +409,12 @@ public class IsolateSTAccuracyMain {
                 typed == 0 ? Double.NaN : ((double) uniqueCorrect) / typed);
         System.out.printf("  isolate accuracy (major): %.4f%n",
                 typed == 0 ? Double.NaN : ((double) majorityCorrect) / typed);
+        System.out.println();
+        System.out.printf("  isolate precision, reads : %.4f%n", typed == 0 ? Double.NaN : readPrecSum / typed);
+        System.out.printf("  isolate precision, kmers : %.4f%n", typed == 0 ? Double.NaN : kmerPrecSum / typed);
+        System.out.printf("  isolate precision, uniq  : %.4f%n", typed == 0 ? Double.NaN : uniquePrecSum / typed);
+        System.out.println("  Precision credits an answer leaving n types in question with 1/n when the");
+        System.out.println("  isolate's own type is among them, and with nothing when it is not.");
         System.out.printf("  read accuracy (pooled)  : %.4f  over %,d classified read(s)%n",
                 readsClassified == 0 ? Double.NaN : ((double) readsCorrect) / readsClassified,
                 readsClassified);

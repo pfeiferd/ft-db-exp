@@ -38,6 +38,12 @@
 		<gs.isolate.map>data/fastq/${name}_isolates.txt</gs.isolate.map>
 		<gs.isolate.out>results/${name}_isolate_st.csv</gs.isolate.out>
 		<gs.isolate.variant>ftdb</gs.isolate.variant>
+		<!-- Which rule the isolates are classified with. `path' is the rule Genestrip itself applies to
+		     a read - every node that received something is a candidate, the candidate whose root path
+		     carries the most wins, ties resolve to their lowest common ancestor - only over the counts
+		     pooled across a whole isolate. `bayes' is the weighted alternative; it is kept but not run,
+		     since it answers a different question and lost the comparison it was built for. -->
+		<gs.isolate.classifier>path</gs.isolate.classifier>
 		<!-- The linkage methods `linkagesweep' rebuilds under, comma separated and all in one
 		     process, so that the k-mer index and the pairwise intersection counts are paid for once.
 		     Override with e.g. -Dgs.linkage=UPGMA to take a single one. The unrefined baseline does
@@ -223,6 +229,7 @@
 								<argument>${gs.isolate.map}</argument>
 								<argument>${gs.isolate.out}</argument>
 								<argument>${gs.isolate.variant}</argument>
+								<argument>${gs.isolate.classifier}</argument>
 							</arguments>
 						</configuration>
 					</execution>

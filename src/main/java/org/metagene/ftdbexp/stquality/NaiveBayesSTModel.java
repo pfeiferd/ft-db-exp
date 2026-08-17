@@ -65,60 +65,27 @@ import java.util.Map;
  * uses: the type with the highest score is the one the reads point at, and that is the decision
  * being scored.
  */
-public class NaiveBayesSTModel {
+public class NaiveBayesSTModel extends STClassifier {
     /**
      * The class of a genome the typing scheme does not cover: the paper's star in
-     * {@code S' = S union {star}}.
-     * <p>
-     * Written {@code *} and not {@code -}, which is what {@code mlst} writes in its input and what
-     * {@link STGroundTruth} recognises there. The two are deliberately different symbols: one is an
-     * absence in a data file, the other a class the model predicts and may call an isolate for, and
-     * a reader of the output should be able to tell a lineage the classifier settled on from a
-     * field nobody filled in.
-     * <p>
-     * A genome without a sequence type is not a genome without a lineage. The seven-locus scheme
-     * fails on the cryptic clades of C. difficile outright, and a novel allele combination
-     * yields no type until PubMLST issues one; a broken assembly yields none either, for a reason
-     * that has nothing to do with the organism. Left out of the model, all of them would silently
-     * inflate the confidence of whatever types remain -- a node holding ten typed and ten untyped
-     * genomes would speak for the typed ones as though nothing else sat below it. Carried as a class,
-     * the untyped genomes compete for the node like any other, and the classifier may call an isolate
-     * untyped, which for this organism is the informative answer that it looks like nothing the
-     * scheme covers.
-     * <p>
-     * The two reasons for being untyped need not be told apart beforehand. Where untyped genomes
-     * scatter, as a broken assembly does, the class is spread as thinly as the collection is and
-     * cannot move a decision; where they cluster, as a cryptic clade does, it moves one exactly as
-     * much as the clustering warrants.
+     * {@code S' = S union {star}}. The same constant as {@link STComposition#STAR}, named here as
+     * well because the model's own documentation and the paper both speak of it.
      */
-    public static final String STAR = "*";
+    public static final String STAR = STComposition.STAR;
 
-    /** The classes, i.e. the types of the collection followed by {@link #STAR}. */
-    private final List<String> types;
-    /** Per node position, the number of genomes of each type below it; {@code null} where none. */
-    private final Map<Integer, Map<String, Integer>> countsByPos = new HashMap<>();
-    /** Per node position, the type most of its genomes carry. */
-    private final Map<Integer, String> majorityByPos = new HashMap<>();
-    /** Per node position, how many types are in question there. */
-    private final Map<Integer, Integer> candidatesByPos = new HashMap<>();
-    /** Genomes of each type in the whole collection, i.e. {@code g(s)}. */
-    private final Map<String, Integer> collectionCounts = new LinkedHashMap<>();
-    /** Genomes in the whole collection, i.e. {@code g}. */
-    private int collectionTotal;
     /**
-     * One pseudo-genome, spread evenly over the classes, added to every count before a share is
-     * taken of it -- Lidstone smoothing with {@code SMOOTHING / |S'|} per class rather than the
-     * textbook one per class.
+     * One pseudo-genome, spread evenly over the classes, added to every count before a share is taken
+     * of it -- Lidstone smoothing with {@code SMOOTHING / |S'|} per class rather than the textbook one
+     * per class.
      * <p>
-     * The size matters and one per class is far too much. A node holding 35 genomes would then
-     * receive 58 imaginary ones, which outweigh what is actually there: a class the node does not
-     * hold at all comes out above its own baseline, so a read landing there is counted as evidence
-     * FOR a lineage that is absent. With one pseudo-genome in total the same read tells against it
-     * by 1.84 nats, and with a hundredth of one by 4.61 -- the latter being more confidence than
-     * this data supports, since a single read misplaced by a false positive of the k-mer index would
-     * then all but rule the true lineage out. What the value cannot affect is the neutrality of an
-     * all-covering node, which holds for every {@code SMOOTHING} because the baseline is that node's
-     * own estimate.
+     * The size matters and one per class is far too much. A node holding 35 genomes would then receive
+     * 58 imaginary ones, which outweigh what is actually there: a class the node does not hold at all
+     * comes out above its own baseline, so a read landing there is counted as evidence FOR a lineage
+     * that is absent. With one pseudo-genome in total the same read tells against it by 1.84 nats, and
+     * with a hundredth of one by 4.61 -- the latter being more confidence than this data supports,
+     * since a single read misplaced by a false positive of the k-mer index would then all but rule the
+     * true lineage out. What the value cannot affect is the neutrality of an all-covering node, which
+     * holds for every {@code SMOOTHING} because the baseline is that node's own estimate.
      */
     private static final double SMOOTHING = 1.0;
 
@@ -129,96 +96,22 @@ public class NaiveBayesSTModel {
      * @param genomeTypes the type of every genome the database was filled from
      */
     public NaiveBayesSTModel(SmallTaxTree tree, STGroundTruth genomeTypes) {
-        // One post-order pass: a node's counts are the sum of its children's, a leaf contributes its
-        // own genome. Iterative because a refined subtree is routinely hundreds of levels deep, which
-        // is the very shape this model is built to evaluate.
-        Deque<SmallTaxTree.SmallTaxIdNode> order = new ArrayDeque<>();
-        Deque<SmallTaxTree.SmallTaxIdNode> stack = new ArrayDeque<>();
-        for (SmallTaxTree.SmallTaxIdNode node : tree) {
-            if (node.getParent() == null) {
-                stack.push(node);
-            }
-        }
-        while (!stack.isEmpty()) {
-            SmallTaxTree.SmallTaxIdNode node = stack.pop();
-            order.push(node);
-            SmallTaxTree.SmallTaxIdNode[] subNodes = node.getSubNodes();
-            if (subNodes != null) {
-                for (SmallTaxTree.SmallTaxIdNode sub : subNodes) {
-                    stack.push(sub);
-                }
-            }
-        }
-        while (!order.isEmpty()) {
-            SmallTaxTree.SmallTaxIdNode node = order.pop();
-            Map<String, Integer> own = new LinkedHashMap<>();
-            SmallTaxTree.SmallTaxIdNode[] subNodes = node.getSubNodes();
-            if (subNodes == null || subNodes.length == 0) {
-                // Every leaf counts, typed or not: a leaf left out would be evidence quietly removed
-                // from the denominator rather than evidence absent.
-                int index = genomeTypes.getSTIndex(node.getName());
-                own.put(index < 0 ? STAR : genomeTypes.getSTName(index), 1);
-            } else {
-                for (SmallTaxTree.SmallTaxIdNode sub : subNodes) {
-                    Map<String, Integer> subCounts = countsByPos.get(sub.getPosition());
-                    if (subCounts != null) {
-                        for (Map.Entry<String, Integer> e : subCounts.entrySet()) {
-                            own.merge(e.getKey(), e.getValue(), Integer::sum);
-                        }
-                    }
-                }
-            }
-            if (own.isEmpty()) {
-                continue;
-            }
-            countsByPos.put(node.getPosition(), own);
-            candidatesByPos.put(node.getPosition(), own.size());
-            String majority = null;
-            int best = -1;
-            for (Map.Entry<String, Integer> e : own.entrySet()) {
-                if (e.getValue() > best) {
-                    majority = e.getKey();
-                    best = e.getValue();
-                }
-            }
-            majorityByPos.put(node.getPosition(), majority);
-            // The root of the requested subtree carries every genome exactly once, so g(s) is read
-            // off the largest node rather than counted separately.
-            int total = 0;
-            for (int v : own.values()) {
-                total += v;
-            }
-            if (total > collectionTotal) {
-                collectionTotal = total;
-                collectionCounts.clear();
-                collectionCounts.putAll(own);
-            }
-        }
+        this(new STComposition(tree, genomeTypes));
+    }
 
-        // The classes are those the database actually holds a genome of, read off the collection and
-        // not off the typing file. The file types every genome the wider collection knows of -- for
-        // cdiff 196 sequence types against the 58 that were built into this database -- and a class
-        // with no genome here is not a class this model can weigh. It has no distribution to estimate,
-        // so whatever convention were chosen for it would decide rather than describe: that is how
-        // the untyped class came to win every isolate before, being the one class no node could
-        // speak against. STAR is therefore a class here exactly when some genome of the database
-        // carries no type, and in cdiff it does not.
-        List<String> classes = new ArrayList<>();
-        for (String name : genomeTypes.getSTNames()) {
-            if (collectionCounts.containsKey(name)) {
-                classes.add(name);
-            }
-        }
-        if (collectionCounts.containsKey(STAR)) {
-            classes.add(STAR);
-        }
-        if (classes.isEmpty()) {
-            throw new IllegalStateException("The database holds no genome of any class the typing"
-                    + " knows of, so there is nothing to predict. Most likely the typing keys its rows"
-                    + " differently from the way the database names its file nodes, in which case every"
-                    + " genome looks untyped and even the untyped class stays empty.");
-        }
-        this.types = classes;
+    /**
+     * Builds the model over a composition that has already been counted, so that several classifiers
+     * scored against each other weigh the same database rather than two readings of it.
+     *
+     * @param composition the type composition of the database's nodes
+     */
+    public NaiveBayesSTModel(STComposition composition) {
+        super(composition);
+    }
+
+    @Override
+    public String getName() {
+        return "bayes";
     }
 
     /**
@@ -229,7 +122,7 @@ public class NaiveBayesSTModel {
      * @return the majority type, or {@code null} if no typed genome sits below the node
      */
     public String getMajorityST(int nodePos) {
-        return majorityByPos.get(nodePos);
+        return composition.getMajorityST(nodePos);
     }
 
     /**
@@ -239,8 +132,7 @@ public class NaiveBayesSTModel {
      * @return the number of candidate types, or 0 if none
      */
     public int getCandidates(int nodePos) {
-        Integer c = candidatesByPos.get(nodePos);
-        return c == null ? 0 : c;
+        return composition.getCandidates(nodePos);
     }
 
     /**
@@ -252,20 +144,14 @@ public class NaiveBayesSTModel {
      * @return the log likelihood, always negative since it is a probability over the nodes
      */
     public double getLogLift(int nodePos, String type) {
-        Map<String, Integer> counts = countsByPos.get(nodePos);
-        if (counts == null) {
-            return 0;
-        }
-        int below = 0;
-        for (int v : counts.values()) {
-            below += v;
-        }
+        int below = composition.getCount(nodePos);
         if (below == 0) {
             return 0;
         }
-        double alpha = SMOOTHING / types.size();
-        double atNode = (counts.getOrDefault(type, 0) + alpha) / (below + SMOOTHING);
-        double inCollection = (collectionCounts.getOrDefault(type, 0) + alpha) / (collectionTotal + SMOOTHING);
+        double alpha = SMOOTHING / composition.getTypes().size();
+        double atNode = (composition.getCount(nodePos, type) + alpha) / (below + SMOOTHING);
+        double inCollection = (composition.getCollectionCount(type) + alpha)
+                / (composition.getCollectionTotal() + SMOOTHING);
         return Math.log(atNode / inCollection);
     }
 
@@ -275,13 +161,14 @@ public class NaiveBayesSTModel {
      * @param readsPerNode how many reads landed at each node, by dense node position
      * @return the type with the highest score, or {@code null} if no read carried information
      */
+    @Override
     public String classify(Map<Integer, Long> readsPerNode) {
         if (readsPerNode.isEmpty()) {
             return null;
         }
         String best = null;
         double bestScore = Double.NEGATIVE_INFINITY;
-        for (String type : types) {
+        for (String type : composition.getTypes()) {
             // The leading P(s), taken uniform over the classes and hence a constant that is omitted:
             // it cannot change which class wins. The prior belonging here is the one over the
             // ISOLATE's class, and the reference collection is the wrong population to read it from
@@ -307,7 +194,7 @@ public class NaiveBayesSTModel {
      * @return the number of genomes in the collection
      */
     public int getCollectionTotal() {
-        return collectionTotal;
+        return composition.getCollectionTotal();
     }
 
     /**
@@ -316,6 +203,6 @@ public class NaiveBayesSTModel {
      * @return the sequence types of the collection
      */
     public List<String> getTypes() {
-        return types;
+        return composition.getTypes();
     }
 }
