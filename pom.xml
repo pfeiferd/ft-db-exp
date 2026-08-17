@@ -26,29 +26,6 @@
 		     experiment of the paper runs with the same thread count. Pin it to reproduce a
 		     specific run, e.g. -Dgs.threads=19 . -->
 		<gs.threads>-1</gs.threads>
-		<!-- The typing that the `stquality' execution measures against, and which of the two
-		     database variants to measure. Defaulted so that -Dname=cdiff alone does the usual
-		     thing; override with -Dgs.st.csv=... / -Dgs.st.which=db|ftdb . -->
-		<gs.st.csv>results/${name}_mlst.csv</gs.st.csv>
-		<gs.st.which>both</gs.st.which>
-		<!-- The held-out classification of `isolatest': which fastq map of isolates to classify,
-		     where the per-isolate result goes, and which database variant to classify against.
-		     Defaulted so that -Dname=cdiff alone does the usual thing. The isolates' sequence types
-		     are read from the map's path with '.st.csv' appended; see IsolateSTTruth. -->
-		<gs.isolate.map>data/fastq/${name}_isolates.txt</gs.isolate.map>
-		<gs.isolate.out>results/${name}_isolate_st.csv</gs.isolate.out>
-		<gs.isolate.variant>ftdb</gs.isolate.variant>
-		<!-- Which rule the isolates are classified with. `path' is the rule Genestrip itself applies to
-		     a read - every node that received something is a candidate, the candidate whose root path
-		     carries the most wins, ties resolve to their lowest common ancestor - only over the counts
-		     pooled across a whole isolate. `bayes' is the weighted alternative; it is kept but not run,
-		     since it answers a different question and lost the comparison it was built for. -->
-		<gs.isolate.classifier>path</gs.isolate.classifier>
-		<!-- The linkage methods `linkagesweep' rebuilds under, comma separated and all in one
-		     process, so that the k-mer index and the pairwise intersection counts are paid for once.
-		     Override with e.g. -Dgs.linkage=UPGMA to take a single one. The unrefined baseline does
-		     not depend on the linkage and is NOT part of the sweep; take it with `stquality'. -->
-		<gs.linkage>SINGLE_LINKAGE,UPGMA,COMPLETE_LINKAGE</gs.linkage>
 		<!-- Generation target of the `match' execution. The performance measurement sets
 		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
 		     finding its result files already in place and reporting a runtime of zero. -->
@@ -174,92 +151,6 @@
 								<argument>${gs.target}</argument>
 								<argument>-C</argument>
 								<argument>threads=${gs.threads}</argument>
-							</arguments>
-						</configuration>
-					</execution>
-					<execution>
-						<!-- Intrinsic database quality at the sequence type level, for a database
-						     refined below the species rank. It needs an external typing of the
-						     genomes, which is what `stcsv' points at; bin/cdiff_eval.sh produces it.
-						     Both database variants are measured unless `stwhich' says otherwise. -->
-						<id>stquality</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<configuration>
-							<executable>java</executable>
-							<includeProjectDependencies>true</includeProjectDependencies>
-							<includePluginDependencies>true</includePluginDependencies>
-							<arguments>
-								<argument>-Xmx${gs.xmx}</argument>
-								<argument>-classpath</argument>
-								<classpath />
-								<argument>org.metagene.ftdbexp.stquality.STQualityMain</argument>
-								<argument>${gs.project.name}</argument>
-								<argument>${gs.st.csv}</argument>
-								<argument>${gs.st.which}</argument>
-							</arguments>
-						</configuration>
-					</execution>
-					<execution>
-						<!-- Classifies the reads of isolates the database was NOT built from and asks
-						     whether the classification names the lineage each isolate belongs to. The
-						     held-out counterpart of `stquality', which re-reads the database's own
-						     genomes and therefore cannot answer that. Every node of the database acts
-						     as a predictor of sequence type and the isolate is called by naive Bayes
-						     over its reads; the plain majority call is reported beside it, and their
-						     difference is what weighting a read by what its node adds over the prior
-						     is worth. Run it for both variants, since what the refinement is worth is
-						     the difference between them: -Dgs.isolate.variant=db writes the unrefined
-						     comparison. -->
-						<id>isolatest</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<configuration>
-							<executable>java</executable>
-							<includeProjectDependencies>true</includeProjectDependencies>
-							<includePluginDependencies>true</includePluginDependencies>
-							<arguments>
-								<argument>-Xmx${gs.xmx}</argument>
-								<argument>-classpath</argument>
-								<classpath />
-								<argument>org.metagene.ftdbexp.stquality.IsolateSTAccuracyMain</argument>
-								<argument>${gs.project.name}</argument>
-								<argument>${gs.isolate.map}</argument>
-								<argument>${gs.isolate.out}</argument>
-								<argument>${gs.isolate.variant}</argument>
-								<argument>${gs.isolate.classifier}</argument>
-							</arguments>
-						</configuration>
-					</execution>
-					<execution>
-						<!-- Rebuilds the refined database under each linkage of ${gs.linkage} and
-						     files the results as results/<db>_ftstquality_<linkage>.csv. All of them
-						     in one process: the k-mer index of `kmerindexbloom' and the pairwise
-						     intersection counts are built from the genomes once and every further
-						     linkage only re-cuts the dendrogram, so the sweep costs one pass over the
-						     genomes rather than three. A linkage that fails does not stop the others
-						     and the exit status reports it. The unrefined baseline is
-						     linkage-independent; take it once with `stquality'. Do NOT reach for
-						     `clean'/`cleanall': the former reaches only the internal goal a request is
-						     aggregated into, the latter takes the unrefined database with it. -->
-						<id>linkagesweep</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<configuration>
-							<executable>java</executable>
-							<includeProjectDependencies>true</includeProjectDependencies>
-							<includePluginDependencies>true</includePluginDependencies>
-							<arguments>
-								<argument>-Xmx${gs.xmx}</argument>
-								<argument>-classpath</argument>
-								<classpath />
-								<argument>org.metagene.ftdbexp.stquality.LinkageSweepMain</argument>
-								<argument>${gs.project.name}</argument>
-								<argument>${gs.st.csv}</argument>
-								<argument>${gs.linkage}</argument>
 							</arguments>
 						</configuration>
 					</execution>

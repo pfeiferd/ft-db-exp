@@ -4,8 +4,8 @@
 # the paper reads.
 #
 #   sh ./bin/run_exps.sh                 # everything
-#   sh ./bin/run_exps.sh cdiff           # only that project
-#   sh ./bin/run_exps.sh cdiff vineyard  # only those
+#   sh ./bin/run_exps.sh vineyard          # only that project
+#   sh ./bin/run_exps.sh vineyard viral     # only those
 #
 # Naming projects restricts every per-project step to them and skips the steps that belong to other
 # projects - the Orthopox figures of the Methods section and the rank statistics of the Introduction.
@@ -27,7 +27,7 @@ if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  projects="viral tick-borne protozoa gut-protozoa parasites vineyard cdiff"
+  projects="viral tick-borne protozoa gut-protozoa parasites vineyard"
   restricted=""
 fi
 

@@ -24,7 +24,7 @@ csv=${res_path}/db_disk_sizes.csv
 if [ $# -gt 0 ]; then
     projects="$@"
 else
-    projects="viral tick-borne protozoa parasites vineyard cdiff"
+    projects="viral tick-borne protozoa parasites vineyard"
 fi
 
 # Echoes the path of the database artifact of project $1 for the goal $2 ("db" or
