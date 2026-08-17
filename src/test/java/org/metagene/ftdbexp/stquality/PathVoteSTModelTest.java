@@ -2,6 +2,7 @@ package org.metagene.ftdbexp.stquality;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
@@ -131,6 +132,74 @@ public class PathVoteSTModelTest {
         assertEquals(b.dataNode(), m.classifyNode(c, PathVoteSTModel.NO_MINIMUM).getPosition());
         assertEquals(4, m.getCandidates(c));
         assertEquals(0.25, m.getPrecision(c, "11"), 1e-9);
+    }
+
+    @Test
+    public void theInformationGainIsZeroWhereNothingWasNarrowed() throws IOException {
+        // Placing the isolate at the node above every genome tells it nothing it did not know, and
+        // that is what the gain has to say -- whatever the node's type count is and however frequent
+        // the isolate's own type happens to be in the collection.
+        STModelFixture.Built b = fixture.build(
+                fixture.leaves("a.fna", "11", "b.fna", "11", "c.fna", "11"),
+                fixture.leaves("d.fna", "2", "e.fna", "3"));
+        Map<Integer, Long> c = counts(b.dataNode(), 1000L);
+        PathVoteSTModel m = model(b);
+        assertEquals(0.0, m.getInformationGain(c, "11"), 1e-9);
+        assertEquals(0.0, m.getInformationGain(c, "3"), 1e-9);
+    }
+
+    /**
+     * A collection of 26 genomes over six types, so that no single lineage is most of it. The gain is
+     * measured against what the collection already made likely, so a fixture in which the true type
+     * is already the majority has almost nothing to give and would say nothing about the measure.
+     */
+    private STModelFixture.Built wideCollection() throws IOException {
+        return fixture.build(
+                fixture.leaves("a.fna", "11", "b.fna", "11", "c.fna", "11", "d.fna", "11",
+                               "e.fna", "11", "f.fna", "2"),
+                fixture.leaves("g.fna", "3", "h.fna", "3", "i.fna", "3", "j.fna", "3", "k.fna", "3"),
+                fixture.leaves("l.fna", "5", "m.fna", "5", "n.fna", "5", "o.fna", "5", "p.fna", "5"),
+                fixture.leaves("q.fna", "7", "r.fna", "7", "s.fna", "7", "t.fna", "7", "u.fna", "7"),
+                fixture.leaves("v.fna", "8", "w.fna", "8", "x.fna", "8", "y.fna", "8", "z.fna", "8"));
+    }
+
+    @Test
+    public void pinningTheLineageEarnsNearlyAll() throws IOException {
+        // A node holding one lineage and nothing else is close to a complete answer but not quite
+        // one: the smoothing keeps five genomes from proving a lineage outright, and the gain says so
+        // rather than rounding it up. It approaches one as the node's genomes outweigh the smoothing.
+        STModelFixture.Built b = wideCollection();
+        PathVoteSTModel m = model(b);
+        double gain = m.getInformationGain(counts(b.group(1), 10L), "3");
+        assertTrue("a pure node must score near a complete answer: " + gain, gain > 0.9);
+        assertEquals(1.0, m.getPrecision(counts(b.group(1), 10L), "3"), 1e-9);
+    }
+
+    @Test
+    public void aLopsidedNodeIsNotReadAsACoinToss() throws IOException {
+        // Five genomes of one lineage and one of another. The credit 1/n calls that a coin toss at
+        // 0.5; the gain reads what the node actually says and puts it near a complete answer. That
+        // difference is the reason the gain exists.
+        STModelFixture.Built b = wideCollection();
+        Map<Integer, Long> c = counts(b.group(0), 10L);
+        PathVoteSTModel m = model(b);
+        assertEquals(2, m.getCandidates(c));
+        assertEquals(0.5, m.getPrecision(c, "11"), 1e-9);
+        double gain = m.getInformationGain(c, "11");
+        assertTrue("the lopsided node must score far above a coin toss: " + gain, gain > 0.8);
+        // And the one genome of the other lineage is not thereby ruled out, only made a poor answer.
+        assertTrue(m.getInformationGain(c, "2") < 0.5);
+    }
+
+    @Test
+    public void narrowingTowardsTheWrongLineageEarnsNothing() throws IOException {
+        STModelFixture.Built b = fixture.build(fixture.leaves("a.fna", "11", "b.fna", "11"),
+                                               fixture.leaves("c.fna", "2", "d.fna", "2"));
+        Map<Integer, Long> c = counts(b.group(1), 10L);
+        PathVoteSTModel m = model(b);
+        assertEquals(0.0, m.getInformationGain(c, "11"), 1e-9);
+        assertEquals(false, m.isHit(c, "11"));
+        assertEquals(true, m.isHit(c, "2"));
     }
 
     @Test

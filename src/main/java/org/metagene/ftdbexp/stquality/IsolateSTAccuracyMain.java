@@ -61,6 +61,23 @@ public class IsolateSTAccuracyMain {
     private static final String PATH = "path";
     /** The weighted alternative. Kept because it is a different question, not because it is better. */
     private static final String BAYES = "bayes";
+    /** The currencies a rule is scored in, in the order their columns are written. */
+    private static final String[] CURRENCIES = { "read", "kmer", "unique" };
+
+    /**
+     * Returns one isolate's counts in the currency of the given column.
+     *
+     * @param call  the isolate's tally
+     * @param index the index into {@link #CURRENCIES}
+     * @return the counts by dense node position
+     */
+    private static Map<Integer, Long> currency(IsolateSTCall call, int index) {
+        switch (index) {
+            case 0: return call.getReadsPerNode();
+            case 1: return call.getKMersPerNode();
+            default: return call.getUniqueKMersPerNode();
+        }
+    }
 
     /**
      * Creates the requested rule.
@@ -271,77 +288,49 @@ public class IsolateSTAccuracyMain {
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
             throw new IOException("Cannot create " + parent.getAbsolutePath());
         }
-        int correct = 0;
-        int wrong = 0;
-        int noCall = 0;
+        int typed = 0;
         int untyped = 0;
         int majorityCorrect = 0;
-        int kmerCorrect = 0;
-        int uniqueCorrect = 0;
         long kMersCorrect = 0;
         long kMersMatched = 0;
         long readsCorrect = 0;
         long readsClassified = 0;
-        double readPrecSum = 0;
-        double kmerPrecSum = 0;
-        double uniquePrecSum = 0;
+        // One accumulator per currency, in the order the columns are written.
+        double[] precSum = new double[CURRENCIES.length];
+        double[] gainSum = new double[CURRENCIES.length];
+        double[] sizeSum = new double[CURRENCIES.length];
+        int[] hits = new int[CURRENCIES.length];
+        int[] exact = new int[CURRENCIES.length];
         try (PrintStream out = new PrintStream(outCsv)) {
             // The rule's own name in the header, so that two result files scored under different
             // rules cannot be mistaken for one another.
             String n = model.getName();
-            out.println("db;variant;isolate;true st;"
-                    + n + " read st;" + n + " read cand;" + n + " read prec;"
-                    + n + " kmer st;" + n + " kmer cand;" + n + " kmer prec;"
-                    + n + " unique st;" + n + " unique cand;" + n + " unique prec;"
-                    + "majority st;majority verdict;majority share;"
-                    + "read accuracy;kmer accuracy;unique kmer accuracy;mean candidates;reads;"
-                    + "classified;correct reads;matched kmers;matched unique kmers;");
+            StringBuilder header = new StringBuilder("db;variant;isolate;true st;");
+            for (String currency : CURRENCIES) {
+                header.append(n).append(' ').append(currency).append(" st;")
+                        .append(n).append(' ').append(currency).append(" cand;")
+                        .append(n).append(' ').append(currency).append(" hit;")
+                        .append(n).append(' ').append(currency).append(" prec;")
+                        .append(n).append(' ').append(currency).append(" gain;");
+            }
+            header.append("majority st;majority verdict;majority share;")
+                    .append("read accuracy;kmer accuracy;unique kmer accuracy;mean candidates;reads;")
+                    .append("classified;correct reads;matched kmers;matched unique kmers;");
+            out.println(header);
             for (IsolateSTCall call : calls.values()) {
-                // The same rule in all three currencies: one vote per read, one per matched k-mer,
-                // one per distinct matched k-mer.
-                String bayes = model.classify(call.getReadsPerNode());
-                String kmer = model.classify(call.getKMersPerNode());
-                String uniqueKmer = model.classify(call.getUniqueKMersPerNode());
-                int readCand = model.getCandidates(call.getReadsPerNode());
-                int kmerCand = model.getCandidates(call.getKMersPerNode());
-                int uniqueCand = model.getCandidates(call.getUniqueKMersPerNode());
-                // An answer leaving n types in question earns 1/n where the isolate's own type is
-                // among them and nothing where it is not -- the paper's p_st, applied to an isolate
-                // instead of to a k-mer. Naming every type of the database is therefore not a way of
-                // always being right.
-                boolean scored = call.getTrueST() != null;
-                double readPrec = scored ? model.getPrecision(call.getReadsPerNode(), call.getTrueST()) : 0;
-                double kmerPrec = scored ? model.getPrecision(call.getKMersPerNode(), call.getTrueST()) : 0;
-                double uniquePrec = scored ? model.getPrecision(call.getUniqueKMersPerNode(), call.getTrueST()) : 0;
-                readPrecSum += readPrec;
-                kmerPrecSum += kmerPrec;
-                uniquePrecSum += uniquePrec;
-                IsolateSTCall.Verdict verdict = call.getVerdict(bayes);
-                IsolateSTCall.Verdict kmerVerdict = call.getVerdict(kmer);
-                IsolateSTCall.Verdict uniqueVerdict = call.getVerdict(uniqueKmer);
-                IsolateSTCall.Verdict majority = call.getMajorityVerdict();
-                switch (verdict) {
-                    case CORRECT: correct++; break;
-                    case WRONG: wrong++; break;
-                    case NO_CALL: noCall++; break;
-                    default: untyped++; break;
-                }
-                if (majority == IsolateSTCall.Verdict.CORRECT) {
-                    majorityCorrect++;
-                }
-                if (kmerVerdict == IsolateSTCall.Verdict.CORRECT) {
-                    kmerCorrect++;
-                }
-                if (uniqueVerdict == IsolateSTCall.Verdict.CORRECT) {
-                    uniqueCorrect++;
-                }
-                if (kmerVerdict != IsolateSTCall.Verdict.NOT_SCORED) {
+                String trueST = call.getTrueST();
+                if (trueST == null) {
+                    untyped++;
+                } else {
+                    typed++;
                     kMersCorrect += Math.round(call.getKMerAccuracy() * call.getMatchedKMers());
                     kMersMatched += call.getMatchedKMers();
-                }
-                if (verdict != IsolateSTCall.Verdict.NOT_SCORED) {
                     readsCorrect += call.getCorrectReads();
                     readsClassified += call.getClassified();
+                }
+                IsolateSTCall.Verdict majority = call.getMajorityVerdict();
+                if (majority == IsolateSTCall.Verdict.CORRECT) {
+                    majorityCorrect++;
                 }
                 out.print(db);
                 out.print(';');
@@ -349,26 +338,39 @@ public class IsolateSTAccuracyMain {
                 out.print(';');
                 out.print(call.getKey());
                 out.print(';');
-                out.print(call.getTrueST() == null ? "" : call.getTrueST());
+                out.print(trueST == null ? "" : trueST);
                 out.print(';');
-                out.print(bayes == null ? "" : bayes);
-                out.print(';');
-                out.print(readCand);
-                out.print(';');
-                out.printf("%.6f", readPrec);
-                out.print(';');
-                out.print(kmer == null ? "" : kmer);
-                out.print(';');
-                out.print(kmerCand);
-                out.print(';');
-                out.printf("%.6f", kmerPrec);
-                out.print(';');
-                out.print(uniqueKmer == null ? "" : uniqueKmer);
-                out.print(';');
-                out.print(uniqueCand);
-                out.print(';');
-                out.printf("%.6f", uniquePrec);
-                out.print(';');
+                for (int i = 0; i < CURRENCIES.length; i++) {
+                    // The same rule in every currency: one vote per read, per matched k-mer, and per
+                    // distinct matched k-mer.
+                    Map<Integer, Long> counts = currency(call, i);
+                    String st = model.classify(counts);
+                    int cand = model.getCandidates(counts);
+                    boolean hit = trueST != null && model.isHit(counts, trueST);
+                    double prec = trueST == null ? 0 : model.getPrecision(counts, trueST);
+                    double gain = trueST == null ? 0 : model.getInformationGain(counts, trueST);
+                    if (trueST != null) {
+                        precSum[i] += prec;
+                        gainSum[i] += gain;
+                        sizeSum[i] += cand;
+                        if (hit) {
+                            hits[i]++;
+                            if (cand == 1) {
+                                exact[i]++;
+                            }
+                        }
+                    }
+                    out.print(st == null ? "" : st);
+                    out.print(';');
+                    out.print(cand);
+                    out.print(';');
+                    out.print(hit);
+                    out.print(';');
+                    out.printf("%.6f", prec);
+                    out.print(';');
+                    out.printf("%.6f", gain);
+                    out.print(';');
+                }
                 out.print(call.getCalledST() == null ? "" : call.getCalledST());
                 out.print(';');
                 out.print(majority);
@@ -392,29 +394,40 @@ public class IsolateSTAccuracyMain {
                 out.print(call.getMatchedKMers());
                 out.print(';');
                 out.print(call.getMatchedUniqueKMers());
-                out.println(';');
+                out.print(';');
+                out.println();
             }
         }
-        int typed = correct + wrong + noCall;
         System.out.println("Wrote " + outCsv.getAbsolutePath());
         System.out.println();
         System.out.println("  isolates typed          : " + typed
                 + (untyped > 0 ? " (" + untyped + " untyped, not scored)" : ""));
-        System.out.println("  correct / wrong / none  : " + correct + " / " + wrong + " / " + noCall);
-        System.out.printf("  isolate accuracy (reads) : %.4f%n",
-                typed == 0 ? Double.NaN : ((double) correct) / typed);
-        System.out.printf("  isolate accuracy (k-mer): %.4f%n",
-                typed == 0 ? Double.NaN : ((double) kmerCorrect) / typed);
-        System.out.printf("  isolate accuracy (uniq) : %.4f%n",
-                typed == 0 ? Double.NaN : ((double) uniqueCorrect) / typed);
         System.out.printf("  isolate accuracy (major): %.4f%n",
                 typed == 0 ? Double.NaN : ((double) majorityCorrect) / typed);
         System.out.println();
-        System.out.printf("  isolate precision, reads : %.4f%n", typed == 0 ? Double.NaN : readPrecSum / typed);
-        System.out.printf("  isolate precision, kmers : %.4f%n", typed == 0 ? Double.NaN : kmerPrecSum / typed);
-        System.out.printf("  isolate precision, uniq  : %.4f%n", typed == 0 ? Double.NaN : uniquePrecSum / typed);
-        System.out.println("  Precision credits an answer leaving n types in question with 1/n when the");
-        System.out.println("  isolate's own type is among them, and with nothing when it is not.");
+        System.out.printf("  %-8s %8s %8s %8s %8s %8s%n",
+                "currency", "gain", "prec", "hit", "exact", "answer");
+        for (int i = 0; i < CURRENCIES.length; i++) {
+            System.out.printf("  %-8s %8.4f %8.4f %8.4f %8.4f %8.2f%n", CURRENCIES[i],
+                    typed == 0 ? Double.NaN : gainSum[i] / typed,
+                    typed == 0 ? Double.NaN : precSum[i] / typed,
+                    typed == 0 ? Double.NaN : ((double) hits[i]) / typed,
+                    typed == 0 ? Double.NaN : ((double) exact[i]) / typed,
+                    typed == 0 ? Double.NaN : sizeSum[i] / typed);
+        }
+        System.out.println();
+        System.out.println("  gain    how much likelier the isolate's own type became, over how much");
+        System.out.println("          likelier it would have to become to be named outright. Zero for an");
+        System.out.println("          answer that narrowed nothing, one for an answer that pinned the");
+        System.out.println("          lineage, and it does not read a node of 35 genomes of one lineage");
+        System.out.println("          and one of another as a coin toss the way 1/n does.");
+        System.out.println("  prec    the paper's p_st on an isolate: 1/n where the answer leaves n types");
+        System.out.println("          in question and the true one is among them, else nothing.");
+        System.out.println("  hit     the share of isolates whose own type is in the answer at all, and");
+        System.out.println("  exact   the share where it is the only one left. An average alone cannot");
+        System.out.println("          tell a vague answer from a wrong one; these two can.");
+        System.out.println("  answer  the mean number of types left in question.");
+        System.out.println();
         System.out.printf("  read accuracy (pooled)  : %.4f  over %,d classified read(s)%n",
                 readsClassified == 0 ? Double.NaN : ((double) readsCorrect) / readsClassified,
                 readsClassified);
@@ -423,15 +436,10 @@ public class IsolateSTAccuracyMain {
         System.out.println();
         System.out.println("The k-mer level sits ON TOP of the read level and is not a substitute for it:"
                 + " a read is classified to the lowest node its k-mers agree on, so a single specific"
-                + " k-mer is outvoted by its own read and never reaches the read-level classifier."
-                + " Where the k-mer accuracy exceeds the read accuracy, that is the evidence the read"
-                + " classification is discarding.");
+                + " k-mer is outvoted by its own read and never reaches the read-level tally.");
         System.out.println();
-        System.out.println("The read accuracy measures the database, since it is the nodes that predict."
-                + " The two isolate accuracies differ only in how a read is weighted: the majority call"
-                + " counts every read alike and is therefore carried by whichever type the collection"
-                + " has most of, while the Bayes call weighs a read by what its node adds over that"
-                + " prior and ignores one that adds nothing. Run both database variants; what the"
-                + " refinement is worth is the difference between them.");
+        System.out.println("The majority call counts every read alike and is therefore carried by whichever"
+                + " type the collection has most of; it is the control the rule has to beat. Run both"
+                + " database variants: what the refinement is worth is the difference between them.");
     }
 }

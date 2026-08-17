@@ -86,6 +86,77 @@ public abstract class STClassifier {
     }
 
     /**
+     * Returns the probability this rule puts on one type for one isolate.
+     * <p>
+     * By default the rule's answer is read as a flat one: each type it leaves in question is as
+     * likely as any other. A rule that knows better overrides this -- {@link PathVoteSTModel} does,
+     * since the node it places an isolate at holds a known number of genomes of each type, and a node
+     * of 35 genomes of one lineage and one of another is not a coin toss.
+     *
+     * @param countsPerNode how much the isolate contributed at each node, by dense node position
+     * @param type          the type
+     * @return the probability, 0 where the rule leaves the type out
+     */
+    public double getPosterior(Map<Integer, Long> countsPerNode, String type) {
+        Set<String> answer = classifyAll(countsPerNode);
+        return answer.contains(type) ? 1.0 / answer.size() : 0.0;
+    }
+
+    /**
+     * Scores one isolate by how much the classification narrowed its lineage down.
+     * <p>
+     * The credit is how much likelier the isolate's own type became, measured against how much
+     * likelier it would have to become to be named outright:
+     * <pre>
+     *   log( P(s | answer) / P(s) )  /  log( 1 / P(s) )
+     * </pre>
+     * Zero where the answer leaves the type exactly as likely as the collection already made it --
+     * an isolate placed at the node above every genome has learned nothing and is scored as having
+     * learned nothing, whatever that node's type count happens to be. Approaching one where the answer
+     * pins the lineage -- approaching rather than reaching it, since the smoothing declines to let a
+     * handful of genomes prove a lineage outright, and equally so whether that lineage holds one
+     * genome or seventy. In between it grades smoothly, and
+     * unlike a credit of {@code 1/n} it does not treat a node of 35 genomes of one lineage and one of
+     * another as a coin toss: that answer scores 0.99, not 0.5.
+     * <p>
+     * An answer that narrows towards the wrong lineage earns nothing rather than a negative, so that
+     * the score stays in {@code [0,1]} and can be averaged; how often that happens is reported
+     * separately by {@link #isHit}, which is the other half of the picture. The ordering that matters
+     * survives the clamp: a vague answer containing the truth still scores above a sharp one missing
+     * it.
+     *
+     * @param countsPerNode how much the isolate contributed at each node, by dense node position
+     * @param trueType      the isolate's actual sequence type
+     * @return the credit, between 0 and 1
+     */
+    public double getInformationGain(Map<Integer, Long> countsPerNode, String trueType) {
+        double alpha = 1.0 / composition.getTypes().size();
+        double prior = (composition.getCollectionCount(trueType) + alpha)
+                / (composition.getCollectionTotal() + 1.0);
+        double posterior = getPosterior(countsPerNode, trueType);
+        if (posterior <= 0 || prior <= 0 || prior >= 1) {
+            // A type the collection already holds everything of leaves nothing to learn, and there is
+            // no scale to measure a gain against.
+            return 0;
+        }
+        double gain = Math.log(posterior / prior) / Math.log(1 / prior);
+        return gain > 0 ? gain : 0;
+    }
+
+    /**
+     * Says whether the isolate's own type is among the ones the rule left in question at all, which
+     * is what an average credit cannot show: an answer that is vague and an answer that is wrong both
+     * score low, and they are entirely different findings.
+     *
+     * @param countsPerNode how much the isolate contributed at each node, by dense node position
+     * @param trueType      the isolate's actual sequence type
+     * @return whether the true type is in the answer
+     */
+    public boolean isHit(Map<Integer, Long> countsPerNode, String trueType) {
+        return classifyAll(countsPerNode).contains(trueType);
+    }
+
+    /**
      * Returns how many types are still in question where this rule placed the isolate.
      *
      * @param countsPerNode how much the isolate contributed at each node, by dense node position

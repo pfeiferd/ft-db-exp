@@ -119,6 +119,32 @@ public class PathVoteSTModel extends STClassifier {
     }
 
     /**
+     * Returns what share of the winning node's genomes carry the given type.
+     * <p>
+     * The node an isolate lands on is not a flat list of types: it holds a known number of genomes of
+     * each, and 35 of one lineage against one of another says something quite different from one
+     * against one. Smoothed as elsewhere, by one pseudo-genome spread over the classes.
+     *
+     * @param countsPerNode how much the isolate contributed at each node, by dense node position
+     * @param type          the type
+     * @return the share, 0 where the isolate is not classified
+     */
+    @Override
+    public double getPosterior(Map<Integer, Long> countsPerNode, String type) {
+        SmallTaxTree.SmallTaxIdNode node = classifyNode(countsPerNode, minimum);
+        if (node == null) {
+            return 0;
+        }
+        int pos = node.getPosition();
+        int below = composition.getCount(pos);
+        if (below == 0) {
+            return 0;
+        }
+        double alpha = 1.0 / composition.getTypes().size();
+        return (composition.getCount(pos, type) + alpha) / (below + 1.0);
+    }
+
+    /**
      * Classifies an isolate to a node, by the rule described for this class.
      *
      * @param countsPerNode how much the isolate contributed at each node, by dense node position;
