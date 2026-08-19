@@ -23,6 +23,12 @@
 !/data/fastq/ticks_sim_tick1.txt
 !/data/fastq/saliva_mate1.txt
 !/data/fastq/saliva_srr5571991.txt
+# The Nanopore lower-respiratory runs of ENA study PRJEB30781 that the streptococcus project is
+# applied to, and the process-extraction negatives of the same study. Both declare their runs by
+# URL for the goal `fastqdownload', exactly as ticks_real.txt does, so they are input rather than
+# generated output and are valid on any machine.
+!/data/fastq/streptococcus_lri_real.txt
+!/data/fastq/streptococcus_lri_neg.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*
