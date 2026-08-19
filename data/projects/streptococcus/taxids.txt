@@ -1,0 +1,56 @@
+# Streptococcus 1301
+#
+# The clinical-bacteriology case of the FT paper, and the one of the two new projects that also has
+# real read data (see data/fastq/streptococcus_lri_real.txt).
+#
+# Motivation is the framing of
+#   Zhao Y, Zhang W, Zhang X (2024): "Application of metagenomic next-generation sequencing in the
+#   diagnosis of infectious diseases." Front Cell Infect Microbiol 14:1458316.
+#   https://doi.org/10.3389/fcimb.2024.1458316   (PMC11604630)
+# a review of clinical mNGS by organ system. Streptococcus is the genus that appears in three of its
+# sections at once -- bloodstream (4.1), CNS (4.2) and respiratory (4.3) infection -- and it is the
+# genus where reporting the wrong member of it changes the clinical answer: S. pneumoniae is a
+# pathogen to be treated, its mitis-group neighbours in the same sample are oral commensals.
+#
+# One genus only, as for the other projects of this paper.
+#
+# WHY THIS GENUS IS A CANDIDATE AT ALL, measured against data/common (RefSeq assembly summary of
+# release 233 and the taxdump beside it, both as installed here):
+#
+#   RefSeq assemblies in the subtree      22,664       (tick-borne, for scale: 4,135)
+#   sum of genome_size                    46.6 Gbp     (tick-borne: 5.8 Gbp)
+#   species-rank taxa with >= 1 assembly     612
+#   direct children of 1301 that carry genomes  148    -> the branching degree the refinement sees
+#
+# The reference taxonomy under Streptococcus is *almost* flat, and where it is not, it is flat in
+# precisely the wrong places. NCBI has only four `species group' nodes under the genus:
+#
+#   Streptococcus dysgalactiae group  119603    S. equi, S. dysgalactiae                806 asm
+#   Streptococcus anginosus group     671232    S. anginosus, S. intermedius,
+#                                               S. constellatus                         397 asm
+#   Streptococcus mitis group        3409772    S. mitis + 5 obscure species            253 asm
+#   Streptococcus thalassemiae group 3409759    2 species                                 2 asm
+#
+# The "mitis group" node is the point. Biologically the mitis group is S. pneumoniae,
+# S. pseudopneumoniae, S. mitis, S. oralis, S. infantis, S. sanguinis, S. gordonii,
+# S. parasanguinis and relatives. In NCBI, all of those except S. mitis hang *directly* under the
+# genus:
+#
+#   S. pneumoniae         1313   parent 1301 (genus)      9,263 asm
+#   S. pseudopneumoniae 257758   parent 1301 (genus)        167 asm
+#   S. oralis             1303   parent 1301 (genus)        259 asm
+#   S. infantis          68892   parent 1301 (genus)         84 asm
+#   S. sanguinis          1305   parent 1301 (genus)        153 asm
+#   S. gordonii           1302   parent 1301 (genus)        106 asm
+#   S. parasanguinis      1318   parent 1301 (genus)        177 asm
+#   S. mitis             28037   parent 3409772 (group)     242 asm
+#
+# So every k-mer that S. pneumoniae shares with S. oralis or S. pseudopneumoniae has no common
+# ancestor below the *genus*, and the LCA update strands it there. That is the headroom the
+# refinement is supposed to claim, and it is unclaimed by construction rather than by accident --
+# unlike Mycobacterium, where NCBI already supplies the MTBC (77643) and MAC (120793) nodes and the
+# only thing left to refine is within-complex, i.e. the situation that killed the C. difficile study.
+#
+# Run bin/prescreen.sh streptococcus before building anything else; it decides whether that headroom
+# really carries k-mers.
+1301

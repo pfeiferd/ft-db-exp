@@ -1,0 +1,48 @@
+# Nocardia 1817
+#
+# The second of the two clinical-bacteriology candidates, and the one with the cleaner taxonomic
+# argument but no real read data (see the note at the end).
+#
+# Motivation, as for the streptococcus project, is
+#   Zhao Y, Zhang W, Zhang X (2024): "Application of metagenomic next-generation sequencing in the
+#   diagnosis of infectious diseases." Front Cell Infect Microbiol 14:1458316.
+#   https://doi.org/10.3389/fcimb.2024.1458316   (PMC11604630)
+# which names Nocardia and N. farcinica by name in its sections on CNS (4.2, brain abscess),
+# respiratory (4.3, pulmonary nocardiosis in the immunocompromised) and skin/soft tissue (4.8)
+# infection. Species identity drives therapy here: N. farcinica is resistant to third-generation
+# cephalosporins, N. otitidiscaviarum to co-trimoxazole in a large fraction of isolates, and the
+# genus is otherwise treated as one entity by culture-based reporting.
+#
+# One genus only, as for the other projects of this paper.
+#
+# WHY THIS GENUS, measured against data/common (RefSeq assembly summary of release 233 and the
+# taxdump beside it, both as installed here):
+#
+#   RefSeq assemblies in the subtree       1,045      (tick-borne, for scale: 4,135)
+#   sum of genome_size                     7.9 Gbp    (tick-borne: 5.8 Gbp -- Nocardia genomes are
+#                                                      large, ~7.6 Mbp each)
+#   species-rank taxa with >= 1 assembly     405
+#   direct children of 1817 that carry genomes 125    -> the branching degree the refinement sees
+#
+# The taxonomy under Nocardia is *completely* flat: of the 125 populated direct children, 124 are of
+# rank `species' and one is `unclassified Nocardia'. There is not a single `species group' node in
+# the whole genus. The complexes clinical microbiology actually works with --
+#
+#   N. asteroides complex, N. nova complex, N. transvalensis complex, N. brasiliensis complex
+#
+# -- exist in the literature and in MLSA trees but have no node in the reference taxonomy at all.
+# That makes Nocardia the cleanest possible statement of what the refinement is for: every k-mer
+# shared by two members of a complex and by nothing else lands at the genus, because the genus is
+# the only ancestor they have.
+#
+# It is also small enough to build and rebuild quickly, which is why it is worth keeping even if
+# streptococcus turns out to be the headline case.
+#
+# NO REAL READ DATA. Checked against ENA on 2026-08-19: there is no Oxford Nanopore shotgun
+# metagenome study for nocardiosis -- a query for OXFORD_NANOPORE + WGS + METAGENOMIC with `nocardi'
+# in the study title returns nothing, and the 41 ONT runs anywhere under taxid 1817 are all isolate
+# WGS/WGA of cultured strains. So this project can carry the intrinsic measurements (node precision,
+# subtree precision, branching histograms) and simulated reads, but not a real-sample classification
+# experiment. Do not go looking again without a new lead; the isolate runs are the alternative, as
+# a NanoSim training set or as spike-ins into a background sample.
+1817
