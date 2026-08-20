@@ -37,7 +37,13 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 public class AccuracyEvaluator {
     private final File baseDir;
     private final TaxTree taxTree;
-    private final ReadGroundTruth groundTruth;
+    private final Simulator simulator;
+    private final Map<String, String> extractedTaxIds;
+    /**
+     * The resolver for a read's true taxon. Built in {@link #evaluate} rather than in the
+     * constructor, and only for a run that has a ground truth at all - see the note there.
+     */
+    private ReadGroundTruth groundTruth;
 
     /**
      * Creates the evaluator, loading the taxonomy and the accession map of the given database.
@@ -61,10 +67,11 @@ public class AccuracyEvaluator {
             taxTree = taxTreeGoal.get();
 
             // The table written next to the extracted genomes is the ground truth for reads
-            // simulated from them, and the only source that covers the ones taken from Genbank.
-            Map<String, String> extractedTaxIds = ExtractedTaxIds.load(
+            // simulated from them, and the only source that covers the ones taken from Genbank. It
+            // is loaded here but not turned into a resolver yet: see evaluate().
+            this.simulator = simulator;
+            this.extractedTaxIds = ExtractedTaxIds.load(
                     project.getOutputFile(GSGoalKey.EXTRACT_REFSEQ_CSV.getName(), GSProject.GSFileType.CSV, false));
-            groundTruth = simulator.groundTruth(taxTree, extractedTaxIds);
         } finally {
             maker.dumpAll();
         }
@@ -99,6 +106,19 @@ public class AccuracyEvaluator {
                                                GenusOnlyBaseline baseline, GenusOnlyBaseline obsBaseline,
                                                boolean collectBaseline, boolean groundTruthFree)
             throws IOException {
+        // Built here rather than in the constructor, because only here is it known whether the run
+        // has a ground truth at all. IssReadGroundTruth refuses to exist without an extraction
+        // table -- rightly, since every read would else go unresolved while looking like a result --
+        // and SpecificityReport passes ISS purely as a placeholder for a ground-truth-free run that
+        // never resolves anything. Constructing eagerly therefore made that run fail on a file it
+        // does not read:
+        //   IllegalArgumentException: No extracted genomes to resolve the ground truth against.
+        // The assignment happens before the matcher starts its worker threads, so the callback
+        // below sees it without further synchronisation; a lazy initialisation inside the callback
+        // would be a data race, since it runs on every consumer thread at once.
+        if (!groundTruthFree && groundTruth == null) {
+            groundTruth = simulator.groundTruth(taxTree, extractedTaxIds);
+        }
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
         Map<String, AccuracyTally> result = new LinkedHashMap<String, AccuracyTally>();
