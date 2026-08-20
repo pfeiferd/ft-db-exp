@@ -181,7 +181,17 @@ make_iss() {
   fi
 
   fastadir="${basedir}/data/projects/${db}/fasta"
-  if [ -z "$(ls -A "$fastadir" 2>/dev/null)" ]; then
+  # The goal writes two things that are needed later and that live in different folders: the
+  # per-accession FASTAs under fasta/, which the reads are drawn from, and the accession-to-taxon
+  # table csv/<db>_extractrefseqcsv.csv, which AccuracyEvaluator resolves the ground truth against.
+  # Both have to be present, so both are tested. Guarding on the FASTAs alone was wrong in exactly
+  # the case run_all_exps.sh produces with FRESH_DBS=1: step 3 runs clean_all.sh, whose `ftclear'
+  # deletes the project's csv/ folder (GSMaker's `clear' goal clears krakenout, csv and log) while
+  # leaving fasta/ untouched. The guard then saw a full fasta/ and skipped the goal, the table was
+  # never rewritten, and the classification steps died hours later with
+  #   IllegalArgumentException: No extracted genomes to resolve the ground truth against.
+  extractcsv="${basedir}/data/projects/${db}/csv/${db}_extractrefseqcsv.csv"
+  if [ -z "$(ls -A "$fastadir" 2>/dev/null)" ] || [ ! -s "$extractcsv" ]; then
     echo "=== ${db}: extracting the genomes the database was built from ==="
     # Via `extractrefseqcsv', not `extractrefseqfasta'. The latter is an object goal, and Genestrip
     # treats object goals as weak dependencies: asking for one on the command line makes the
@@ -193,6 +203,11 @@ make_iss() {
   if [ -z "$(ls -A "$fastadir" 2>/dev/null)" ]; then
     echo "Goal extractrefseqcsv produced no files in ${fastadir}." >&2
     echo "Build the database first: mvn exec:exec@db -Dname=${db} -Dgoal=db" >&2
+    exit 1
+  fi
+  if [ ! -s "$extractcsv" ]; then
+    echo "Goal extractrefseqcsv produced no ${extractcsv}." >&2
+    echo "Without it the classification steps cannot resolve the ground truth." >&2
     exit 1
   fi
 

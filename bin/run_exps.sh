@@ -166,12 +166,13 @@ done
 
 # Intrinsic quality of DBs.
 #
-# `cdiff' takes part in this since DBQualityCountsGoal learned to measure a database that uses file
-# nodes. It used to refuse outright ("This goal does not support file nodes"), because it recognised
-# a leaf by testing for rank DATA while the fasta reader resolved records to the FILE node below it.
+# A database that uses file nodes is measured here like any other. DBQualityCountsGoal used to
+# refuse one outright ("This goal does not support file nodes"), because it recognised a leaf by
+# testing for rank DATA while the fasta reader resolved records to the FILE node below it.
 # isLeafNode() now defines a leaf as the deepest artificial node on its branch, which is what both
-# halves of the goal actually mean, and the two agree again. Nothing changes for the other databases:
-# with no file or id nodes the deepest artificial node *is* the data node.
+# halves of the goal actually mean, and the two agree again. Nothing changes for the databases
+# below: with no file or id nodes the deepest artificial node *is* the data node. Worth keeping in
+# mind before adding a per-assembly database to `projects', which is the case that first needed it.
 for db in $projects;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=dbquality
