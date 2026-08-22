@@ -27,7 +27,7 @@ if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  projects="viral tick-borne protozoa gut-protozoa parasites vineyard"
+  projects="viral tick-borne protozoa parasites vineyard"
   restricted=""
 fi
 
