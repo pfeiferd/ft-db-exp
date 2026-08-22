@@ -381,6 +381,25 @@ public class RefinementAccuracyReport {
                 // category the reads were drawn from this is near 100 %; for one requesting a few
                 // genera of a large category it is the fraction the table exists to show.
                 double generated = parseOrNaN(simulated);
+                // The scope is a subset of what was generated, so the share cannot exceed 100 %.
+                // A value above it is never a measurement: it means the two numbers come from
+                // different states of the pipeline, because they come from different places -- the
+                // count from this run, `simulated' from <db>_simparams.csv, which make_fastqs.sh
+                // writes one row per read set and never revisits. A set whose generation is skipped
+                // keeps whatever row it once got, so resuming a batch past the fastq steps (for
+                // instance run_all_exps.sh --from 9) leaves an older row in place. That is how
+                // `saliva-like' came to report 200 % in the paper's Table "simdata": its row still
+                // held InSilicoSeq's per-file count of 500,000, from before record_simparams began
+                // scaling by the number of mates, while the evaluation counted both mates of every
+                // pair. Say so here rather than let the quotient travel into a table.
+                if (generated > 0 && u.getTotal() > generated) {
+                    System.err.printf(
+                            "WARNING: %s/%s reports %d reads in scope but only %s simulated (%.1f %%).%n"
+                            + "         `in scope' cannot exceed `simulated'; the row for this read set in%n"
+                            + "         %s_simparams.csv is stale. Delete it and re-run the read generation%n"
+                            + "         for this set -- it skips the simulation but re-measures the file.%n",
+                            db, fastqKey, u.getTotal(), simulated, 100.0 * u.getTotal() / generated, db);
+                }
                 ps.print(format(generated > 0 ? 100.0 * u.getTotal() / generated : Double.NaN));
                 ps.print(';');
                 ps.print(u.getUnresolved());
