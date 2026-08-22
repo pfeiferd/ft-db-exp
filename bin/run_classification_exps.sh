@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|tick-borne|accuracy|perf|real|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|tick-borne|accuracy|perf|real|taxoncall|all]
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
@@ -125,8 +125,40 @@ run_real() {
     echo "Missing ${map}." >&2
     return 1
   fi
+  # A map that declares its runs by URL -- ticks_real.txt and the two PRJEB30781 maps of `strepto' --
+  # can fetch what it names, through Genestrip's own goal `fastqdownload' rather than a script of
+  # ours: the goal resolves, downloads and names the files itself, and skips whatever is in place.
+  # Maps that name local files instead (the generated simulation maps, saliva_real.txt) have no URL
+  # in the second column and are left alone; saliva is fetched by bin/fetch_saliva.sh, which exists
+  # because those runs are paired and need their URLs resolved per accession.
+  if awk '$1 !~ /^#/ && $2 ~ /^https?:/ {found=1} END {exit !found}' "$map"; then
+    missing=""
+    for key in $(awk '$1 !~ /^#/ && NF >= 2 {print $1}' "$map" | sort -u); do
+      [ -s "${basedir}/data/fastq/${key}.fastq.gz" ] || missing="yes"
+    done
+    if [ -n "$missing" ]; then
+      echo "=== $1: fetching the runs of $2 ==="
+      ( cd "$basedir" && mvn exec:exec@fastqdl -Dname="$1" -Dfqmap="$2" )
+    fi
+  fi
   echo "############ $1: real reads (${3}), unrefined vs. refined ############"
   mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.project.calibration="${4:-}"
+}
+
+# $1 = database project, $2 = fastq map, $3 = report key, $4 = the taxid the vote is restricted to
+#
+# Names the taxon each sample's reads point at below one node, for both database variants, and holds
+# the answers against the per-sample reference standard in data/projects/<db>/ground_truth.csv. Where
+# run_real measures how much more specific the refined answers are without naming any of them, this
+# names them -- which is what a standard stated per sample rather than per read can be held against.
+run_taxoncall() {
+  map="${basedir}/data/fastq/$2"
+  if [ ! -f "$map" ]; then
+    echo "Missing ${map}." >&2
+    return 1
+  fi
+  echo "############ $1: taxon call (${3}) below ${4} ############"
+  mvn exec:exec@taxoncall -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.taxoncall.root="$4"
 }
 
 # Wall time and maximum RAM of classifying the *real* reads, measured the same way as for the
@@ -245,10 +277,16 @@ case "$what" in
   viral)        run_iss viral; run_perf viral viral_sim.txt ;;
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
   strepto)      run_iss strepto; run_perf strepto strepto_sim.txt ;;
+  taxoncall)    run_taxoncall strepto strepto_lri_real.txt lri 1301
+                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto; run_ticks ;;
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
+                run_real strepto strepto_lri_real.txt lri
+                run_real strepto strepto_lri_neg.txt lrineg
+                run_taxoncall strepto strepto_lri_real.txt lri 1301
+                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
@@ -260,9 +298,13 @@ case "$what" in
                 run_perf strepto strepto_sim.txt; run_perf tick-borne ticks_sim.txt
                 run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
+                run_real strepto strepto_lri_real.txt lri
+                run_real strepto strepto_lri_neg.txt lrineg
+                run_taxoncall strepto strepto_lri_real.txt lri 1301
+                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|tick-borne|accuracy|perf|real|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|tick-borne|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
 esac
 
 echo

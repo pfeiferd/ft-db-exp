@@ -30,6 +30,10 @@
 		     -Dgs.target=clean once beforehand, so that the goal really runs instead of
 		     finding its result files already in place and reporting a runtime of zero. -->
 		<gs.target>make</gs.target>
+		<!-- The node the path vote of `taxoncall' is restricted to, and the minimum its winning
+		     path must gather. 1301 is Streptococcus; an empty minimum means none is required. -->
+		<gs.taxoncall.root>1301</gs.taxoncall.root>
+		<gs.taxoncall.minimum></gs.taxoncall.minimum>
 	</properties>
 	
 	<name>genestrip-db-exp</name>
@@ -255,6 +259,30 @@
 								<argument>${gs.project.fqmap}</argument>
 								<argument>${gs.project.reportkey}</argument>
 								<argument>${gs.project.calibration}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<!-- The ground-truth-free measurement on real reads: no precision, no recall,
+						     only how far each database variant narrows the species down. -->
+						<id>taxoncall</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.FTTaxonCallMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.fqmap}</argument>
+								<argument>${gs.project.reportkey}</argument>
+								<argument>${gs.taxoncall.root}</argument>
+								<argument>${gs.taxoncall.minimum}</argument>
 							</arguments>
 						</configuration>
 					</execution>
