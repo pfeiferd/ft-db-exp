@@ -16,9 +16,25 @@
 		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;
 		     empty leaves the estimate columns of the CSV blank. -->
 		<gs.project.calibration></gs.project.calibration>
-		<!-- Heap for the database goals. The original experiments used a 64 GB machine;
-		     override on a smaller one, e.g. -Dgs.xmx=10G . -->
-		<gs.xmx>64G</gs.xmx>
+		<!-- Heap for the database goals. The original experiments used a 64 GB machine; override on
+		     a smaller one, e.g. -Dgs.xmx=10G .
+
+		     This was 64G and must not be: it let the heap alone claim the whole physical memory of
+		     that machine, leaving nothing for metaspace, the thread stacks of 16 workers, direct
+		     buffers, the GC's own structures and the page cache these goals stream their fasta files
+		     through. A run that really approached the limit was then killed by the kernel rather than
+		     failing with an OutOfMemoryError, which is a hard failure to read: Maven reports only
+
+		         Process exited with an error: 137
+
+		     i.e. 128 + SIGKILL, with no Java stack trace at all. `dbqualcounts' on `strepto' hit it
+		     on 2026-08-22. The other databases never came close - `parasites', the largest before
+		     it, peaked at 35 GB - so the setting survived a long time without being wrong any less.
+
+		     48G leaves 16 GB for all of the above. It does not change the figures of the paper's
+		     performance table, which record the high-water mark of a run and not the limit it was
+		     allowed. -->
+		<gs.xmx>48G</gs.xmx>
 		<!-- Worker threads for the Genestrip goals. A negative value means one thread per
 		     available processor less one, which is Genestrip's own default. The classification
 		     experiments use exactly that, since AccuracyEvaluator sets it in code and the
