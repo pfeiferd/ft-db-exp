@@ -13,9 +13,9 @@
 # ENA numbers them 1, 2, 3, 5, 6, 7 -- there is no number 4 in the study.
 #
 # key           URL
-neg1           https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/009/ERR3223519/ERR3223519.fastq.gz
-neg2           https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/000/ERR3223520/ERR3223520.fastq.gz
-neg3           https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/001/ERR3223521/ERR3223521.fastq.gz
-neg5           https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/003/ERR3223523/ERR3223523.fastq.gz
-neg6           https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/004/ERR3223524/ERR3223524.fastq.gz
-neg7           https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/005/ERR3223525/ERR3223525.fastq.gz
+neg1 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/009/ERR3223519/ERR3223519.fastq.gz
+neg2 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/000/ERR3223520/ERR3223520.fastq.gz
+neg3 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/001/ERR3223521/ERR3223521.fastq.gz
+neg5 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/003/ERR3223523/ERR3223523.fastq.gz
+neg6 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/004/ERR3223524/ERR3223524.fastq.gz
+neg7 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR322/005/ERR3223525/ERR3223525.fastq.gz
