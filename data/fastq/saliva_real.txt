@@ -18,22 +18,41 @@
 # and this map refers to the result by name, resolved against data/fastq as usual. The names are the
 # accessions, as in the original genestrip-db-exp project, so runs already fetched there are reused.
 #
-# That paper lists five runs; its project fetched only the three below through sra-tools and left
-# ERR1395613 (#2) and ERR1395610 (#4) commented out. The same choice is made here. Both mates of a
-# run share its key, so Genestrip analyses them together -- the convention the generated maps of
-# make_fastqs.sh use for the simulated paired-end sets too.
+# All five runs of that paper's Table "errorsviral", in its own order. Its project fetched only the
+# three SRR runs through sra-tools and left ERR1395613 (#2) and ERR1395610 (#4) commented out, and
+# this map followed that choice for a while -- wrongly: the paper reports measurements for all five,
+# in results/viral_human_virus_errors_gs_ku_comp.csv and results/viral_saliva_rel_accuracy.csv, so
+# omitting two of them would compare against less data than the study this one builds upon.
 #
-#   key         #    read pairs      bases
-#   SRR5571991  3    980,879,835     198 Gbp   <- reported in detail by the first paper
-#   SRR5571990  5    605,561,636     122 Gbp
-#   SRR5571985  1    812,085,208     164 Gbp
+# Both mates of a run share its key, so Genestrip analyses them together -- the convention the
+# generated maps of make_fastqs.sh use for the simulated paired-end sets too.
+#
+#   key         #    read pairs      bases     gzipped   read length
+#   SRR5571985  1    812,085,208     164 Gbp   112 GB    101 bp
+#   ERR1395613  2    900,709,176     180 Gbp   171 GB    100 bp
+#   SRR5571991  3    980,879,835     198 Gbp   139 GB    101 bp   <- reported in detail by that paper
+#   ERR1395610  4    824,479,570     165 Gbp   154 GB    100 bp
+#   SRR5571990  5    605,561,636     122 Gbp    78 GB    101 bp
+#                                              -------
+#                                              654 GB
+#
+# Sizes and read lengths as the ENA reports them; all five are Illumina HiSeq 2000. The 100 bp of
+# the two ERR runs against the 101 bp the "saliva-like" simulated set reproduces is a one-base
+# difference and does not disturb the calibration of Section "Estimating the gain without ground
+# truth", but it is worth knowing before the two sets are held against each other.
 #
 # Comment out the runs not wanted for a given analysis; there is no SAMPLES variable on this side.
+# Scoring all five in one call is a multi-day proposition -- saliva_srr5571991.txt exists to take
+# them one at a time.
 #
 # key        file
-SRR5571991 SRR5571991_1.fastq.gz
-SRR5571991 SRR5571991_2.fastq.gz
-SRR5571990 SRR5571990_1.fastq.gz
-SRR5571990 SRR5571990_2.fastq.gz
 SRR5571985 SRR5571985_1.fastq.gz
 SRR5571985 SRR5571985_2.fastq.gz
+ERR1395613 ERR1395613_1.fastq.gz
+ERR1395613 ERR1395613_2.fastq.gz
+SRR5571991 SRR5571991_1.fastq.gz
+SRR5571991 SRR5571991_2.fastq.gz
+ERR1395610 ERR1395610_1.fastq.gz
+ERR1395610 ERR1395610_2.fastq.gz
+SRR5571990 SRR5571990_1.fastq.gz
+SRR5571990 SRR5571990_2.fastq.gz

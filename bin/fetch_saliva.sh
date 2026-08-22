@@ -13,11 +13,19 @@
 # genestrip-db-exp project named them, so that runs already downloaded there are picked up rather
 # than fetched again -- which at these volumes is the difference between minutes and days.
 #
-# BEWARE OF THE VOLUME, but note that it is the *download* that is large, not the working set:
+# BEWARE OF THE VOLUME, but note that it is the *download* that is large, not the working set.
+# All five runs of that table, in its own order, with the sizes the ENA reports today:
 #
-#   SRR5571991  #3   980,879,835 read pairs   198 Gbp   139 GB gzipped   <- reported by that paper
 #   SRR5571985  #1   812,085,208 read pairs   164 Gbp   112 GB gzipped
+#   ERR1395613  #2   900,709,176 read pairs   180 Gbp   171 GB gzipped
+#   SRR5571991  #3   980,879,835 read pairs   198 Gbp   139 GB gzipped   <- reported in detail there
+#   ERR1395610  #4   824,479,570 read pairs   165 Gbp   154 GB gzipped
 #   SRR5571990  #5   605,561,636 read pairs   122 Gbp    78 GB gzipped
+#
+#   all five                                            654 GB gzipped
+#
+# The two ERR runs are the largest of the set, so fetching them roughly doubles what the other three
+# cost. All five are Illumina HiSeq 2000; the SRR runs are 101 bp per mate, the ERR runs 100 bp.
 #
 # ---------------------------------------------------------------------------------------------
 # Why this fetches from the ENA over HTTPS rather than through sra-tools
@@ -58,11 +66,16 @@ fastqdir="${basedir}/data/fastq"
 mkdir -p "$fastqdir"
 
 
-# The runs of Table "errorsviral" of the first Genestrip paper. That paper lists five, but the
-# original project's make_fastqs.sh fetched only these three and left the other two -- ERR1395613
-# (#2) and ERR1395610 (#4) -- commented out. Pass them explicitly if they are wanted; the ENA
-# resolves ERR accessions natively, so unlike with prefetch they present no special difficulty.
-DEFAULT_RUNS="SRR5571991 SRR5571990 SRR5571985"
+# The runs of Table "errorsviral" of the first Genestrip paper -- all five of them, in that table's
+# order. The original project's make_fastqs.sh fetched only the three SRR runs and left ERR1395613
+# (#2) and ERR1395610 (#4) commented out, which is why they were missing here too; but that paper
+# reports measurements for all five (see its results/viral_human_virus_errors_gs_ku_comp.csv and
+# results/viral_saliva_rel_accuracy.csv), so leaving them out would report on less data than the
+# study this one builds upon. The ENA resolves ERR accessions natively -- fetch_via_ena() asks the
+# filereport API and derives nothing from the prefix -- so they present no special difficulty.
+#
+# Name a subset on the command line to fetch fewer; see the volume table above before doing so.
+DEFAULT_RUNS="SRR5571985 ERR1395613 SRR5571991 ERR1395610 SRR5571990"
 
 runs=${*:-$DEFAULT_RUNS}
 
