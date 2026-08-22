@@ -80,17 +80,18 @@ public class TaxonCallReport {
      */
     public File write(String db, String fqMapFile, String reportKey, String rootTaxId, long minimum)
             throws IOException {
+        // Read before the runs, not after: each run scores its calls against it as they are made.
+        Map<String, List<String[]>> truth = GroundTruth.read(new File(baseDir, "projects/" + db + "/ground_truth.csv"));
         Map<Variant, Map<String, Map<Currency, Call>>> byVariant = new LinkedHashMap<>();
         for (Variant variant : Variant.values()) {
             System.out.println("=== " + db + " / " + variant.getLabel() + " ===");
-            byVariant.put(variant, run(db, fqMapFile, variant, rootTaxId, minimum));
+            byVariant.put(variant, run(db, fqMapFile, variant, rootTaxId, minimum, truth));
         }
-        Map<String, List<String[]>> truth = GroundTruth.read(new File(baseDir, "projects/" + db + "/ground_truth.csv"));
 
         File file = new File(resultsDir, db + "_" + reportKey + "_taxoncall.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
             ps.println("db;sample;variant;currency;node;node name;node rank;taxon;candidates;"
-                    + "contributing nodes;total;culture;wimp;");
+                    + "contributing nodes;total;culture;wimp;culture taxid;q culture;wimp taxid;q wimp;");
             Set<String> samples = new LinkedHashSet<>();
             for (Map<String, Map<Currency, Call>> m : byVariant.values()) {
                 samples.addAll(m.keySet());
@@ -118,7 +119,11 @@ public class TaxonCallReport {
                         ps.print(c.contributingNodes); ps.print(';');
                         ps.print(c.total); ps.print(';');
                         ps.print(join(truth.get(sample), 0)); ps.print(';');
-                        ps.print(join(truth.get(sample), 1)); ps.println(';');
+                        ps.print(join(truth.get(sample), 1)); ps.print(';');
+                        ps.print(c.sigmaCulture == null ? "" : c.sigmaCulture); ps.print(';');
+                        ps.print(format(c.qCulture)); ps.print(';');
+                        ps.print(c.sigmaWimp == null ? "" : c.sigmaWimp); ps.print(';');
+                        ps.print(format(c.qWimp)); ps.println(';');
                     }
                 }
             }
@@ -130,19 +135,28 @@ public class TaxonCallReport {
     /** What one rule said about one sample, in one currency. */
     private static final class Call {
         String nodeTaxId;
+        /** Dense position of the winning node, or -1 without a call; needed to ask for its candidates. */
+        int nodePos = -1;
         String nodeName;
         String nodeRank;
         String taxon;
         int candidates;
         int contributingNodes;
         long total;
+        /** The reference organism resolved to a taxon of this tree, per column; null where none is named. */
+        String sigmaCulture;
+        String sigmaWimp;
+        /** The candidate precision against either column; null where that column names no organism of the subtree. */
+        Double qCulture;
+        Double qWimp;
     }
 
     /**
      * Matches the map's fastq files against one variant and votes on each.
      */
     private Map<String, Map<Currency, Call>> run(String db, String fqMapFile, Variant variant,
-                                                 String rootTaxId, long minimum) throws IOException {
+                                                 String rootTaxId, long minimum,
+                                                 final Map<String, List<String[]>> truth) throws IOException {
         final Map<String, Map<Currency, Call>> result = new LinkedHashMap<>();
         FTProject project = new FTProject(new GSCommon(baseDir), db, null, null, fqMapFile,
                 null, null, null, null, null, null, false);
@@ -182,6 +196,15 @@ public class TaxonCallReport {
                     for (Currency currency : Currency.values()) {
                         perCurrency.put(currency, vote(res, currency, tree, root, composition, rule, minimum));
                     }
+                    List<String[]> rows = truth.get(key);
+                    Set<String> cultureSigmas = sigmasOf(rows, 2);
+                    Set<String> wimpSigmas = sigmasOf(rows, 3);
+                    for (Call c : perCurrency.values()) {
+                        c.sigmaCulture = String.join(",", cultureSigmas);
+                        c.sigmaWimp = String.join(",", wimpSigmas);
+                        c.qCulture = candidatePrecision(c, cultureSigmas, composition);
+                        c.qWimp = candidatePrecision(c, wimpSigmas, composition);
+                    }
                     result.put(key, perCurrency);
                     Call reads = perCurrency.get(Currency.READS);
                     System.out.println("  " + key + ": " + (reads.taxon == null ? "no call" : reads.taxon)
@@ -220,6 +243,7 @@ public class TaxonCallReport {
         SmallTaxTree.SmallTaxIdNode winner = rule.classifyNode(countsPerNode, minimum);
         if (winner != null) {
             call.nodeTaxId = winner.getTaxId();
+            call.nodePos = winner.getPosition();
             call.nodeName = winner.getName();
             call.nodeRank = winner.getRank() == null ? "" : winner.getRank().getName();
             call.candidates = composition.getCandidates(winner.getPosition());
@@ -233,6 +257,79 @@ public class TaxonCallReport {
      * @param root the node it must lie below, itself included
      * @return whether it does
      */
+    /**
+     * The candidate precision of one call against one reference organism, i.e. the measure q of the
+     * paper's section on classification quality, taken per sample instead of per read.
+     * <p>
+     * It is {@code 1/|Sigma(k)|} where the reference organism lies in {@code Sigma(k)}, the species
+     * of the winning node's subtree, and {@code 0} where it does not. A call that names the species
+     * outright has {@code |Sigma(k)| = 1} and scores one; a call left at a genus of forty species
+     * scores a fortieth. This is what the earlier all-or-nothing rule threw away: it named a taxon
+     * only for {@code |Sigma(k)| = 1} and reported nothing at all for every partial narrowing, which
+     * is precisely the improvement a refinement makes.
+     * <p>
+     * A sample may name more than one organism. The call is credited if it covers any of them, since
+     * each is present and a call that narrows down to one of them has narrowed down correctly.
+     *
+     * @param call        the call to score
+     * @param sigmas      the reference organisms as taxids, empty where the column names no species
+     * @param composition the species composition of the tree the call was made in
+     * @return the candidate precision, or {@code null} where the column names no organism at all and
+     * the measure is therefore undefined rather than zero
+     */
+    private static Double candidatePrecision(Call call, Set<String> sigmas, TaxonComposition composition) {
+        return candidatePrecision(call.nodePos < 0 ? null : composition.getClassesAt(call.nodePos), sigmas);
+    }
+
+    /**
+     * The measure itself, as a function of the two sets it is defined over, so that it can be checked
+     * without a taxonomy.
+     *
+     * @param candidates the species of the winning node's subtree, or {@code null} where no call was made
+     * @param sigmas     the reference organisms as taxids
+     * @return the candidate precision, or {@code null} where {@code sigmas} is empty
+     */
+    static Double candidatePrecision(Set<String> candidates, Set<String> sigmas) {
+        if (sigmas == null || sigmas.isEmpty()) {
+            return null;
+        }
+        if (candidates == null || candidates.isEmpty()) {
+            // No call was made, or the node carries no species at all: nothing was narrowed down, which
+            // is a score of zero and not an absent value.
+            return 0.0;
+        }
+        for (String sigma : sigmas) {
+            if (candidates.contains(sigma)) {
+                return 1.0 / candidates.size();
+            }
+        }
+        return 0.0;
+    }
+
+    /**
+     * Renders a candidate precision, leaving the field empty where the measure is undefined -- which
+     * is not the same as zero and must not read as it.
+     *
+     * @param q the value, or {@code null} if undefined
+     * @return the field's text
+     */
+    private static String format(Double q) {
+        return q == null ? "" : String.format(Locale.ROOT, "%.6f", q);
+    }
+
+    /** The taxids of one column of a sample's reference rows, without the entries naming no species. */
+    private static Set<String> sigmasOf(List<String[]> rows, int taxidField) {
+        Set<String> res = new LinkedHashSet<>();
+        if (rows != null) {
+            for (String[] r : rows) {
+                if (taxidField < r.length && !r[taxidField].isEmpty()) {
+                    res.add(r[taxidField]);
+                }
+            }
+        }
+        return res;
+    }
+
     private static boolean isBelow(SmallTaxTree.SmallTaxIdNode node, SmallTaxTree.SmallTaxIdNode root) {
         for (SmallTaxTree.SmallTaxIdNode n = node; n != null; n = n.getParent()) {
             if (n == root) {
@@ -282,8 +379,12 @@ public class TaxonCallReport {
                     if (p.length < 5) {
                         continue;
                     }
+                    // culture, wimp, and the taxids they were resolved to (empty where the entry
+                    // names no species). The names are for reading, the taxids for measuring: `S.
+                    // aureus' is a Staphylococcus and must never be taken for a Streptococcus.
                     bySample.computeIfAbsent(p[0], k -> new ArrayList<>())
-                            .add(new String[] { p[3], p[4] });
+                            .add(new String[] { p[3], p[4],
+                                    p.length > 5 ? p[5] : "", p.length > 6 ? p[6] : "" });
                 }
             }
             return bySample;
