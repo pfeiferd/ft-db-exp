@@ -3,7 +3,7 @@
 # The second of the two clinical-bacteriology candidates, and the one with the cleaner taxonomic
 # argument but no real read data (see the note at the end).
 #
-# Motivation, as for the streptococcus project, is
+# Motivation, as for the strepto project, is
 #   Zhao Y, Zhang W, Zhang X (2024): "Application of metagenomic next-generation sequencing in the
 #   diagnosis of infectious diseases." Front Cell Infect Microbiol 14:1458316.
 #   https://doi.org/10.3389/fcimb.2024.1458316   (PMC11604630)
@@ -36,7 +36,7 @@
 # the only ancestor they have.
 #
 # It is also small enough to build and rebuild quickly, which is why it is worth keeping even if
-# streptococcus turns out to be the headline case.
+# strepto turns out to be the headline case.
 #
 # NO REAL READ DATA. Checked against ENA on 2026-08-19: there is no Oxford Nanopore shotgun
 # metagenome study for nocardiosis -- a query for OXFORD_NANOPORE + WGS + METAGENOMIC with `nocardi'

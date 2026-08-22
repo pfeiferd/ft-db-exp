@@ -1,7 +1,7 @@
 # Streptococcus 1301
 #
 # The clinical-bacteriology case of the FT paper, and the one of the two new projects that also has
-# real read data (see data/fastq/streptococcus_lri_real.txt).
+# real read data (see data/fastq/strepto_lri_real.txt).
 #
 # Motivation is the framing of
 #   Zhao Y, Zhang W, Zhang X (2024): "Application of metagenomic next-generation sequencing in the

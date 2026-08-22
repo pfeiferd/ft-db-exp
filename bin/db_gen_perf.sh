@@ -38,7 +38,7 @@ if [ $# -gt 0 ]; then
     projects="$@"
 else
     # In the order the paper's table lists them.
-    projects="viral tick-borne protozoa vineyard parasites"
+    projects="viral tick-borne strepto protozoa vineyard parasites"
 fi
 
 # Echoes the short name the paper uses for project $1, or the project name itself.

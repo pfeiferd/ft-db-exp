@@ -1,5 +1,5 @@
 # Real Oxford Nanopore SHOTGUN metagenomes of the lower respiratory tract, from ENA study
-# PRJEB30781 -- the clinical data the streptococcus project is applied to.
+# PRJEB30781 -- the clinical data the strepto project is applied to.
 #
 #   Charalampous T, Kay GL, Richardson H, Aydin A, Baldan R, Jeanes C, Rae D, Grundy S, Turner DJ,
 #   Wain J, Leggett RM, Livermore DM, O'Grady J (2019): "Nanopore metagenomics enables rapid
@@ -31,7 +31,7 @@
 #     high-background sputum). They are a defined-composition dilution series and would make a
 #     separate experiment on sensitivity, not on refinement -- neither spiked organism is a
 #     Streptococcus.
-#   * the 6 process extraction negatives, which are in streptococcus_lri_neg.txt beside this file.
+#   * the 6 process extraction negatives, which are in strepto_lri_neg.txt beside this file.
 #
 # GROUND TRUTH. There is none in the ENA metadata: the sample titles say only which pipeline was
 # used, and the per-sample culture result lives in the paper's Table 1 and supplementary tables. It
@@ -43,7 +43,7 @@
 # column is a URL. With -ll the files land in data/fastq named after their key, i.e.
 # data/fastq/P1.fastq.gz .. S41.fastq.gz:
 #
-#   mvn exec:exec@fastqdl -Dname=streptococcus -Dfqmap=streptococcus_lri_real.txt
+#   mvn exec:exec@fastqdl -Dname=strepto -Dfqmap=strepto_lri_real.txt
 #
 # Genestrip skips a file that is already in place, so it is safe to repeat. About 1.5 GB in total.
 #

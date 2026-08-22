@@ -25,7 +25,7 @@
 # recognise which of its own k-mers are unspecific.
 
 # Homo sapiens (taxid 9606), GRCh38.p14. Requested by every project whose reads come from a human
-# sample -- viral (human saliva), protozoa, parasites, borrelia, tick-borne -- where
+# sample -- viral (human saliva), strepto (sputum/BAL), protozoa, parasites, borrelia, tick-borne --
 # host DNA is the bulk of the data and would otherwise produce false positives.
 GCA_000001405.29_GRCh38.p14_genomic.fna.gz https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.29_GRCh38.p14/GCA_000001405.29_GRCh38.p14_genomic.fna.gz 81800f793d1803a1d5e529a5e7ba7050
 

@@ -41,18 +41,23 @@
 # difference and does not disturb the calibration of Section "Estimating the gain without ground
 # truth", but it is worth knowing before the two sets are held against each other.
 #
-# Comment out the runs not wanted for a given analysis; there is no SAMPLES variable on this side.
-# Scoring all five in one call is a multi-day proposition -- saliva_srr5571991.txt exists to take
-# them one at a time.
+# THE TWO ERR RUNS ARE COMMENTED OUT and are the largest of the five: 171 GB and 154 GB against the
+# 139, 112 and 78 GB of the SRR ones, i.e. more than the other three together. They were left out on
+# 2026-08-22 for disk and wall time, not because they do not belong -- the first paper reports them,
+# and the table above stays so that the decision is visible rather than the runs simply absent.
+# Uncomment both lines of a run to take it back in, and fetch it with bin/fetch_saliva.sh <acc>.
+#
+# Scoring even the three in one call is a multi-day proposition -- saliva_srr5571991.txt exists to
+# take them one at a time.
 #
 # key        file
 SRR5571985 SRR5571985_1.fastq.gz
 SRR5571985 SRR5571985_2.fastq.gz
-ERR1395613 ERR1395613_1.fastq.gz
-ERR1395613 ERR1395613_2.fastq.gz
+#ERR1395613 ERR1395613_1.fastq.gz
+#ERR1395613 ERR1395613_2.fastq.gz
 SRR5571991 SRR5571991_1.fastq.gz
 SRR5571991 SRR5571991_2.fastq.gz
-ERR1395610 ERR1395610_1.fastq.gz
-ERR1395610 ERR1395610_2.fastq.gz
+#ERR1395610 ERR1395610_1.fastq.gz
+#ERR1395610 ERR1395610_2.fastq.gz
 SRR5571990 SRR5571990_1.fastq.gz
 SRR5571990 SRR5571990_2.fastq.gz

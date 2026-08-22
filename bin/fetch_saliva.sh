@@ -74,8 +74,11 @@ mkdir -p "$fastqdir"
 # study this one builds upon. The ENA resolves ERR accessions natively -- fetch_via_ena() asks the
 # filereport API and derives nothing from the prefix -- so they present no special difficulty.
 #
-# Name a subset on the command line to fetch fewer; see the volume table above before doing so.
-DEFAULT_RUNS="SRR5571985 ERR1395613 SRR5571991 ERR1395610 SRR5571990"
+# The default is the three SRR runs. The two ERR ones are the largest of the five -- 171 GB and
+# 154 GB, more than the other three together -- and were dropped again on 2026-08-22 for disk and
+# wall time. They are still fetched on request, since the ENA resolves them like any other
+# accession: sh ./bin/fetch_saliva.sh ERR1395613 ERR1395610 .
+DEFAULT_RUNS="SRR5571985 SRR5571991 SRR5571990"
 
 runs=${*:-$DEFAULT_RUNS}
 

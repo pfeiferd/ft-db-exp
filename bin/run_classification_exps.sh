@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|tick-borne|accuracy|perf|real|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|tick-borne|accuracy|perf|real|all]
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
@@ -244,24 +244,25 @@ publish_match_results() {
 case "$what" in
   viral)        run_iss viral; run_perf viral viral_sim.txt ;;
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
+  strepto)      run_iss strepto; run_perf strepto strepto_sim.txt ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
-  accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_ticks ;;
+  accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto; run_ticks ;;
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
-                run_perf tick-borne ticks_sim.txt
+                run_perf strepto strepto_sim.txt; run_perf tick-borne ticks_sim.txt
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
-  all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_ticks
+  all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
-                run_perf tick-borne ticks_sim.txt
+                run_perf strepto strepto_sim.txt; run_perf tick-borne ticks_sim.txt
                 run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
-  *)          echo "Usage: $0 [viral|protozoa|tick-borne|accuracy|perf|real|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|tick-borne|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 
 echo

@@ -1,0 +1,127 @@
+# Per-sample reference standard for ENA study PRJEB30781, transcribed from Tables 1 and 2 of the
+# accepted manuscript of
+#   Charalampous T, Kay GL, Richardson H, Aydin A, Baldan R, Jeanes C, Rae D, Grundy S, Turner DJ,
+#   Wain J, Leggett RM, Livermore DM, O'Grady J (2019): "Nanopore metagenomics enables rapid
+#   clinical diagnosis of bacterial lower respiratory infection." Nat Biotechnol 37(7):783-792.
+#   https://doi.org/10.1038/s41587-019-0156-5   AM: https://ueaeprints.uea.ac.uk/id/eprint/71681/
+#
+# `culture' is the routine microbiology result, `wimp' what that study's own pipeline (ONT WIMP,
+# k-mer based) reported. NRF = normal respiratory flora, NSG = no significant growth, None = the
+# pipeline reported no pathogen. Several samples carry more than one organism; they are one row per
+# organism with the sample repeated.
+#
+# THIS IS A SAMPLE-LEVEL STANDARD, NOT A READ-LEVEL ONE. It cannot serve the measures of Section
+# "Measuring classification quality", which need sigma(r); it can answer whether a database names
+# the organism that grew. Note also that culture is a demonstrably incomplete standard here: the
+# study's specificity against it was 41.7 %, and most of its apparent false positives were
+# confirmed real by qPCR.
+#
+# sample;cohort;specimen;culture;wimp
+P1;pilot;;Coliform;P. mirabilis
+P2;pilot;;NRF;None
+P3;pilot;;P. aeruginosa;P. aeruginosa
+P3;pilot;;S. pneumoniae;
+P4;pilot;;NRF;None
+P5;pilot;;Coliform;E. coli
+P6;pilot;;Coliform;K. pneumoniae
+P7;pilot;;Coliform;S. marcescens
+P8;pilot;;H. influenzae;H. influenzae
+P8;pilot;;;M. catarrhalis
+P9;pilot;;H. influenzae;H. influenzae
+P10;pilot;;MRSA;MRSA
+P11;pilot;;Coliform;E. coli
+P12;pilot;;K. pneumoniae;K. pneumoniae
+P13;pilot;;E. coli;E. coli
+P14;pilot;;K. pneumoniae;K. pneumoniae
+P14;pilot;;E. cloacae;E. cloacae
+P14;pilot;;;E. coli
+P15;pilot;;S. aureus;S. aureus
+P16;pilot;;S. aureus;S. aureus
+P17;pilot;;NRF;None
+P18;pilot;;NRF;None
+P19;pilot;;NRF;None
+P20;pilot;;NRF;None
+P21;pilot;;K. pneumoniae;K. pneumoniae
+P22;pilot;;P. aeruginosa;P. aeruginosa
+P22;pilot;;;H. influenzae
+P23;pilot;;S. aureus;S. aureus
+P24;pilot;;H. influenzae;H. influenzae
+P25;pilot;;H. influenzae;H. influenzae
+P26;pilot;;M. catarrhalis;M. catarrhalis
+P27;pilot;;H. influenzae;H. influenzae
+P28;pilot;;S. pneumoniae;S. pneumoniae
+P28;pilot;;H. influenzae;H. influenzae
+P29;pilot;;H. influenzae;H. influenzae
+P29;pilot;;;K. pneumoniae
+P29;pilot;;;M. catarrhalis
+P30;pilot;;S. pneumoniae;S. pneumoniae
+P30;pilot;;;H. influenzae
+P31;pilot;;E. aerogenes;E. aerogenes
+P31;pilot;;S. aureus;S. aureus
+P32;pilot;;P. aeruginosa;P. aeruginosa
+P33;pilot;;S. pneumoniae;S. pneumoniae
+P34;pilot;;S. aureus;
+P35;pilot;;H. influenzae;H. influenzae
+P36;pilot;;S. pneumoniae;S. pneumoniae
+P37;pilot;;H. influenzae;
+P37;pilot;;Coliform;K. oxytoca
+P38;pilot;;MRSA;MRSA
+P39;pilot;;S. aureus;S. aureus
+P40;pilot;;H. influenzae;H. influenzae
+P40;pilot;;S. pneumoniae;S. pneumoniae
+S1;optimised;ETA;E. coli;E. coli
+S2;optimised;Sputum;K. pneumoniae;K. pneumoniae
+S3;optimised;Sputum;P. aeruginosa;P. aeruginosa
+S4;optimised;Sputum;S. marcescens;S. marcescens
+S5;optimised;Sputum;K. oxytoca;K. oxytoca
+S5;optimised;Sputum;;K. pneumoniae
+S6;optimised;Sputum;S. aureus;S. aureus
+S7;optimised;Sputum;H. influenzae;H. influenzae
+S7;optimised;Sputum;;P. aeruginosa
+S8;optimised;Sputum;M. catarrhalis;M. catarrhalis
+S8;optimised;Sputum;;S. pneumoniae
+S9;optimised;Sputum;P. aeruginosa;
+S9;optimised;Sputum;E. coli;E. coli
+S10;optimised;Sputum;NSG;H. influenzae
+S10;optimised;Sputum;;S. pneumoniae
+S11;optimised;Sputum;NRF;S. pneumoniae
+S12;optimised;Sputum;NRF;H. influenzae
+S12;optimised;Sputum;;M. catarrhalis
+S13;optimised;Sputum;S. marcescens;S. marcescens
+S14;optimised;Sputum;S. aureus;S. aureus
+S14;optimised;Sputum;;M. catarrhalis
+S15;optimised;Sputum;S. aureus;S. aureus
+S15;optimised;Sputum;;S. pneumoniae
+S16;optimised;Sputum;MRSA;MRSA
+S17;optimised;Sputum;NRF;None
+S18;optimised;Sputum;H. influenzae;H. influenzae
+S19;optimised;Sputum;NRF;None
+S20;optimised;Sputum;H. influenzae;H. influenzae
+S21;optimised;Sputum;NRF;H. influenzae
+S21;optimised;Sputum;;S. pneumoniae
+S22;optimised;Sputum;NRF;None
+S23;optimised;Sputum;H. influenzae;H. influenzae
+S24;optimised;Sputum;H. influenzae;H. influenzae
+S25;optimised;Sputum;H. influenzae;H. influenzae
+S26;optimised;Sputum;M. catarrhalis;M. catarrhalis
+S27;optimised;Sputum;H. influenzae;H. influenzae
+S27;optimised;Sputum;S. aureus;S. aureus
+S27;optimised;Sputum;;S. pyogenes
+S28;optimised;Sputum;NRF;S. pneumoniae
+S29;optimised;Sputum;P. aeruginosa;P. aeruginosa
+S29;optimised;Sputum;;S. aureus
+S30;optimised;BAL;P. aeruginosa;P. aeruginosa
+S31;optimised;Sputum;NRF;H. influenzae
+S32;optimised;Sputum;NSG;E. coli
+S33;optimised;Sputum;NRF;None
+S34;optimised;Sputum;NSG;None
+S35;optimised;Sputum;E. coli;E. coli
+S36;optimised;Sputum;H. influenzae;H. influenzae
+S37;optimised;Sputum;P. aeruginosa;P. aeruginosa
+S38;optimised;Sputum;S. aureus;S. aureus
+S38;optimised;Sputum;P. aeruginosa;P. aeruginosa
+S39;optimised;Sputum;H. influenzae;H. influenzae
+S39;optimised;Sputum;;M. catarrhalis
+S40;optimised;ETA;MRSA;MRSA
+S41;optimised;Sputum;H. influenzae;H. influenzae
+S41;optimised;Sputum;S. aureus;S. aureus
