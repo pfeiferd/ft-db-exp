@@ -147,6 +147,14 @@ public class TaxonCallReport {
         FTProject project = new FTProject(new GSCommon(baseDir), db, null, null, fqMapFile,
                 null, null, null, null, null, null, false);
         project.initConfigParam(GSConfigKey.THREADS, -1);
+        // Downloaded once into data/fastq rather than streamed anew on every run. Without this the
+        // fastq map keeps its URLs: FastqMapTransformGoal passes them through untouched, whereby
+        // FastqDownloadsGoal.getFiles() finds no file to fetch and does nothing, and every pass over
+        // a URL-based map re-reads it over the network. `data/fastq' and not the project's own folder,
+        // so that the file lands where `mvn exec:exec@fastqdl' (which passes -ll) puts it and where
+        // run_classification_exps.sh looks for it -- named by the map key, e.g. data/fastq/P1.fastq.gz.
+        // Maps naming local files are unaffected: the transform only rewrites URL resources.
+        project.setDownloadFastqsToCommon(true);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<>(project);
         try {
             @SuppressWarnings("unchecked")
