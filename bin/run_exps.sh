@@ -23,11 +23,18 @@ cd $scriptdir/..
 mkdir -p results
 
 # Which projects to work on. Naming none means all of them, in the order the paper's tables list.
+#
+# `streptonamed' is `strepto' built from the 145 named children of the genus instead of the genus
+# itself, so that the two unnamed buckets below it -- `unclassified Streptococcus' with its 468
+# species, and `environmental samples' -- stay out. It is a control, not a seventh database of the
+# paper: it tests whether those unnamed genomes are what strips S. pneumoniae of its own k-mers
+# (397 of them, against 206,674 for S. oralis). Building it costs another full pass; name the
+# projects explicitly to skip it.
 if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  projects="viral tick-borne strepto protozoa parasites vineyard"
+  projects="viral tick-borne strepto streptonamed protozoa parasites vineyard"
   restricted=""
 fi
 

@@ -16,6 +16,8 @@
 #
 # Usage:
 #   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|tick-borne|accuracy|perf|real|taxoncall|all]
+#
+# `real' covers the strepto runs twice: against `strepto' and against the control `streptonamed'.
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
 #   A database name runs both parts for it, following ERROR_FREE; `accuracy' and `perf' run one
@@ -285,6 +287,11 @@ case "$what" in
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real strepto strepto_lri_real.txt lri
                 run_real strepto strepto_lri_neg.txt lrineg
+                # The same reads against the control database of the same genus, built from its named
+                # children only. The map names samples and URLs and belongs to no project, so it is
+                # read as it stands; the runs are already in data/fastq and are not fetched again.
+                run_real streptonamed strepto_lri_real.txt lri
+                run_real streptonamed strepto_lri_neg.txt lrineg
                 run_taxoncall strepto strepto_lri_real.txt lri 1301
                 run_taxoncall strepto strepto_lri_neg.txt lrineg 1301
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
@@ -300,6 +307,8 @@ case "$what" in
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real strepto strepto_lri_real.txt lri
                 run_real strepto strepto_lri_neg.txt lrineg
+                run_real streptonamed strepto_lri_real.txt lri
+                run_real streptonamed strepto_lri_neg.txt lrineg
                 run_taxoncall strepto strepto_lri_real.txt lri 1301
                 run_taxoncall strepto strepto_lri_neg.txt lrineg 1301
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva

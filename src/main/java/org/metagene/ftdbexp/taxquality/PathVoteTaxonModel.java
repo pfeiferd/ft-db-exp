@@ -3,11 +3,9 @@ package org.metagene.ftdbexp.taxquality;
 import org.metagene.genestrip.tax.SmallTaxTree;
 
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.SortedMap;
-import java.util.TreeMap;
 
 /**
  * Names a sample's species by a plain majority over what the matcher assigned: the node most of the
@@ -84,26 +82,30 @@ public class PathVoteTaxonModel extends TaxonClassifier {
     }
 
     /**
-     * The {@code howMany} nodes with the most reads behind them, heaviest first.
+     * The {@code howMany} species with the most reads behind them, heaviest first.
      * <p>
-     * One winner is the wrong shape of answer for a sputum sample. Such a sample carries a community
-     * of streptococci -- one with more than a thousand reads spreads them over some 320 nodes of the
-     * genus -- and the reference standard says so too, naming several organisms for nine of the
-     * thirteen samples it decides. A rule that crowns one of them answers a question the sample does
-     * not settle, and the runner-up may be the organism actually asked about. Reporting the first few
-     * leaves that judgement to the reader instead of making it silently.
+     * Every count is first carried up to the species it belongs to -- a read assigned to a strain, or
+     * to one of the artificial nodes the fill inserts below it, is a read for that strain's species --
+     * and the species are then ranked by what they gathered. Rolling up is what keeps a well
+     * represented species from being beaten by an obscure one: {@code S. pneumoniae} enters the
+     * database with 153 genomes and would otherwise field 153 separate candidates, each with a
+     * fraction of the reads, against a draft genome that fields one.
      * <p>
-     * Nodes that score alike are one answer, not several: each group of equal weight is resolved to
-     * the lowest common ancestor of its members, exactly as a tie is resolved for a single winner, so
-     * a rank widens rather than picking arbitrarily from a tie. Groups are then taken from the top
-     * until {@code howMany} <em>distinct</em> nodes have been collected -- raising to a minimum can
-     * carry two groups onto the same ancestor, and repeating it would suggest support that is not
-     * there.
+     * Counts that belong to no species are not carried anywhere. A read the classifier left at the
+     * genus, at a refined node, or in a bucket such as {@code unclassified Streptococcus} says that
+     * the evidence did not reach a species, and crediting it to one would invent a specificity the
+     * read does not have. {@link #unplaced} reports how much of the sample that is; it is the figure
+     * a refinement should lower, since pushing k-mers down is exactly what lets a read reach a
+     * species it could not reach before.
+     * <p>
+     * Ties are broken by tax id so that a repeated run answers the same. There is no folding into a
+     * common ancestor here, unlike a vote over arbitrary nodes: the answer has to be a species, and
+     * the ancestor of two species is not one.
      *
      * @param countsPerNode the sample's contributions by node position
-     * @param minimum       how much a winner's path must gather, or {@link #NO_MINIMUM}
-     * @param howMany       how many nodes to return at most
-     * @return the nodes, heaviest first, possibly fewer than asked for and possibly empty
+     * @param minimum       how much a species must gather to be reported at all, or {@link #NO_MINIMUM}
+     * @param howMany       how many species to return at most
+     * @return the species nodes, heaviest first, possibly fewer than asked for and possibly empty
      */
     public List<SmallTaxTree.SmallTaxIdNode> classifyNodes(Map<Integer, Long> countsPerNode, long minimum,
                                                            int howMany) {
@@ -111,8 +113,36 @@ public class PathVoteTaxonModel extends TaxonClassifier {
         if (countsPerNode.isEmpty() || howMany <= 0) {
             return result;
         }
-        // Score every node the sample contributed at, then group the nodes by score.
-        SortedMap<Long, List<SmallTaxTree.SmallTaxIdNode>> byScore = new TreeMap<>(Collections.reverseOrder());
+        Map<String, Long> perSpecies = countsPerSpecies(countsPerNode);
+        List<Map.Entry<String, Long>> ranked = new ArrayList<>(perSpecies.entrySet());
+        ranked.sort((a, b) -> {
+            int byCount = Long.compare(b.getValue(), a.getValue());
+            return byCount != 0 ? byCount : a.getKey().compareTo(b.getKey());
+        });
+        for (Map.Entry<String, Long> e : ranked) {
+            if (result.size() >= howMany) {
+                break;
+            }
+            if (minimum > NO_MINIMUM && e.getValue() < minimum) {
+                // Ranked by size, so nothing further down can reach it either.
+                break;
+            }
+            SmallTaxTree.SmallTaxIdNode node = composition.getTree().getNodeByTaxId(e.getKey());
+            if (node != null) {
+                result.add(node);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * The sample's counts summed per species, leaving out what belongs to no species.
+     *
+     * @param countsPerNode the sample's contributions by node position
+     * @return the count each species gathered, keyed by tax id
+     */
+    public Map<String, Long> countsPerSpecies(Map<Integer, Long> countsPerNode) {
+        Map<String, Long> perSpecies = new LinkedHashMap<>();
         for (Map.Entry<Integer, Long> e : countsPerNode.entrySet()) {
             if (e.getValue() <= 0) {
                 continue;
@@ -123,74 +153,37 @@ public class PathVoteTaxonModel extends TaxonClassifier {
                         + ", which this database's taxonomy does not have. The counts and the tree"
                         + " come from different databases.");
             }
-            // The node's own count and nothing else: a plain majority over what the matcher assigned.
-            byScore.computeIfAbsent(e.getValue(), k -> new ArrayList<>()).add(node);
-        }
-        for (List<SmallTaxTree.SmallTaxIdNode> tied : byScore.values()) {
-            if (result.size() >= howMany) {
-                break;
-            }
-            SmallTaxTree.SmallTaxIdNode node = resolve(tied, countsPerNode, minimum);
-            if (node != null && !result.contains(node)) {
-                result.add(node);
+            String species = TaxonComposition.speciesOf(node);
+            if (!TaxonComposition.UNPLACED.equals(species)) {
+                perSpecies.merge(species, e.getValue(), Long::sum);
             }
         }
-        return result;
+        return perSpecies;
     }
 
     /**
-     * Turns one group of equally weighted nodes into the single node that stands for it: each is
-     * first raised to where it gathers the minimum, and what remains is folded into its lowest
-     * common ancestor.
+     * How much of the sample reached no species at all: the counts at the genus, at refined nodes and
+     * in the unranked buckets between them.
      *
-     * @param tied          the nodes of one score group
-     * @param countsPerNode the sample's contributions
-     * @param minimum       how much the path must gather, or {@link #NO_MINIMUM}
-     * @return the node standing for the group, or {@code null} if the minimum is out of reach
+     * @param countsPerNode the sample's contributions by node position
+     * @return the sum of the counts that belong to no species
      */
-    private SmallTaxTree.SmallTaxIdNode resolve(List<SmallTaxTree.SmallTaxIdNode> tied,
-                                                Map<Integer, Long> countsPerNode, long minimum) {
-        List<SmallTaxTree.SmallTaxIdNode> winners = new ArrayList<>(tied);
-        if (minimum > NO_MINIMUM) {
-            for (int i = 0; i < winners.size(); i++) {
-                SmallTaxTree.SmallTaxIdNode raised = lowestNodeReaching(winners.get(i), countsPerNode, minimum);
-                if (raised == null) {
-                    return null;
-                }
-                winners.set(i, raised);
+    public long unplaced(Map<Integer, Long> countsPerNode) {
+        long total = 0;
+        long placed = 0;
+        for (Long v : countsPerNode.values()) {
+            if (v > 0) {
+                total += v;
             }
         }
-        SmallTaxTree.SmallTaxIdNode node = winners.get(0);
-        for (int i = 1; i < winners.size() && node != null; i++) {
-            node = composition.getTree().getLowestCommonAncestor(node, winners.get(i));
+        for (Long v : countsPerSpecies(countsPerNode).values()) {
+            placed += v;
         }
-        return node;
-    }
-
-    /**
-     * @param node          the node to start from
-     * @param countsPerNode the sample's contributions
-     * @param minimum       the amount the path must gather
-     * @return the lowest ancestor of {@code node}, itself included, whose path gathers
-     *         {@code minimum}, or {@code null} if not even the root does
-     */
-    private SmallTaxTree.SmallTaxIdNode lowestNodeReaching(SmallTaxTree.SmallTaxIdNode node,
-                                                           Map<Integer, Long> countsPerNode, long minimum) {
-        long sum = 0;
-        for (SmallTaxTree.SmallTaxIdNode n = node; n != null; n = n.getParent()) {
-            Long c = countsPerNode.get(n.getPosition());
-            if (c != null) {
-                sum += c;
-                if (sum >= minimum) {
-                    return n;
-                }
-            }
-        }
-        return null;
+        return total - placed;
     }
 
     @Override
     public String getName() {
-        return minimum > NO_MINIMUM ? "path vote (min " + minimum + ")" : "path vote";
+        return minimum > NO_MINIMUM ? "species vote (min " + minimum + ")" : "species vote";
     }
 }

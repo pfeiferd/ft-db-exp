@@ -113,7 +113,7 @@ public class TaxonCallReport {
             // sorts on any of them without regrouping. Everything describing the sample stands once,
             // at the front; a vote that does not exist leaves its block empty.
             StringBuilder header = new StringBuilder("db;sample;variant;currency;contributing nodes;total;"
-                    + "culture;wimp;culture taxid;wimp taxid;");
+                    + "unplaced;culture;wimp;culture taxid;wimp taxid;");
             for (int i = 1; i <= TOP_VOTES; i++) {
                 header.append("node ").append(i).append(";node name ").append(i)
                         .append(";node rank ").append(i).append(";taxon ").append(i)
@@ -145,6 +145,7 @@ public class TaxonCallReport {
                         ps.print(currency.label); ps.print(';');
                         ps.print(first.contributingNodes); ps.print(';');
                         ps.print(first.total); ps.print(';');
+                        ps.print(first.unplaced); ps.print(';');
                         ps.print(join(truth.get(sample), 0)); ps.print(';');
                         ps.print(join(truth.get(sample), 1)); ps.print(';');
                         ps.print(first.sigmaCulture == null ? "" : first.sigmaCulture); ps.print(';');
@@ -180,6 +181,11 @@ public class TaxonCallReport {
         int candidates;
         int contributingNodes;
         long total;
+        /**
+         * How much of {@link #total} reached no species: the counts at the genus, at refined nodes
+         * and in the unranked buckets between them. The figure a refinement should lower.
+         */
+        long unplaced;
         /** The reference organism resolved to a taxon of this tree, per column; null where none is named. */
         String sigmaCulture;
         String sigmaWimp;
@@ -312,10 +318,12 @@ public class TaxonCallReport {
         if (calls.isEmpty()) {
             calls.add(new Call());
         }
+        long unplaced = rule.unplaced(countsPerNode);
         for (Call call : calls) {
             // The same for every vote of a sample: they describe the sample, not the answer.
             call.total = total;
             call.contributingNodes = countsPerNode.size();
+            call.unplaced = unplaced;
         }
         return calls;
     }
