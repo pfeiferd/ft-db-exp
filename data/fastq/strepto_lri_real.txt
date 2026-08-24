@@ -33,11 +33,30 @@
 #     Streptococcus.
 #   * the 6 process extraction negatives, which are in strepto_lri_neg.txt beside this file.
 #
-# GROUND TRUTH. There is none in the ENA metadata: the sample titles say only which pipeline was
-# used, and the per-sample culture result lives in the paper's Table 1 and supplementary tables. It
-# has to be transcribed by hand before these runs can be scored against a reference standard. Until
-# then they are what the tick and saliva runs are in this paper -- real data without ground truth,
-# to be read with the estimator of Section "Estimating the gain without ground truth".
+# WHICH RUN IS WHICH SAMPLE. The keys below are the study's own sample names, and they are not a
+# guess: the ENA metadata carries them in `sample_alias', one per run. (The sample *title* says only
+# which pipeline was used, which is what an earlier version of this note mistook for the whole of the
+# metadata.) All 83 assignments were checked against the portal API on 2026-08-24 and every one of
+# them agreed:
+#
+#   curl "https://www.ebi.ac.uk/ena/portal/api/filereport?accession=PRJEB30781\
+#         &result=read_run&fields=run_accession,sample_alias&format=tsv"
+#
+# GROUND TRUTH. The reference standard is not in the ENA metadata; it is in the paper's Table 1
+# (pilot cohort) and Table 2 (optimised cohort), one row per sample with the organism routine
+# microbiology grew beside the one the study's own pipeline reported. It is transcribed in
+# data/projects/strepto/ground_truth.csv, where the two are kept apart, since only the first is a
+# standard and the second is a comparator.
+#
+# What that standard can and cannot settle. It names the *pathogen* of a sample, not its contents:
+# a sputum sample always carries oral streptococci, and the reference is silent about them. A call
+# of, say, `Streptococcus sp. oral taxon 431' on a sample whose reference reads `H. influenzae' is
+# therefore not refuted by it -- it is merely outside what the reference speaks about. Only the six
+# samples with a culture-confirmed Streptococcus (P3, P28, P30, P33, P36 and P40, all of them in the
+# pilot cohort) can decide a streptococcal call outright; the seven of the optimised cohort rest on
+# the study's pipeline alone. Where the reference names no Streptococcus at all, these runs are what
+# the tick and saliva runs are in this paper -- real data without ground truth, to be read with the
+# estimator of Section "Estimating the gain without ground truth".
 #
 # This is an ordinary Genestrip fastq map, so `fastqdownload' fetches every entry whose second
 # column is a URL. With -ll the files land in data/fastq named after their key, i.e.

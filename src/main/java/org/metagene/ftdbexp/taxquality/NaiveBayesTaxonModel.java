@@ -3,7 +3,7 @@ package org.metagene.ftdbexp.taxquality;
 import java.util.Map;
 
 /**
- * Names a sample's data taxon by the log-lift its reads give each candidate.
+ * Names a sample's species by the log-lift its reads give each candidate.
  * <p>
  * For every candidate taxon $t$ the rule sums, over the nodes the sample contributed at, the
  * contribution times $\log P(t \mid v) / P(t)$: how much more of node $v$'s genomes belong to $t$
@@ -61,7 +61,7 @@ public class NaiveBayesTaxonModel extends TaxonClassifier {
      * How much more of a node's genomes belong to a taxon than of the collection at large, in logs.
      *
      * @param nodePos dense node position
-     * @param taxon   the candidate data taxon
+     * @param taxon   the candidate species
      * @return the log lift, zero for a node with no genome below it
      */
     public double getLogLift(int nodePos, String taxon) {

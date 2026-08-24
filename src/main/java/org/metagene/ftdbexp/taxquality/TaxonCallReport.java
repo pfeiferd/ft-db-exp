@@ -39,6 +39,24 @@ public class TaxonCallReport {
     private final File resultsDir;
 
     /** The currencies a sample's contribution is counted in. */
+    /**
+     * What the vote is taken over. The three are not variants of one measurement but three questions,
+     * and a sample can answer them differently.
+     * <p>
+     * {@link #READS} counts the reads Genestrip classified to a taxon, so each read carries one vote
+     * and a long read counts no more than a short one. {@link #KMERS} counts every matched k-mer
+     * specific to a taxon's genome, whether or not it sits in a read that was classified there -- so
+     * a read whose k-mers are split across several species still contributes all of them, and the
+     * evidence of the sample is weighed rather than its reads counted. {@link #UNIQUE} is the same
+     * over distinct k-mers, which keeps a single deeply covered region from outvoting the rest.
+     * <p>
+     * Which one to believe is not decided here. The report writes a row per currency and leaves the
+     * comparison to whoever reads it, since the currencies can disagree and their disagreement is
+     * itself worth seeing: a call that holds in all three rests on something other than coverage.
+     */
+    /** How many of the heaviest votes are reported per sample, variant and currency. */
+    private static final int TOP_VOTES = 3;
+
     private enum Currency {
         READS("reads"), KMERS("kmers"), UNIQUE("unique kmers");
 
@@ -82,7 +100,7 @@ public class TaxonCallReport {
             throws IOException {
         // Read before the runs, not after: each run scores its calls against it as they are made.
         Map<String, List<String[]>> truth = GroundTruth.read(new File(baseDir, "projects/" + db + "/ground_truth.csv"));
-        Map<Variant, Map<String, Map<Currency, Call>>> byVariant = new LinkedHashMap<>();
+        Map<Variant, Map<String, Map<Currency, List<Call>>>> byVariant = new LinkedHashMap<>();
         for (Variant variant : Variant.values()) {
             System.out.println("=== " + db + " / " + variant.getLabel() + " ===");
             byVariant.put(variant, run(db, fqMapFile, variant, rootTaxId, minimum, truth));
@@ -90,40 +108,59 @@ public class TaxonCallReport {
 
         File file = new File(resultsDir, db + "_" + reportKey + "_taxoncall.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
-            ps.println("db;sample;variant;currency;node;node name;node rank;taxon;candidates;"
-                    + "contributing nodes;total;culture;wimp;culture taxid;q culture;wimp taxid;q wimp;");
+            // One row per sample, variant and currency; the votes are side by side in it rather than
+            // under one another, so that a reader compares the three at a glance and a spreadsheet
+            // sorts on any of them without regrouping. Everything describing the sample stands once,
+            // at the front; a vote that does not exist leaves its block empty.
+            StringBuilder header = new StringBuilder("db;sample;variant;currency;contributing nodes;total;"
+                    + "culture;wimp;culture taxid;wimp taxid;");
+            for (int i = 1; i <= TOP_VOTES; i++) {
+                header.append("node ").append(i).append(";node name ").append(i)
+                        .append(";node rank ").append(i).append(";taxon ").append(i)
+                        .append(";candidates ").append(i).append(";q culture ").append(i)
+                        .append(";q wimp ").append(i).append(';');
+            }
+            ps.println(header);
             Set<String> samples = new LinkedHashSet<>();
-            for (Map<String, Map<Currency, Call>> m : byVariant.values()) {
+            for (Map<String, Map<Currency, List<Call>>> m : byVariant.values()) {
                 samples.addAll(m.keySet());
             }
             for (String sample : samples) {
                 for (Variant variant : Variant.values()) {
-                    Map<Currency, Call> perCurrency = byVariant.get(variant).get(sample);
+                    Map<Currency, List<Call>> perCurrency = byVariant.get(variant).get(sample);
                     if (perCurrency == null) {
                         continue;
                     }
                     for (Currency currency : Currency.values()) {
-                        Call c = perCurrency.get(currency);
-                        if (c == null) {
+                        List<Call> calls = perCurrency.get(currency);
+                        if (calls == null || calls.isEmpty()) {
                             continue;
                         }
+                        // The sample's own figures, taken from the first vote because every vote
+                        // carries the same ones.
+                        Call first = calls.get(0);
                         ps.print(db); ps.print(';');
                         ps.print(sample); ps.print(';');
                         ps.print(variant.getLabel()); ps.print(';');
                         ps.print(currency.label); ps.print(';');
-                        ps.print(c.nodeTaxId == null ? "" : c.nodeTaxId); ps.print(';');
-                        ps.print(c.nodeName == null ? "" : c.nodeName); ps.print(';');
-                        ps.print(c.nodeRank == null ? "" : c.nodeRank); ps.print(';');
-                        ps.print(c.taxon == null ? "" : c.taxon); ps.print(';');
-                        ps.print(c.candidates); ps.print(';');
-                        ps.print(c.contributingNodes); ps.print(';');
-                        ps.print(c.total); ps.print(';');
+                        ps.print(first.contributingNodes); ps.print(';');
+                        ps.print(first.total); ps.print(';');
                         ps.print(join(truth.get(sample), 0)); ps.print(';');
                         ps.print(join(truth.get(sample), 1)); ps.print(';');
-                        ps.print(c.sigmaCulture == null ? "" : c.sigmaCulture); ps.print(';');
-                        ps.print(format(c.qCulture)); ps.print(';');
-                        ps.print(c.sigmaWimp == null ? "" : c.sigmaWimp); ps.print(';');
-                        ps.print(format(c.qWimp)); ps.println(';');
+                        ps.print(first.sigmaCulture == null ? "" : first.sigmaCulture); ps.print(';');
+                        ps.print(first.sigmaWimp == null ? "" : first.sigmaWimp); ps.print(';');
+                        for (int i = 0; i < TOP_VOTES; i++) {
+                            Call c = i < calls.size() ? calls.get(i) : null;
+                            ps.print(c == null || c.nodeTaxId == null ? "" : c.nodeTaxId); ps.print(';');
+                            ps.print(c == null || c.nodeName == null ? "" : c.nodeName); ps.print(';');
+                            ps.print(c == null || c.nodeRank == null ? "" : c.nodeRank); ps.print(';');
+                            ps.print(c == null || c.taxon == null ? "" : c.taxon); ps.print(';');
+                            ps.print(c == null || c.nodeTaxId == null ? "" : Integer.toString(c.candidates));
+                            ps.print(';');
+                            ps.print(c == null ? "" : format(c.qCulture)); ps.print(';');
+                            ps.print(c == null ? "" : format(c.qWimp)); ps.print(';');
+                        }
+                        ps.println();
                     }
                 }
             }
@@ -154,10 +191,10 @@ public class TaxonCallReport {
     /**
      * Matches the map's fastq files against one variant and votes on each.
      */
-    private Map<String, Map<Currency, Call>> run(String db, String fqMapFile, Variant variant,
+    private Map<String, Map<Currency, List<Call>>> run(String db, String fqMapFile, Variant variant,
                                                  String rootTaxId, long minimum,
                                                  final Map<String, List<String[]>> truth) throws IOException {
-        final Map<String, Map<Currency, Call>> result = new LinkedHashMap<>();
+        final Map<String, Map<Currency, List<Call>>> result = new LinkedHashMap<>();
         FTProject project = new FTProject(new GSCommon(baseDir), db, null, null, fqMapFile,
                 null, null, null, null, null, null, false);
         project.initConfigParam(GSConfigKey.THREADS, -1);
@@ -192,22 +229,27 @@ public class TaxonCallReport {
 
                 @Override
                 public void afterKey(String key, MatchingResult res) {
-                    Map<Currency, Call> perCurrency = new LinkedHashMap<>();
+                    Map<Currency, List<Call>> perCurrency = new LinkedHashMap<>();
                     for (Currency currency : Currency.values()) {
-                        perCurrency.put(currency, vote(res, currency, tree, root, composition, rule, minimum));
+                        perCurrency.put(currency, votes(res, currency, tree, root, composition, rule, minimum));
                     }
                     List<String[]> rows = truth.get(key);
-                    Set<String> cultureSigmas = sigmasOf(rows, 2);
-                    Set<String> wimpSigmas = sigmasOf(rows, 3);
-                    for (Call c : perCurrency.values()) {
+                    Set<String> cultureSigmas = sigmasOf(rows, 2, tree, root);
+                    Set<String> wimpSigmas = sigmasOf(rows, 3, tree, root);
+                    for (List<Call> calls : perCurrency.values()) {
+                        for (Call c : calls) {
                         c.sigmaCulture = String.join(",", cultureSigmas);
                         c.sigmaWimp = String.join(",", wimpSigmas);
                         c.qCulture = candidatePrecision(c, cultureSigmas, composition);
                         c.qWimp = candidatePrecision(c, wimpSigmas, composition);
+                        }
                     }
                     result.put(key, perCurrency);
-                    Call reads = perCurrency.get(Currency.READS);
-                    System.out.println("  " + key + ": " + (reads.taxon == null ? "no call" : reads.taxon)
+                    List<Call> readCalls = perCurrency.get(Currency.READS);
+                    Call reads = readCalls.isEmpty() ? new Call() : readCalls.get(0);
+                    // Only the read vote is echoed; the k-mer votes are in the CSV beside it.
+                    System.out.println("  " + key + " [" + Currency.READS.label + "]: "
+                            + (reads.taxon == null ? "no call" : reads.taxon)
                             + " at " + reads.nodeTaxId + " (" + reads.nodeName + "), "
                             + reads.total + " reads over " + reads.contributingNodes + " nodes");
                 }
@@ -220,13 +262,28 @@ public class TaxonCallReport {
     }
 
     /**
-     * Turns one fastq file's per-taxon totals into a vote, counting only what lies below the root.
+     * Turns one fastq file's per-taxon totals into the {@value #TOP_VOTES} heaviest votes, counting
+     * only what lies below the root.
+     * <p>
+     * More than one, because a sputum sample carries a community rather than an organism and the
+     * runner-up may be what the reference asks about -- see {@link PathVoteTaxonModel#classifyNodes}.
+     * A sample the vote cannot answer at all still yields one row, with an empty node, so that it
+     * appears in the report rather than silently missing from it.
+     *
+     * @param res         the matching result of one sample
+     * @param currency    what the vote is taken over
+     * @param tree        the taxonomy of the database being scored
+     * @param root        the node the vote is restricted to
+     * @param composition the species composition of that tree
+     * @param rule        the vote
+     * @param minimum     how much a winner's path must gather
+     * @return one call per vote, heaviest first, never empty
      */
-    private static Call vote(MatchingResult res, Currency currency, SmallTaxTree tree,
-                             SmallTaxTree.SmallTaxIdNode root, TaxonComposition composition,
-                             PathVoteTaxonModel rule, long minimum) {
+    private static List<Call> votes(MatchingResult res, Currency currency, SmallTaxTree tree,
+                                    SmallTaxTree.SmallTaxIdNode root, TaxonComposition composition,
+                                    PathVoteTaxonModel rule, long minimum) {
         Map<Integer, Long> countsPerNode = new HashMap<>();
-        Call call = new Call();
+        long total = 0;
         for (Map.Entry<String, CountsPerTaxid> e : res.getTaxid2Stats().entrySet()) {
             SmallTaxTree.SmallTaxIdNode node = tree.getNodeByTaxId(e.getKey());
             if (node == null || !isBelow(node, root)) {
@@ -237,19 +294,30 @@ public class TaxonCallReport {
                 continue;
             }
             countsPerNode.merge(node.getPosition(), value, Long::sum);
-            call.total += value;
+            total += value;
         }
-        call.contributingNodes = countsPerNode.size();
-        SmallTaxTree.SmallTaxIdNode winner = rule.classifyNode(countsPerNode, minimum);
-        if (winner != null) {
+        // Heaviest first; the position in this list is the vote's rank, and the report writes it
+        // into the columns of that rank.
+        List<Call> calls = new ArrayList<>();
+        for (SmallTaxTree.SmallTaxIdNode winner : rule.classifyNodes(countsPerNode, minimum, TOP_VOTES)) {
+            Call call = new Call();
             call.nodeTaxId = winner.getTaxId();
             call.nodePos = winner.getPosition();
             call.nodeName = winner.getName();
             call.nodeRank = winner.getRank() == null ? "" : winner.getRank().getName();
             call.candidates = composition.getCandidates(winner.getPosition());
             call.taxon = call.candidates == 1 ? composition.getMajorityClass(winner.getPosition()) : null;
+            calls.add(call);
         }
-        return call;
+        if (calls.isEmpty()) {
+            calls.add(new Call());
+        }
+        for (Call call : calls) {
+            // The same for every vote of a sample: they describe the sample, not the answer.
+            call.total = total;
+            call.contributingNodes = countsPerNode.size();
+        }
+        return calls;
     }
 
     /**
@@ -317,13 +385,36 @@ public class TaxonCallReport {
         return q == null ? "" : String.format(Locale.ROOT, "%.6f", q);
     }
 
-    /** The taxids of one column of a sample's reference rows, without the entries naming no species. */
-    private static Set<String> sigmasOf(List<String[]> rows, int taxidField) {
+    /**
+     * The reference organisms of one column that this vote could name at all: the taxids of the
+     * sample's rows, kept only where the taxon lies in the subtree the vote is restricted to.
+     * <p>
+     * Without that restriction a sample whose reference reads {@code H. influenzae} would score zero
+     * rather than count as undefined, and a database of streptococci would be marked wrong for not
+     * naming an organism it does not contain. Over the 83 samples of {@code strepto} that is 52 of 58
+     * samples scoring a structural zero, which no classifier could lift: the average would be unable
+     * to show an improvement however good the calls became. Restricting the reference is the same
+     * move the paper makes with its genus-only subset, and for the same reason.
+     * <p>
+     * A taxon the tree does not know is dropped as well. The database cannot name what it does not
+     * hold, so such a sample is undecidable here rather than failed.
+     *
+     * @param rows       the sample's reference rows, or {@code null} if it has none
+     * @param taxidField the field holding the resolved taxid of the column in question
+     * @param tree       the taxonomy of the database being scored
+     * @param root       the node the vote is restricted to
+     * @return the reference organisms that lie below {@code root}, possibly empty
+     */
+    private static Set<String> sigmasOf(List<String[]> rows, int taxidField, SmallTaxTree tree,
+                                        SmallTaxTree.SmallTaxIdNode root) {
         Set<String> res = new LinkedHashSet<>();
         if (rows != null) {
             for (String[] r : rows) {
                 if (taxidField < r.length && !r[taxidField].isEmpty()) {
-                    res.add(r[taxidField]);
+                    SmallTaxTree.SmallTaxIdNode node = tree.getNodeByTaxId(r[taxidField]);
+                    if (node != null && isBelow(node, root)) {
+                        res.add(r[taxidField]);
+                    }
                 }
             }
         }

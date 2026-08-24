@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * A rule that names the data taxon a sample's reads point at, from what they matched.
+ * A rule that names the species a sample's reads point at, from what they matched.
  * <p>
  * This is the C.~difficile study's {@code STClassifier} with its class concept replaced. There the
  * unit was an isolate -- one genome, one sequence type -- and the question was which lineage it
@@ -30,7 +30,7 @@ import java.util.Set;
  * @see PathVoteTaxonModel
  */
 public abstract class TaxonClassifier {
-    /** How many genomes of each data taxon sit below each node, shared by every classifier. */
+    /** How many genomes of each species sit below each node, shared by every classifier. */
     protected final TaxonComposition composition;
 
     /**
@@ -43,7 +43,7 @@ public abstract class TaxonClassifier {
     }
 
     /**
-     * Names the data taxon one sample's reads point at.
+     * Names the species one sample's reads point at.
      *
      * @param countsPerNode how much the sample contributed at each node, by dense node position
      * @return the tax id, or {@code null} where the rule makes no call

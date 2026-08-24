@@ -6,16 +6,20 @@ import org.metagene.genestrip.tax.SmallTaxTree;
 import java.util.*;
 
 /**
- * Which data taxa sit below each node of a database, counted once and shared by the classifiers that
+ * Which species sit below each node of a database, counted once and shared by the classifiers that
  * need it.
  * <p>
  * This is the taxonomic counterpart of the {@code STComposition} the C.~difficile study used. There
  * the class of a genome was its seven-locus sequence type, which had to be established outside the
- * database and carried in from a typing file. Here the class is the genome's <em>data taxon</em> in
- * the sense of the paper -- the taxon its genome is filed at -- so the tree already knows it and
- * nothing has to be read in beside it. The rest is unchanged, and deliberately so: every classifier
- * weighs the same composition, counted once, so that what separates two answers is the rule and
- * never two readings of the database.
+ * database and carried in from a typing file. Here the class is the genome's <em>species</em>, which
+ * the tree already knows, so nothing has to be read in beside it. The rest is unchanged, and
+ * deliberately so: every classifier weighs the same composition, counted once, so that what separates
+ * two answers is the rule and never two readings of the database.
+ * <p>
+ * The species and not the data taxon the genome is filed at, although the fill files it deeper. Two
+ * things ask for the species: the candidate precision of the paper averages {@code 1/|Sigma(k)|} over
+ * the species of a node's subtree, and the reference standard a call is held against names a species.
+ * A composition of strains answers neither -- see {@link #speciesOf}.
  * <p>
  * A leaf whose lineage carries no rank at or below species is counted as {@link #UNPLACED} rather
  * than dropped, for the same reason the ST composition carried its untyped genomes: left out, they
@@ -36,7 +40,7 @@ public class TaxonComposition {
     private int collectionTotal;
 
     /**
-     * Counts the data taxa below every node of the given tree.
+     * Counts the species below every node of the given tree.
      *
      * @param tree the taxonomy of the database being classified against
      */
@@ -65,7 +69,7 @@ public class TaxonComposition {
             Map<String, Integer> own = new LinkedHashMap<>();
             SmallTaxTree.SmallTaxIdNode[] subNodes = node.getSubNodes();
             if (subNodes == null || subNodes.length == 0) {
-                own.put(dataTaxonOf(node), 1);
+                own.put(speciesOf(node), 1);
             } else {
                 for (SmallTaxTree.SmallTaxIdNode sub : subNodes) {
                     Map<String, Integer> subCounts = countsByPos.get(sub.getPosition());
@@ -108,46 +112,65 @@ public class TaxonComposition {
     }
 
     /**
-     * Resolves the data taxon a leaf belongs to: the first ancestor, itself included, whose rank is
-     * species or below it. The artificial nodes the fill and the refinement insert -- DATA, FILE, ID
-     * and REFINED -- have no taxonomic rank of their own and are skipped, which is what makes the
-     * answer a taxon of the reference taxonomy rather than a node of this particular database.
+     * Resolves the species a leaf belongs to: the <em>highest</em> ancestor, itself included, whose
+     * rank is species or below it.
+     * <p>
+     * The highest and not the first one met, which is what this did before and what made every one of
+     * the 153 strains of {@code Streptococcus pneumoniae} a class of its own. That is the wrong unit
+     * here twice over. The candidate precision of the paper is {@code 1/|Sigma(k)|} over the
+     * <em>species</em> of a node's subtree -- "an assignment to a genus comprising 40 species scores
+     * 1/40" -- so counting strains inflates the denominator; and the reference standard a call is
+     * held against names a species, so a candidate set of strain tax ids could never contain it. A
+     * correct call on {@code Streptococcus pyogenes} scored zero for that reason alone.
+     * <p>
+     * Ranks between {@link Rank#SPECIES} and {@link Rank#FORMA_SPECIALIS} are the ones that count as
+     * "species or below"; {@link Rank#STRAIN} sits among them, which is why the walk cannot stop at
+     * the first hit. Everything else is stepped over rather than treated as an end: the artificial
+     * DATA, FILE, ID and REFINED nodes, {@link Rank#ISOLATE}, the {@code no rank} and {@code clade}
+     * buckets such as {@code unclassified Streptococcus}, and a rank the enum does not know at all.
+     * None of them says anything about the species. The walk ends at the first real rank above the
+     * species -- a genus, a family -- and answers with whatever it last remembered.
      *
      * @param leaf the leaf to resolve
-     * @return the tax id of its data taxon, or {@link #UNPLACED} if its lineage has none
+     * @return the tax id of its species, or {@link #UNPLACED} if its lineage names none
      */
-    private static String dataTaxonOf(SmallTaxTree.SmallTaxIdNode leaf) {
+    static String speciesOf(SmallTaxTree.SmallTaxIdNode leaf) {
+        String species = UNPLACED;
         for (SmallTaxTree.SmallTaxIdNode n = leaf; n != null; n = n.getParent()) {
             int r = n.getRankOrdinal();
             if (r >= Rank.SPECIES.ordinal() && r <= Rank.FORMA_SPECIALIS.ordinal()) {
-                return n.getTaxId();
+                species = n.getTaxId();
+            } else if (r >= 0 && r < Rank.SPECIES.ordinal()) {
+                // A rank the enum knows and that sits above the species. Note the r >= 0: an unknown
+                // rank is -1, which would otherwise end the walk here and lose the species above.
+                break;
             }
         }
-        return UNPLACED;
+        return species;
     }
 
     /** @param nodePos dense node position
-     *  @return the data taxon most genomes below that node belong to, or {@code null} */
+     *  @return the species most genomes below that node belong to, or {@code null} */
     public String getMajorityClass(int nodePos) {
         return majorityByPos.get(nodePos);
     }
 
     /** @param nodePos dense node position
-     *  @return how many distinct data taxa sit below that node */
+     *  @return how many distinct species sit below that node */
     public int getCandidates(int nodePos) {
         Integer c = candidatesByPos.get(nodePos);
         return c == null ? 0 : c;
     }
 
     /** @param nodePos dense node position
-     *  @return the data taxa below that node */
+     *  @return the species below that node */
     public Set<String> getClassesAt(int nodePos) {
         Map<String, Integer> m = countsByPos.get(nodePos);
         return m == null ? Collections.<String>emptySet() : Collections.unmodifiableSet(m.keySet());
     }
 
     /** @param nodePos dense node position
-     *  @param taxon a data taxon
+     *  @param taxon a species
      *  @return how many genomes of that taxon sit below the node */
     public int getCount(int nodePos, String taxon) {
         Map<String, Integer> m = countsByPos.get(nodePos);
@@ -172,7 +195,7 @@ public class TaxonComposition {
         return sum;
     }
 
-    /** @param taxon a data taxon
+    /** @param taxon a species
      *  @return how many genomes of it the whole database holds */
     public int getCollectionCount(String taxon) {
         Integer c = collectionCounts.get(taxon);
@@ -184,7 +207,7 @@ public class TaxonComposition {
         return collectionTotal;
     }
 
-    /** @return every data taxon the database holds a genome of, sorted */
+    /** @return every species the database holds a genome of, sorted */
     public List<String> getClasses() {
         return classes;
     }
