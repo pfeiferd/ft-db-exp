@@ -23,3 +23,34 @@
 780
 # Francisella (because of tularemia)
 262
+
+# ---------------------------------------------------------------------------------------------
+# THE GENUS-LEVEL `unclassified' BUCKETS ARE LEFT OUT, below. This needs `refseq.updateScope=
+# allButExcluded' in config.properties to do its real work: the lines here keep those genomes out of
+# the database, the config line also stops them from raising the k-mers of the species that stay.
+#
+# WHY. Under the LCA update a genome the taxonomy cannot place is not neutral but a sink. A k-mer it
+# shares with a named species of the same genus has its lowest common ancestor at the *genus*, so the
+# species loses it -- to a genome that is not even in the database once these lines are here. Each
+# bucket below is a child of a genus this project asks for and holds nothing but unnamed genomes.
+#
+# WHAT IS NOT LEFT OUT, and must not be. `incertae sedis' nodes hold *named* species and are a
+# statement about where those species sit, not a bin of drafts. Nor is any bucket whose members carry
+# real names: in the viral project all 826 species under such nodes are named viruses, so the same
+# rule would delete content there. The criterion is the members, never the node's name.
+#
+# Counts measured on 2026-08-25 from <project>_dbinfo.csv; each is what the bucket's subtree holds.
+
+-2645622   # unclassified Bartonella          225 species,  69,420,253 k-mers
+-2683645   # unclassified Mycoplasma           72 species,  27,934,450
+-114295    # unclassified Rickettsia           28 species,  14,057,874
+-2610885   # unclassified Francisella          11 species,  10,457,671
+-2641215   # unclassified Chlamydia             6 species,   3,095,994
+-2617684   # unclassified Anaplasma             1 species,   1,117,991
+-2649934   # unclassified Borrelia              3 species,     892,724
+-2750824   # unclassified spotted fever group   2 species,     266,363
+-106181    # unclassified Ehrlichia             1 species,          53
+#
+# Together 127,243,373 k-mers, 24.4 % of this database -- the largest share of any project here.
+# Kept: `Rickettsia incertae sedis', which holds the named Candidatus Rickettsia colombianensi.
+# ---------------------------------------------------------------------------------------------

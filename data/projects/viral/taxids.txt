@@ -1,2 +1,14 @@
 # Simply all viral genomes from the RefSeq
 10239
+
+# ---------------------------------------------------------------------------------------------
+# DELIBERATELY NOT EXCLUDED HERE, unlike in tick-borne, protozoa and parasites.
+#
+# This project has 303 `unclassified <genus>' nodes below a genus, holding 826 species and 16,753,984
+# k-mers (4.3 % of the database). Excluding them would be wrong: all 826 of those species carry real
+# names -- `Avian metaavulavirus 21', `Bat mumps orthorubulavirus', `Lyssavirus Ozernoe' -- against
+# 0 % unnamed in the bacterial and protozoan buckets. In virus taxonomy `unclassified' commonly means
+# that the genus has no further subdivision yet, not that the genomes are unplaceable drafts.
+#
+# The criterion is the members, never the node's name. Checked on 2026-08-25 against viral_dbinfo.csv.
+# ---------------------------------------------------------------------------------------------

@@ -25,7 +25,29 @@
 # Blastocystis
 12967
 
+# ---------------------------------------------------------------------------------------------
+# THE GENUS-LEVEL `unclassified' BUCKETS ARE LEFT OUT, below. This needs `refseq.updateScope=
+# allButExcluded' in config.properties to do its real work: the lines here keep those genomes out of
+# the database, the config line also stops them from raising the k-mers of the species that stay.
+#
+# WHY. Under the LCA update a genome the taxonomy cannot place is not neutral but a sink. A k-mer it
+# shares with a named species of the same genus has its lowest common ancestor at the *genus*, so the
+# species loses it -- to a genome that is not even in the database once these lines are here. Each
+# bucket below is a child of a genus this project asks for and holds nothing but unnamed genomes.
+#
+# WHAT IS NOT LEFT OUT, and must not be. `incertae sedis' nodes hold *named* species and are a
+# statement about where those species sit, not a bin of drafts. Nor is any bucket whose members carry
+# real names: in the viral project all 826 species under such nodes are named viruses, so the same
+# rule would delete content there. The criterion is the members, never the node's name.
+#
+# Counts measured on 2026-08-25 from <project>_dbinfo.csv; each is what the bucket's subtree holds.
 
-
-
-
+-2802990   # unclassified Mundinia         2 species, 33,031,723 k-mers (Leishmania sp. ...)
+-203864    # unclassified Cryptosporidium  1 species,  8,736,965
+-323723    # unclassified Babesia          1 species,  7,528,629
+-205004    # unclassified Blastocystis     1 species,        382
+#
+# Together 49,297,699 k-mers, 4.1 % of this database.
+# Kept: `Trypanosoma incertae sedis' (669453, 62,841,981 k-mers, T. theileri/grayi/conorhini) and
+# `Plasmodium incertae sedis' (3699347, 24,855,152, P. simium/coatneyi) -- named species, content.
+# ---------------------------------------------------------------------------------------------
