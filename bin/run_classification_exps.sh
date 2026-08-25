@@ -279,6 +279,9 @@ case "$what" in
   viral)        run_iss viral; run_perf viral viral_sim.txt ;;
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
   strepto)      run_iss strepto; run_perf strepto strepto_sim.txt ;;
+  # A tool, not a measurement of the paper. A sputum sample carries a community of streptococci, so a
+  # rule that crowns one taxon per sample answers a question the material does not pose; the paper
+  # reports the per-read measure of `real' instead. Kept because it was needed to find that out.
   taxoncall)    run_taxoncall strepto strepto_lri_real.txt lri 1301
                 run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
@@ -292,8 +295,6 @@ case "$what" in
                 # read as it stands; the runs are already in data/fastq and are not fetched again.
                 run_real streptonamed strepto_lri_real.txt lri
                 run_real streptonamed strepto_lri_neg.txt lrineg
-                run_taxoncall strepto strepto_lri_real.txt lri 1301
-                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
@@ -309,10 +310,9 @@ case "$what" in
                 run_real strepto strepto_lri_neg.txt lrineg
                 run_real streptonamed strepto_lri_real.txt lri
                 run_real streptonamed strepto_lri_neg.txt lrineg
-                run_taxoncall strepto strepto_lri_real.txt lri 1301
-                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301
-                run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
-                run_real_perf tick-borne seventicks.txt ticks ;;
+                # `taxoncall' stays out of `all' and out of `real': it names one taxon per sample,
+                # which the paper does not report. Run the target of that name if you want it.
+                ;;
   *)          echo "Usage: $0 [viral|protozoa|strepto|tick-borne|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
 esac
 

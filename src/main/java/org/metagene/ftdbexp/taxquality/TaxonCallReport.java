@@ -18,21 +18,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
- * Names, per sample and per database variant, the taxon the path vote of {@link PathVoteTaxonModel}
- * settles on below one node of the tree.
+ * NOT REPORTED IN THE PAPER, and kept for the reason the naive Bayes rule beside it is kept: it was
+ * needed to find out that it should not be.
  * <p>
- * This is what the C.~difficile study's {@code IsolateSTAccuracyMain} did for isolates and sequence
- * types, applied to samples and taxa. The unit is deliberately not a read: for the Streptococcus case
- * study the question is what a respiratory specimen carries, and the reads bearing on it are the ones
- * the database placed anywhere below the genus. Restricting to that subtree is what makes a single
- * answer meaningful for a specimen that is otherwise polymicrobial.
+ * A sputum sample carries a community of streptococci rather than one organism, and the reference
+ * standard of the case study names several organisms for nine of the thirteen samples it can decide.
+ * A rule that crowns a single taxon per sample therefore answers a question the material does not
+ * pose, and what it answers is decided by the rule as much as by the database. The paper reports the
+ * per-read measure of Section "Estimating the gain without ground truth" instead, which needs no
+ * such rule and rests on millions of reads rather than on thirteen samples.
  * <p>
- * Every sample is answered three times over, in reads, in matched {@code k}-mers and in distinct
- * matched {@code k}-mers. The three are not variants of the rule but three readings of the same
- * evidence, and they disagree in a way worth seeing: a single repetitive region can lend a species
- * many matched {@code k}-mers and one read, while a sample of low depth may have several reads and
- * few distinct {@code k}-mers. The C.~difficile run had them at 12, 22 and 5 hits of 74, so which
- * currency is used decided more there than the rule did.
+ * What this did establish, and what the case study now states, came out of running it: that the
+ * unnamed `Streptococcus sp.' genomes of the database hold the pneumococcus's k-mers hostage, and
+ * that a candidate set counted in strains rather than species scores a correct call as a miss.
  */
 public class TaxonCallReport {
     private final File baseDir;

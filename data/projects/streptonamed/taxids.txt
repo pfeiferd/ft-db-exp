@@ -1,161 +1,21 @@
-# The named children of Streptococcus (1301), and deliberately not the genus itself.
+# The genus Streptococcus without the two branches of it that carry no names.
 #
-# WHY NOT 1301. Two of its 147 children carry no name of their own: 'unclassified Streptococcus'
-# (2608887), with 468 species below it, and 'environmental samples' (83426). Between them they bring
-# genomes into the database that the taxonomy cannot place, and under an LCA update an unplaced
-# genome is not neutral -- it is a sink. A k-mer shared between S. pneumoniae and an unnamed draft
-# has its lowest common ancestor at the genus, because the draft hangs off a sibling branch of the
-# whole mitis lineage. One such genome is enough to lift a species' k-mers clear out of it.
+# WHY. Under the LCA update a genome the taxonomy cannot place is not neutral but a sink. A k-mer
+# shared between S. pneumoniae and an unnamed draft has its lowest common ancestor at the *genus*,
+# because the draft hangs off a sibling branch of the entire mitis lineage; one such genome suffices
+# to lift a species' k-mers clear out of it. It is not a small effect here: in the database built
+# from 1301 alone, S. pneumoniae keeps 397 k-mers of its own where S. oralis keeps 206,674, and in
+# 83 clinical samples not one classification ever landed below it. The 468 genomes under
+# `unclassified Streptococcus' hold 45.6 million k-mers between them, 109 of them more than 100,000
+# each, so they are whole genomes rather than fragments.
 #
-# It is not a small effect here. In the database built from 1301, S. pneumoniae keeps 397 k-mers of
-# its own where S. oralis keeps 206,674, and in 83 clinical samples not one classification ever
-# landed below it. The 468 unnamed genomes hold 45.6 million k-mers between them, 109 of them more
-# than 100,000 each, so they are whole genomes rather than fragments.
+# This project is the control that tests exactly that: same genus, same configuration, only the two
+# unnamed branches left out. If they are the cause, the k-mers at S. pneumoniae rise by orders of
+# magnitude.
 #
-# Listing the 145 named children instead of the genus keeps every species the genus has and leaves
-# only what has no name to lose.
-1326
-1311
-29389
-671232
-3411037
-113107
-1579424
-2954240
-1856638
-3332597
-439220
-2614158
-1469428
-1329
-1640501
-254786
-2654874
-1930533
-2173853
-1333
-45634
-1432788
-1562651
-747656
-3098075
-573564
-1080072
-1352223
-231233
-102886
-1317
-1968889
-119603
-155680
-1335
-3095082
-1345
-661498
-165758
-315405
-1302
-254785
-2172545
-1814128
-3161188
-439219
-3349163
-2282420
-1888195
-2763067
-910939
-3237239
-1337
-149015
-380397
-1156431
-3028084
-102684
-68892
-1346
-3161189
-3095079
-2382163
-684066
-3391450
-1349415
-150055
-1339
-59310
-269666
-1825069
-313439
-400065
-33040
-229549
-3409772
-1451356
-1309
-3233335
-3140788
-1303
-1547447
-1080071
-2781599
-114652
-82806
-1936207
-2740577
-1581472
-1811193
-3114282
-3706788
-1501662
-1348
-197614
-1765960
-2490633
-68891
-119224
-82348
-456876
-1313
-502567
-1340
-701526
-257758
-361101
-1314
-3053355
-1341
-2021971
-1451357
-1234680
-1917441
-2686210
-759619
-1304
-1349416
-1305
-2973939
-2589786
-176090
-1310
-1307
-3028082
-2588991
-2709400
-3041623
-3409759
-1308
-55085
-1852387
-1111760
-1349
-149016
-2748301
-1608583
-1343
-2740579
-78535
-2853160
-3095078
-2589788
-640031
-2664091
+# Nothing else is dropped. The genus has 147 children, of which 145 carry a name -- 140 species and
+# five species groups -- and all of them stay.
+
+1301        # the genus
+-2608887    # but not `unclassified Streptococcus', with its 468 unnamed species
+-83426      # and not `environmental samples' either
