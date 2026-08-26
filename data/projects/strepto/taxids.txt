@@ -53,4 +53,30 @@
 #
 # Run bin/prescreen.sh streptococcus before building anything else; it decides whether that headroom
 # really carries k-mers.
-1301
+#
+# THE TWO BRANCHES THAT CARRY NO NAMES are struck out below, and `refseq.updateScope=allButExcluded'
+# in config.properties keeps them out of the LCA update as well -- without that line they would be
+# gone from the database's content and still raise the k-mers of the species that stay.
+#
+# WHY. Under the LCA update a genome the taxonomy cannot place is not neutral but a sink. A k-mer
+# shared between S. pneumoniae and an unnamed draft has its lowest common ancestor at the *genus*,
+# because the draft hangs off a sibling branch of the entire mitis lineage; one such genome suffices
+# to lift a species' k-mers clear out of it. The 468 genomes under `unclassified Streptococcus' hold
+# 45.6 million k-mers between them, 109 of them more than 100,000 each, so they are whole genomes
+# rather than fragments. The same is done in tick-borne, protozoa and parasites, and in protozoa it
+# is measured: the refined root sp* rose from 0.804 to 0.889 and the two genera whose refinement had
+# made sp* worse -- Leishmania and Trypanosoma -- both turned positive.
+#
+# WHAT IT DID NOT DO, measured before this project absorbed it (it was `streptonamed' until
+# 2026-08-26): S. pneumoniae kept its 397 own k-mers exactly, while S. oralis went from 206,674 to
+# 353,007, S. infantis rose by 136 per cent and S. pseudopneumoniae by 579. The unnamed branch was
+# masking the pneumococcus's *relatives*, not the pneumococcus. What strands it is the mitis complex
+# itself -- but that measurement was made under a contig cap that gave it two thirds of one assembly,
+# which is why it is being repeated under maxGenomesPerTaxid.
+#
+# Nothing else is dropped. The genus has 147 children, of which 145 carry a name -- 140 species and
+# five species groups -- and all of them stay.
+
+1301        # the genus
+-2608887    # but not `unclassified Streptococcus', with its 468 unnamed species
+-83426      # and not `environmental samples' either

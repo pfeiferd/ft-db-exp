@@ -24,17 +24,14 @@ mkdir -p results
 
 # Which projects to work on. Naming none means all of them, in the order the paper's tables list.
 #
-# `streptonamed' is `strepto' built from the 145 named children of the genus instead of the genus
-# itself, so that the two unnamed buckets below it -- `unclassified Streptococcus' with its 468
-# species, and `environmental samples' -- stay out. It is a control, not a seventh database of the
-# paper: it tests whether those unnamed genomes are what strips S. pneumoniae of its own k-mers
-# (397 of them, against 206,674 for S. oralis). Building it costs another full pass; name the
-# projects explicitly to skip it.
+# `streptonamed' was a control here until 2026-08-26 and is gone: what distinguished it -- the two
+# unnamed branches of the genus struck out of taxids.txt and of the update -- is now what `strepto'
+# does, so the two would have been the same database.
 if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  projects="viral tick-borne strepto streptonamed protozoa parasites vineyard"
+  projects="viral tick-borne strepto protozoa parasites vineyard"
   restricted=""
 fi
 
