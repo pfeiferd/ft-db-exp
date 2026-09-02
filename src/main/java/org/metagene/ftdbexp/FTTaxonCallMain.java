@@ -19,18 +19,21 @@ public class FTTaxonCallMain {
 
     /**
      * @param args the database project name, the fastq mapping file, optionally a report key, the
-     *             tax id the vote is restricted to (default {@code 1301}, Streptococcus) and the
-     *             minimum the winning path must gather (default none)
+     *             tax id the vote is restricted to (default {@code 1301}, Streptococcus), the
+     *             minimum the winning path must gather (default none) and the reference organism the
+     *             nearest-node columns are measured towards (default none, leaving them empty)
      * @throws Exception if a database cannot be read or the report cannot be written
      */
     public static void main(String[] args) throws Exception {
         if (args.length < 2) {
-            System.err.println("Usage: FTTaxonCallMain <db> <fastq map file> [<report key>] [<root taxid>] [<minimum>]");
+            System.err.println("Usage: FTTaxonCallMain <db> <fastq map file> [<report key>] [<root taxid>] [<minimum>] [<target taxid>]");
             System.err.println("  <db>             name of the database project under data/projects");
             System.err.println("  <fastq map file> mapping file resolved as usual against data/fastq");
             System.err.println("  <report key>     short name used in the result file name");
             System.err.println("  <root taxid>     the node the vote is restricted to, default 1301");
             System.err.println("  <minimum>        how much the winning path must gather, default none");
+            System.err.println("  <target taxid>   organism the nearest-node columns are measured towards,");
+            System.err.println("                   e.g. 1313 for S. pneumoniae; default none, columns left empty");
             System.exit(1);
         }
         String db = args[0];
@@ -39,8 +42,12 @@ public class FTTaxonCallMain {
         String rootTaxId = args.length > 3 && !args[3].isEmpty() ? args[3] : "1301";
         long minimum = args.length > 4 && !args[4].isEmpty()
                 ? Long.parseLong(args[4]) : PathVoteTaxonModel.NO_MINIMUM;
+        // Appended rather than slotted in before <minimum>: moving a positional argument would
+        // silently change what an existing command line means.
+        String targetTaxId = args.length > 5 && !args[5].isEmpty() ? args[5] : null;
 
-        new TaxonCallReport(BASE_DIR, RESULTS_DIR).write(db, fqMapFile, reportKey, rootTaxId, minimum);
+        new TaxonCallReport(BASE_DIR, RESULTS_DIR)
+                .write(db, fqMapFile, reportKey, rootTaxId, targetTaxId, minimum);
     }
 
     /**

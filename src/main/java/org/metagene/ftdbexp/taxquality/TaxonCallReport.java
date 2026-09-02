@@ -90,18 +90,20 @@ public class TaxonCallReport {
      * @param fqMapFile  the fastq mapping file, resolved as usual against {@code data/fastq}
      * @param reportKey  short name used in the result file name
      * @param rootTaxId  the node the vote is restricted to, e.g. {@code 1301} for Streptococcus
+     * @param targetTaxId the reference organism the nearest-node columns are measured towards, e.g.
+     *                    {@code 1313} for S. pneumoniae; empty or null leaves those columns blank
      * @param minimum    how much the winning path must gather, or {@link PathVoteTaxonModel#NO_MINIMUM}
      * @return the file that was written
      * @throws IOException if a database or a fastq file cannot be read, or the file cannot be written
      */
-    public File write(String db, String fqMapFile, String reportKey, String rootTaxId, long minimum)
-            throws IOException {
+    public File write(String db, String fqMapFile, String reportKey, String rootTaxId,
+                      String targetTaxId, long minimum) throws IOException {
         // Read before the runs, not after: each run scores its calls against it as they are made.
         Map<String, List<String[]>> truth = GroundTruth.read(new File(baseDir, "projects/" + db + "/ground_truth.csv"));
         Map<Variant, Map<String, Map<Currency, List<Call>>>> byVariant = new LinkedHashMap<>();
         for (Variant variant : Variant.values()) {
             System.out.println("=== " + db + " / " + variant.getLabel() + " ===");
-            byVariant.put(variant, run(db, fqMapFile, variant, rootTaxId, minimum, truth));
+            byVariant.put(variant, run(db, fqMapFile, variant, rootTaxId, targetTaxId, minimum, truth));
         }
 
         File file = new File(resultsDir, db + "_" + reportKey + "_taxoncall.csv");
@@ -111,7 +113,9 @@ public class TaxonCallReport {
             // sorts on any of them without regrouping. Everything describing the sample stands once,
             // at the front; a vote that does not exist leaves its block empty.
             StringBuilder header = new StringBuilder("db;sample;variant;currency;contributing nodes;total;"
-                    + "unplaced;culture;wimp;culture taxid;wimp taxid;");
+                    + "unplaced;culture;wimp;culture taxid;wimp taxid;"
+                    + "nearest node;nearest node name;nearest node rank;nearest candidates;"
+                    + "nearest at;nearest at or below;nearest share at;nearest share at or below;");
             for (int i = 1; i <= TOP_VOTES; i++) {
                 header.append("node ").append(i).append(";node name ").append(i)
                         .append(";node rank ").append(i).append(";taxon ").append(i)
@@ -148,6 +152,21 @@ public class TaxonCallReport {
                         ps.print(join(truth.get(sample), 1)); ps.print(';');
                         ps.print(first.sigmaCulture == null ? "" : first.sigmaCulture); ps.print(';');
                         ps.print(first.sigmaWimp == null ? "" : first.sigmaWimp); ps.print(';');
+                        // Empty and not zero where no signal reaches the organism's lineage: a
+                        // sample that put nothing there did not put none there, it was never asked.
+                        boolean hasNear = first.nearTaxId != null;
+                        ps.print(hasNear ? first.nearTaxId : ""); ps.print(';');
+                        ps.print(hasNear && first.nearName != null ? first.nearName : ""); ps.print(';');
+                        ps.print(hasNear && first.nearRank != null ? first.nearRank : ""); ps.print(';');
+                        ps.print(hasNear ? Integer.toString(first.nearCandidates) : ""); ps.print(';');
+                        ps.print(hasNear ? Long.toString(first.nearAt) : ""); ps.print(';');
+                        ps.print(hasNear ? Long.toString(first.nearBelow) : ""); ps.print(';');
+                        // Both shares are of the sample's total below the root, so that a row says
+                        // what part of the sample the answer rests on and not merely where it landed.
+                        ps.print(hasNear && first.total > 0
+                                ? format((double) first.nearAt / first.total) : ""); ps.print(';');
+                        ps.print(hasNear && first.total > 0
+                                ? format((double) first.nearBelow / first.total) : ""); ps.print(';');
                         for (int i = 0; i < TOP_VOTES; i++) {
                             Call c = i < calls.size() ? calls.get(i) : null;
                             ps.print(c == null || c.nodeTaxId == null ? "" : c.nodeTaxId); ps.print(';');
@@ -190,13 +209,32 @@ public class TaxonCallReport {
         /** The candidate precision against either column; null where that column names no organism of the subtree. */
         Double qCulture;
         Double qWimp;
+        /**
+         * The node nearest the reference organism that carries any signal at all, and what it says.
+         * <p>
+         * The ranked votes above answer "what does this sample look like"; these answer "how close to
+         * the reference organism did its evidence get, and how many species are still open there".
+         * They are the only place a refined node appears in this report: a refined node bears no name
+         * of the reference taxonomy, so it can never win a vote that has to name a taxon, and every
+         * read reaching one falls into {@link #unplaced}. {@link #nearCandidates} names it the only
+         * way that means anything -- by how many species it still leaves in question.
+         */
+        String nearTaxId;
+        String nearName;
+        String nearRank;
+        /** Species below the nearest node, the reference organism included; 1 at or below its species. */
+        int nearCandidates;
+        /** Signal whose lowest common ancestor is exactly the nearest node. */
+        long nearAt;
+        /** Signal at the nearest node or anywhere below it, i.e. what reached that depth. */
+        long nearBelow;
     }
 
     /**
      * Matches the map's fastq files against one variant and votes on each.
      */
     private Map<String, Map<Currency, List<Call>>> run(String db, String fqMapFile, Variant variant,
-                                                 String rootTaxId, long minimum,
+                                                 String rootTaxId, String targetTaxId, long minimum,
                                                  final Map<String, List<String[]>> truth) throws IOException {
         final Map<String, Map<Currency, List<Call>>> result = new LinkedHashMap<>();
         FTProject project = new FTProject(new GSCommon(baseDir), db, null, null, fqMapFile,
@@ -223,6 +261,18 @@ public class TaxonCallReport {
                 throw new IllegalArgumentException("The database " + db + " has no node " + rootTaxId
                         + ", so there is no subtree to restrict the vote to.");
             }
+            // Absent by choice leaves the columns empty; named but missing is a mistake worth saying,
+            // since the whole point of the columns is that they are measured towards that organism.
+            final SmallTaxTree.SmallTaxIdNode target =
+                    targetTaxId == null || targetTaxId.isEmpty() ? null : tree.getNodeByTaxId(targetTaxId);
+            if (targetTaxId != null && !targetTaxId.isEmpty() && target == null) {
+                throw new IllegalArgumentException("The database " + db + " has no node " + targetTaxId
+                        + ", so the nearest-node columns cannot be measured towards it.");
+            }
+            if (target != null && !isBelow(target, root)) {
+                throw new IllegalArgumentException("Node " + targetTaxId + " does not lie below "
+                        + rootTaxId + ", so no signal counted by this report can ever reach it.");
+            }
             MatchResultGoal<?> matchResGoal = (MatchResultGoal<?>) maker.getGoal(variant.getMatchGoalKey());
             matchResGoal.setAfterMatchCallback(new MatchResultGoal.AfterMatchCallback() {
                 @Override
@@ -235,7 +285,8 @@ public class TaxonCallReport {
                 public void afterKey(String key, MatchingResult res) {
                     Map<Currency, List<Call>> perCurrency = new LinkedHashMap<>();
                     for (Currency currency : Currency.values()) {
-                        perCurrency.put(currency, votes(res, currency, tree, root, composition, rule, minimum));
+                        perCurrency.put(currency, votes(res, currency, tree, root, composition, rule,
+                                minimum, target));
                     }
                     List<String[]> rows = truth.get(key);
                     Set<String> cultureSigmas = sigmasOf(rows, 2, tree, root);
@@ -281,12 +332,18 @@ public class TaxonCallReport {
      * @param composition the species composition of that tree
      * @param rule        the vote
      * @param minimum     how much a winner's path must gather
+     * @param target      the reference organism the nearest-node columns are measured towards, or null
      * @return one call per vote, heaviest first, never empty
      */
     private static List<Call> votes(MatchingResult res, Currency currency, SmallTaxTree tree,
                                     SmallTaxTree.SmallTaxIdNode root, TaxonComposition composition,
-                                    PathVoteTaxonModel rule, long minimum) {
+                                    PathVoteTaxonModel rule, long minimum,
+                                    SmallTaxTree.SmallTaxIdNode target) {
         Map<Integer, Long> countsPerNode = new HashMap<>();
+        // Kept beside the counts because the nearest-node walk below needs the nodes themselves and
+        // not only their dense positions: there is no position-to-node lookup on the tree.
+        List<SmallTaxTree.SmallTaxIdNode> signalNodes = new ArrayList<>();
+        List<Long> signalCounts = new ArrayList<>();
         long total = 0;
         for (Map.Entry<String, CountsPerTaxid> e : res.getTaxid2Stats().entrySet()) {
             SmallTaxTree.SmallTaxIdNode node = tree.getNodeByTaxId(e.getKey());
@@ -298,6 +355,8 @@ public class TaxonCallReport {
                 continue;
             }
             countsPerNode.merge(node.getPosition(), value, Long::sum);
+            signalNodes.add(node);
+            signalCounts.add(value);
             total += value;
         }
         // Heaviest first; the position in this list is the vote's rank, and the report writes it
@@ -316,8 +375,17 @@ public class TaxonCallReport {
         if (calls.isEmpty()) {
             calls.add(new Call());
         }
+        Near near = nearest(target, signalNodes, signalCounts);
         long unplaced = rule.unplaced(countsPerNode);
         for (Call call : calls) {
+            if (near != null) {
+                call.nearTaxId = near.node.getTaxId();
+                call.nearName = near.node.getName();
+                call.nearRank = near.node.getRank() == null ? "" : near.node.getRank().getName();
+                call.nearCandidates = composition.getCandidates(near.node.getPosition());
+                call.nearAt = near.at;
+                call.nearBelow = near.below;
+            }
             // The same for every vote of a sample: they describe the sample, not the answer.
             call.total = total;
             call.contributingNodes = countsPerNode.size();
@@ -425,6 +493,94 @@ public class TaxonCallReport {
             }
         }
         return res;
+    }
+
+    /** What {@link #nearest} found: a node and the two counts belonging to it. */
+    static final class Near {
+        SmallTaxTree.SmallTaxIdNode node;
+        long at;
+        long below;
+    }
+
+    /**
+     * The node nearest the reference organism that carries any signal in this currency.
+     * <p>
+     * The subtree is searched first, and that order is not cosmetic. A refinement moves a species'
+     * own $k$-mers down into strain clusters beneath it -- for {@code S. pneumoniae} it moves
+     * 1,174,677 of 1,273,715, leaving 99,038 at the species node -- so the species node of a refined
+     * database is routinely empty while everything below it is not. Walking upwards from the species
+     * without looking below it first would climb past an emptied node to an ancestor spanning eight
+     * species, and report a sample that had resolved to the organism as one that had not. The
+     * refinement would be scored worst exactly where it works best.
+     * <p>
+     * At or below the species there is only ever one species in question, so the answer needs no
+     * special case: {@link TaxonComposition#speciesOf} steps over the artificial DATA, FILE, ID and
+     * REFINED nodes and resolves every genome under the species to the species, which makes
+     * {@code getCandidates} one for the species node and for anything beneath it alike.
+     *
+     * @return the node and its two counts, or {@code null} if no signal reaches the organism's
+     *         lineage at all -- which is not the same as a count of zero and is left empty, not zeroed
+     */
+    static Near nearest(SmallTaxTree.SmallTaxIdNode target,
+                        List<SmallTaxTree.SmallTaxIdNode> signalNodes, List<Long> signalCounts) {
+        if (target == null) {
+            return null;
+        }
+        // Anything at or below the organism answers with the organism itself. Which of its strain
+        // clusters carried the signal is a distinction this measure does not make, since all of them
+        // leave the same one species open.
+        long below = countAtOrBelow(target, signalNodes, signalCounts);
+        if (below > 0) {
+            return near(target, signalNodes, signalCounts, below);
+        }
+        // Upwards from the organism, stopping at the first ancestor that holds anything itself. What
+        // sits at or below that ancestor is asked for only once it is the answer.
+        for (SmallTaxTree.SmallTaxIdNode n = target.getParent(); n != null; n = n.getParent()) {
+            if (countAt(n, signalNodes, signalCounts) > 0) {
+                return near(n, signalNodes, signalCounts, countAtOrBelow(n, signalNodes, signalCounts));
+            }
+        }
+        return null;
+    }
+
+    private static Near near(SmallTaxTree.SmallTaxIdNode node,
+                             List<SmallTaxTree.SmallTaxIdNode> signalNodes, List<Long> signalCounts,
+                             long below) {
+        Near result = new Near();
+        result.node = node;
+        result.at = countAt(node, signalNodes, signalCounts);
+        result.below = below;
+        return result;
+    }
+
+    /**
+     * @return the signal whose lowest common ancestor is exactly this node
+     */
+    static long countAt(SmallTaxTree.SmallTaxIdNode node,
+                        List<SmallTaxTree.SmallTaxIdNode> signalNodes, List<Long> signalCounts) {
+        long sum = 0;
+        for (int i = 0; i < signalNodes.size(); i++) {
+            if (signalNodes.get(i) == node) {
+                sum += signalCounts.get(i);
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * @return the signal at the node or anywhere below it. Node identity and not the dense position
+     *         is what decides, so that this works on a hand-built lineage as well as on a loaded
+     *         tree: positions are assigned by the tree's own traversal and a detached node has none.
+     */
+    static long countAtOrBelow(SmallTaxTree.SmallTaxIdNode node,
+                               List<SmallTaxTree.SmallTaxIdNode> signalNodes, List<Long> signalCounts) {
+        long sum = 0;
+        for (int i = 0; i < signalNodes.size(); i++) {
+            if (isBelow(signalNodes.get(i), node)) {
+                sum += signalCounts.get(i);
+            }
+        }
+        return sum;
     }
 
     private static boolean isBelow(SmallTaxTree.SmallTaxIdNode node, SmallTaxTree.SmallTaxIdNode root) {

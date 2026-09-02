@@ -167,6 +167,103 @@ with open(out, 'w', encoding='utf-8') as fh:
                     # a wrong number would not be noticed.
                     withoutcolumn.add(db)
 
+    # The real-read runs. One <db>_<key>_specificity.csv per read collection, one row per sample,
+    # and for `strepto' eighty-three of them -- too many to print, and a mean over them is a
+    # computation rather than a lookup, so it belongs here and not in the LaTeX.
+    #
+    # The average is weighted by |R'_g|, the observable subset each row is itself an average over.
+    # Weighting by sample instead would let a sample with one such read count as much as one with
+    # four thousand, and `strepto' has both.
+    #
+    # The three groups split the samples by what the reference standard says about the pneumococcus,
+    # which is the comparison the Streptococcus case study rests on. They need ground_truth.csv
+    # beside the CSVs; run_all_exps.sh copies it there with everything else. Without it the grouped
+    # macros are simply not emitted and the paper shows its marker.
+    def specrows(path):
+        out = []
+        for r in rows(path):
+            try:
+                n = int((r.get('obs genus only') or '0').strip())
+                reads = int((r.get('reads') or '0').strip())
+                cls = int((r.get('classified unrefined') or '0').strip())
+                pu = (r.get('ungated precision unrefined') or '').strip()
+                pf = (r.get('ungated precision refined') or '').strip()
+            except ValueError:
+                continue
+            if n <= 0 or not pu or not pf:
+                continue
+            out.append((r.get('sample', '').strip(), n, float(pu), float(pf), reads, cls))
+        return out
+
+    # Everything a row of Table \ref{realgain} needs, for one group of samples. `strepto' prints
+    # groups rather than samples: eighty-three rows would not fit, and the split by what the
+    # reference standard says about the pneumococcus is the comparison the case study makes.
+    def emitgroup(fh, db, tag, sel):
+        if not sel:
+            return 0
+        N = sum(x[1] for x in sel)
+        pu = sum(x[1] * x[2] for x in sel) / N
+        pf = sum(x[1] * x[3] for x in sel) / N
+        reads = sum(x[4] for x in sel)
+        cls = sum(x[5] for x in sel)
+        emit(fh, 'rg', '%s/%ssamples' % (db, tag), str(len(sel)))
+        emit(fh, 'rg', '%s/%ssubset' % (db, tag), str(N))
+        emit(fh, 'rg', '%s/%sgroupreads' % (db, tag), str(reads))
+        emit(fh, 'rg', '%s/%sgroupclassified' % (db, tag), str(cls))
+        emit(fh, 'rg', '%s/%sgroupshare' % (db, tag), '%.2f' % (100.0 * N / cls) if cls else '0')
+        emit(fh, 'rg', '%s/%sprecu' % (db, tag), '%.4f' % pu)
+        emit(fh, 'rg', '%s/%sprecf' % (db, tag), '%.4f' % pf)
+        emit(fh, 'rg', '%s/%sgain' % (db, tag), '%.0f' % (100.0 * (pf - pu) / pu) if pu else '0')
+        emit(fh, 'rg', '%s/%sopenu' % (db, tag), '%.1f' % (1.0 / pu) if pu else '0')
+        emit(fh, 'rg', '%s/%sopenf' % (db, tag), '%.1f' % (1.0 / pf) if pf else '0')
+        return 10
+
+    # Which samples name the pneumococcus, by culture and by the source study's own pipeline.
+    # Columns 6 and 7 of ground_truth.csv are the two tax ids; a sample may carry several rows.
+    culture, pipeline = set(), set()
+    gtpath = os.path.join(results, 'ground_truth.csv')
+    if os.path.exists(gtpath):
+        with open(gtpath, encoding='utf-8') as gh:
+            for line in gh:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                c = line.split(';')
+                if len(c) < 7:
+                    continue
+                if c[5].strip() == '1313':
+                    culture.add(c[0].strip())
+                if c[6].strip() == '1313':
+                    pipeline.add(c[0].strip())
+
+    for db, key in (('strepto', 'lri'), ('strepto', 'lrineg'), ('tick-borne', 'ticks'), ('viral', 'saliva')):
+        path = os.path.join(results, '%s_%s_specificity.csv' % (db, key))
+        allrows = rows(path)
+        if not allrows:
+            continue
+        sel = specrows(path)
+        pre = db if key in ('lri', 'ticks', 'saliva') else '%s/%s' % (db, key)
+        tag = '' if key != 'lrineg' else 'neg'
+        totreads = sum(int((r.get('reads') or '0').strip()) for r in allrows)
+        totcls = sum(int((r.get('classified unrefined') or '0').strip()) for r in allrows)
+        emit(fh, 'rg', '%s/%sreads' % (db, tag), str(totreads))
+        emit(fh, 'rg', '%s/%sclassified' % (db, tag), str(totcls))
+        emit(fh, 'rg', '%s/%sallsamples' % (db, tag), str(len(allrows)))
+        entries += 3
+        n = emitgroup(fh, db, tag, sel)
+        entries += n
+        if sel and totcls:
+            share = 100.0 * sum(x[1] for x in sel) / totcls
+            emit(fh, 'rg', '%s/%sshare' % (db, tag), '%.2f' % share)
+            emit(fh, 'rg', '%s/%simproved' % (db, tag), str(sum(1 for x in sel if x[3] > x[2])))
+            emit(fh, 'rg', '%s/%sflat' % (db, tag), str(sum(1 for x in sel if x[3] == x[2])))
+            emit(fh, 'rg', '%s/%sworse' % (db, tag), str(sum(1 for x in sel if x[3] < x[2])))
+            entries += 4
+        if db == 'strepto' and key == 'lri' and culture:
+            entries += emitgroup(fh, db, 'cult', [x for x in sel if x[0] in culture])
+            entries += emitgroup(fh, db, 'pipe', [x for x in sel if x[0] not in culture and x[0] in pipeline])
+            entries += emitgroup(fh, db, 'none', [x for x in sel if x[0] not in culture and x[0] not in pipeline])
+
 print('wrote %s with %d entries' % (out, entries))
 if missing:
     print('  %d database(s) had no dbinfo.csv in %s and were skipped' % (missing, results))

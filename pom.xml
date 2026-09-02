@@ -47,9 +47,15 @@
 		     finding its result files already in place and reporting a runtime of zero. -->
 		<gs.target>make</gs.target>
 		<!-- The node the path vote of `taxoncall' is restricted to, and the minimum its winning
-		     path must gather. 1301 is Streptococcus; an empty minimum means none is required. -->
+		     path must gather. 1301 is Streptococcus; an empty minimum means none is required.
+
+		     `target' is the reference organism the nearest-node columns are measured towards, 1313
+		     for S. pneumoniae. Empty leaves those columns blank, which is what every database but
+		     `strepto' wants for now. It must lie below `root', or the report refuses the run: no
+		     signal it counts could ever reach it. -->
 		<gs.taxoncall.root>1301</gs.taxoncall.root>
 		<gs.taxoncall.minimum></gs.taxoncall.minimum>
+		<gs.taxoncall.target></gs.taxoncall.target>
 	</properties>
 	
 	<name>genestrip-db-exp</name>
@@ -299,6 +305,7 @@
 								<argument>${gs.project.reportkey}</argument>
 								<argument>${gs.taxoncall.root}</argument>
 								<argument>${gs.taxoncall.minimum}</argument>
+								<argument>${gs.taxoncall.target}</argument>
 							</arguments>
 						</configuration>
 					</execution>

@@ -146,7 +146,8 @@ run_real() {
   mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.project.calibration="${4:-}"
 }
 
-# $1 = database project, $2 = fastq map, $3 = report key, $4 = the taxid the vote is restricted to
+# $1 = database project, $2 = fastq map, $3 = report key, $4 = the taxid the vote is restricted to,
+# $5 = the reference organism the nearest-node columns are measured towards (optional)
 #
 # Names the taxon each sample's reads point at below one node, for both database variants, and holds
 # the answers against the per-sample reference standard in data/projects/<db>/ground_truth.csv. Where
@@ -159,7 +160,8 @@ run_taxoncall() {
     return 1
   fi
   echo "############ $1: taxon call (${3}) below ${4} ############"
-  mvn exec:exec@taxoncall -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.taxoncall.root="$4"
+  mvn exec:exec@taxoncall -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.taxoncall.root="$4" \
+      -Dgs.taxoncall.target="${5:-}"
 }
 
 # Wall time and maximum RAM of classifying the *real* reads, measured the same way as for the
@@ -281,8 +283,8 @@ case "$what" in
   # A tool, not a measurement of the paper. A sputum sample carries a community of streptococci, so a
   # rule that crowns one taxon per sample answers a question the material does not pose; the paper
   # reports the per-read measure of `real' instead. Kept because it was needed to find that out.
-  taxoncall)    run_taxoncall strepto strepto_lri_real.txt lri 1301
-                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 ;;
+  taxoncall)    run_taxoncall strepto strepto_lri_real.txt lri 1301 1313
+                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 1313 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto; run_ticks ;;
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
