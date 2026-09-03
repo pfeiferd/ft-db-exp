@@ -1,0 +1,51 @@
+# The fourteen clinical metagenomes of ENA study PRJEB34974, "Nocardiosis identified by NGS
+# approach", Huashan Hospital / Fudan University, public since 2019-11-08. The study behind them is
+#   Zhang Y, Ai J-W, Cui P, Zhang W-H, et al.: "Rapid Detection of Nocardia by Next-Generation
+#   Sequencing." Front Cell Infect Microbiol 2020;10:13.  (PMC7040243)
+# which names this accession in its data-availability statement.
+#
+# They are the study's NG group: ten patients whose nocardiosis was found by sequencing, sampled as
+# five CSF, four BALF, two sputum, two lung tissue and one cutaneous pus. Cases 6, 9 and 10 
+# contribute more than one sample, which is why fourteen runs come from ten patients.
+#
+# BGISEQ-500, 50-100 bp SINGLE END, shotgun (200-300 bp fragments), host-depleted against hg38
+# before deposit. ENA labels every run `library_strategy=AMPLICON'; that is wrong -- the paper
+# describes shotgun metagenomics -- and it is why a search filtering on strategy does not find this
+# study. Do not trust the field.
+#
+# WHAT THIS DATA CAN AND CANNOT CARRY. The per-sample reference standard is complete: Table S4 of
+# the paper gives the species, the specimen and the Nocardia read count for every one of the
+# fourteen, and it is transcribed into data/projects/nocardia/ground_truth.csv. But the signal is
+# small and very unevenly spread -- 29,175 Nocardia reads over the whole cohort, of which two
+# samples hold 82 per cent, and two others hold 2 and 17 reads. Report this cohort case by case with
+# the read count beside every claim. A mean over samples holding 2 and 16,143 reads is not a
+# measurement, it is those two samples wearing a cohort's clothes.
+#
+# NO RUN-TO-CASE MAPPING EXISTS. All fourteen runs carry the identical sample title `HS-nocardia',
+# ENA's read counts are whole-sample totals while Table S4's are Nocardia-specific, and nothing
+# joins them. Accession order is not evidence of case order. The comparison that needs no mapping:
+# the species called across the fourteen runs must be exactly the six of the standard, with the
+# multiplicities farcinica 3, brasiliensis 3, terpenica 3, africana 2, otitidiscaviarum 2,
+# cyriacigeorgica 1.
+#
+# The study's other two groups are NOT deposited -- neither the sixteen culture-positive samples nor
+# the fifty-five Nocardia-negative ones, which would have been the specificity control. There is no
+# negative control for this database.
+#
+#   mvn exec:exec@fastqdl -Dname=nocardia -Dfqmap=nocardia_mngs.txt
+#
+# key       URL
+ERR3606885 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/005/ERR3606885/ERR3606885.fastq.gz
+ERR3606886 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/006/ERR3606886/ERR3606886.fastq.gz
+ERR3606887 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/007/ERR3606887/ERR3606887.fastq.gz
+ERR3606888 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/008/ERR3606888/ERR3606888.fastq.gz
+ERR3606889 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/009/ERR3606889/ERR3606889.fastq.gz
+ERR3606890 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/000/ERR3606890/ERR3606890.fastq.gz
+ERR3606891 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/001/ERR3606891/ERR3606891.fastq.gz
+ERR3606892 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/002/ERR3606892/ERR3606892.fastq.gz
+ERR3606893 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/003/ERR3606893/ERR3606893.fastq.gz
+ERR3606894 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/004/ERR3606894/ERR3606894.fastq.gz
+ERR3606895 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/005/ERR3606895/ERR3606895.fastq.gz
+ERR3606896 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/006/ERR3606896/ERR3606896.fastq.gz
+ERR3606897 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/007/ERR3606897/ERR3606897.fastq.gz
+ERR3606898 https://ftp.sra.ebi.ac.uk/vol1/fastq/ERR360/008/ERR3606898/ERR3606898.fastq.gz

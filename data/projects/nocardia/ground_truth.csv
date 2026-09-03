@@ -1,0 +1,44 @@
+# Per-sample reference standard for ENA study PRJEB34974, transcribed from Table S4 of
+#   Zhang Y, Ai J-W, Cui P, Zhang W-H, et al.: "Rapid Detection of Nocardia by Next-Generation
+#   Sequencing." Front Cell Infect Microbiol 2020;10:13.  (PMC7040243)
+#
+# WHAT KIND OF STANDARD THIS IS, and it is weaker than the one `strepto' has. The fourteen deposited
+# runs are the study's NG group, which per the footnote of its Table S2 is the group whose
+# nocardiosis was found by *sequencing*; the culture-diagnosed cases are the CG group, 11-21, and
+# they are not deposited. So the species named below is the source study's own mNGS call, not an
+# independent culture result. It is corroborated by the clinical course -- every one of these
+# patients was treated with anti-Nocardia therapy (linezolid, sulfamethoxazole, amikacin) and Table
+# S2 records the outcome -- but it is not the culture-versus-sequencing comparison that
+# `strepto/ground_truth.csv' rests on. A claim built on it must say so.
+#
+# Two further limits, both from Table S4 itself. The cohort holds 29,175 Nocardia reads, of which
+# case 10's lung tissue and case 2's BALF hold 82 per cent between them; and case 8 has two reads.
+# Read this cohort case by case with the read count beside every claim.
+#
+# There is no run-to-case mapping: all fourteen runs carry the sample title `HS-nocardia', ENA's read
+# counts are whole-sample totals and the counts below are Nocardia-specific. The comparison that
+# needs no mapping is the multiset of species over the fourteen runs, given at the end of this file.
+#
+# case;specimen;species;species taxid;nocardia reads;proportion at species
+1;BALF;Nocardia farcinica;37329;208;0.76752768
+2;BALF;Nocardia farcinica;37329;7767;0.90313953
+3;cutaneous pus;Nocardia brasiliensis;37326;17;0.77272727
+4;sputum;Nocardia brasiliensis;37326;332;0.58865248
+5;CSF;Nocardia farcinica;37329;2712;0.84302145
+6;lung tissue;Nocardia africana;134964;495;0.60736196
+6;CSF;Nocardia africana;134964;590;0.55037313
+7;BALF;Nocardia cyriacigeorgica;135487;42;0.97674419
+8;sputum;Nocardia brasiliensis;37326;2;0.5
+9;CSF;Nocardia terpenica;455432;617;0.18254438
+9;CSF;Nocardia terpenica;455432;41;0.83673469
+9;CSF;Nocardia terpenica;455432;54;0.2231405
+10;BALF;Nocardia otitidiscaviarum;1823;155;0.68281938
+10;lung tissue;Nocardia otitidiscaviarum;1823;16143;0.78072254
+#
+# The mapping-free check: over the fourteen runs the species called must be exactly
+#   Nocardia farcinica          3
+#   Nocardia brasiliensis       3
+#   Nocardia terpenica          3
+#   Nocardia africana           2
+#   Nocardia otitidiscaviarum   2
+#   Nocardia cyriacigeorgica    1
