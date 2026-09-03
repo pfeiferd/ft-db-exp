@@ -92,7 +92,9 @@ public class TaxonCallReport {
      * @param rootTaxId  the node the vote is restricted to, e.g. {@code 1301} for Streptococcus
      * @param targetTaxId the reference organism the nearest-node columns are measured towards, e.g.
      *                    {@code 1313} for S. pneumoniae; empty or null leaves those columns blank
-     * @param minimum    how much the winning path must gather, or {@link PathVoteTaxonModel#NO_MINIMUM}
+     * @param minimum    how much the winning path must gather, and how much a node must hold before
+     *                   the nearest-node columns will stop at it, or
+     *                   {@link PathVoteTaxonModel#NO_MINIMUM}
      * @return the file that was written
      * @throws IOException if a database or a fastq file cannot be read, or the file cannot be written
      */
@@ -375,7 +377,7 @@ public class TaxonCallReport {
         if (calls.isEmpty()) {
             calls.add(new Call());
         }
-        Near near = nearest(target, signalNodes, signalCounts);
+        Near near = nearest(target, signalNodes, signalCounts, minimum);
         long unplaced = rule.unplaced(countsPerNode);
         for (Call call : calls) {
             if (near != null) {
@@ -522,7 +524,8 @@ public class TaxonCallReport {
      *         lineage at all -- which is not the same as a count of zero and is left empty, not zeroed
      */
     static Near nearest(SmallTaxTree.SmallTaxIdNode target,
-                        List<SmallTaxTree.SmallTaxIdNode> signalNodes, List<Long> signalCounts) {
+                        List<SmallTaxTree.SmallTaxIdNode> signalNodes, List<Long> signalCounts,
+                        long minimum) {
         if (target == null) {
             return null;
         }
@@ -530,17 +533,35 @@ public class TaxonCallReport {
         // clusters carried the signal is a distinction this measure does not make, since all of them
         // leave the same one species open.
         long below = countAtOrBelow(target, signalNodes, signalCounts);
-        if (below > 0) {
+        if (meets(below, minimum)) {
             return near(target, signalNodes, signalCounts, below);
         }
-        // Upwards from the organism, stopping at the first ancestor that holds anything itself. What
+        // Upwards from the organism, stopping at the first ancestor that holds enough itself. What
         // sits at or below that ancestor is asked for only once it is the answer.
         for (SmallTaxTree.SmallTaxIdNode n = target.getParent(); n != null; n = n.getParent()) {
-            if (countAt(n, signalNodes, signalCounts) > 0) {
+            if (meets(countAt(n, signalNodes, signalCounts), minimum)) {
                 return near(n, signalNodes, signalCounts, countAtOrBelow(n, signalNodes, signalCounts));
             }
         }
         return null;
+    }
+
+    /**
+     * Whether a count is worth stopping the walk at.
+     * <p>
+     * Without a minimum a single read decides how deep the answer goes, and on the clinical runs it
+     * did: the median count at the reported node was one read, so a sample could be said to have
+     * reached the mitis complex on 0.009 per cent of its evidence. The candidate count is then
+     * impressive and means nothing. The minimum is the same one the vote uses -- what counts as
+     * enough evidence does not change between the two questions -- and it is a count in whatever
+     * currency the row is written in, so one value has to serve reads and k-mers alike.
+     *
+     * @param count   what the node holds
+     * @param minimum the floor, or {@link PathVoteTaxonModel#NO_MINIMUM} for none
+     * @return whether the node holds anything at all, and enough of it
+     */
+    private static boolean meets(long count, long minimum) {
+        return count > 0 && (minimum <= PathVoteTaxonModel.NO_MINIMUM || count >= minimum);
     }
 
     private static Near near(SmallTaxTree.SmallTaxIdNode node,

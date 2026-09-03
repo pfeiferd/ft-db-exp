@@ -49,6 +49,12 @@
 		<!-- The node the path vote of `taxoncall' is restricted to, and the minimum its winning
 		     path must gather. 1301 is Streptococcus; an empty minimum means none is required.
 
+		     The minimum also gates the nearest-node columns, and there it matters more. Without one a
+		     single read decides how deep the answer goes: on the clinical runs the median count at the
+		     reported node was one read, so a sample counted as having reached the mitis complex on
+		     0.009 per cent of its evidence. It is a count in whatever currency the row is written in,
+		     so one value serves reads and k-mers alike and cannot suit both equally.
+
 		     `target' is the reference organism the nearest-node columns are measured towards, 1313
 		     for S. pneumoniae. Empty leaves those columns blank, which is what every database but
 		     `strepto' wants for now. It must lie below `root', or the report refuses the run: no

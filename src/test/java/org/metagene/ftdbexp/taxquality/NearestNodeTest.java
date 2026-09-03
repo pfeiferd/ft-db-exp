@@ -50,7 +50,7 @@ public class NearestNodeTest {
     @Test
     public void testSignalAtTheSpeciesAnswersWithTheSpecies() {
         TaxonCallReport.Near near = TaxonCallReport.nearest(
-                pneumo, Arrays.asList(pneumo, genus), counts(500, 3000));
+                pneumo, Arrays.asList(pneumo, genus), counts(500, 3000), PathVoteTaxonModel.NO_MINIMUM);
         assertSame(pneumo, near.node);
         assertEquals(500, near.at);
         assertEquals(500, near.below);
@@ -67,7 +67,7 @@ public class NearestNodeTest {
     @Test
     public void testSignalOnlyBelowTheSpeciesStillAnswersWithTheSpecies() {
         TaxonCallReport.Near near = TaxonCallReport.nearest(
-                pneumo, Arrays.asList(strainCluster, mitisComplex, genus), counts(700, 400, 3000));
+                pneumo, Arrays.asList(strainCluster, mitisComplex, genus), counts(700, 400, 3000), PathVoteTaxonModel.NO_MINIMUM);
         assertSame("an emptied species node must not send the walk upwards", pneumo, near.node);
         assertEquals("nothing sits at the species itself", 0, near.at);
         assertEquals("but the strain cluster below it did", 700, near.below);
@@ -77,7 +77,7 @@ public class NearestNodeTest {
     @Test
     public void testSignalAtAStrainAnswersWithTheSpecies() {
         TaxonCallReport.Near near = TaxonCallReport.nearest(
-                pneumo, Arrays.asList(pneumoStrain, genus), counts(120, 3000));
+                pneumo, Arrays.asList(pneumoStrain, genus), counts(120, 3000), PathVoteTaxonModel.NO_MINIMUM);
         assertSame(pneumo, near.node);
         assertEquals(0, near.at);
         assertEquals(120, near.below);
@@ -93,7 +93,7 @@ public class NearestNodeTest {
     public void testWithoutSignalAtTheOrganismTheDeepestAncestorAnswers() {
         SmallTaxIdNode oralis = new SmallTaxIdNode("1303", "1303", Rank.SPECIES);
         List<SmallTaxIdNode> nodes = Arrays.asList(mitisComplex, genus);
-        TaxonCallReport.Near near = TaxonCallReport.nearest(pneumo, nodes, counts(400, 3000));
+        TaxonCallReport.Near near = TaxonCallReport.nearest(pneumo, nodes, counts(400, 3000), PathVoteTaxonModel.NO_MINIMUM);
         assertSame(mitisComplex, near.node);
         assertEquals("the undecidable residue", 400, near.at);
         assertEquals("and nothing below it", 400, near.below);
@@ -108,7 +108,7 @@ public class NearestNodeTest {
         SmallTaxIdNode flatGenus =
                 new SmallTaxIdNode("1301", "1301", Rank.GENUS, new SmallTaxIdNode[] { flatPneumo });
         TaxonCallReport.Near near = TaxonCallReport.nearest(
-                flatPneumo, Arrays.asList(flatGenus), counts(3000));
+                flatPneumo, Arrays.asList(flatGenus), counts(3000), PathVoteTaxonModel.NO_MINIMUM);
         assertSame(flatGenus, near.node);
         assertEquals(3000, near.at);
     }
@@ -120,12 +120,43 @@ public class NearestNodeTest {
     @Test
     public void testNoSignalOnTheLineageAnswersWithNothing() {
         SmallTaxIdNode elsewhere = new SmallTaxIdNode("1314", "1314", Rank.SPECIES);
-        assertNull(TaxonCallReport.nearest(pneumo, Arrays.asList(elsewhere), counts(4000)));
+        assertNull(TaxonCallReport.nearest(pneumo, Arrays.asList(elsewhere), counts(4000), PathVoteTaxonModel.NO_MINIMUM));
+    }
+
+    /**
+     * The minimum is what keeps a single read from deciding how deep the answer goes. On the clinical
+     * runs the median count at the reported node was one read, so without it a sample counts as
+     * having reached the mitis complex on a fraction of a per cent of its evidence.
+     */
+    @Test
+    public void testAMinimumSkipsANodeCarryingTooLittle() {
+        // Two reads at the mitis complex, three thousand at the genus. At no minimum the complex
+        // answers; at a minimum of ten it is passed over and the genus answers instead.
+        List<SmallTaxIdNode> nodes = Arrays.asList(mitisComplex, genus);
+        assertSame(mitisComplex, TaxonCallReport.nearest(
+                pneumo, nodes, counts(2, 3000), PathVoteTaxonModel.NO_MINIMUM).node);
+        assertSame(genus, TaxonCallReport.nearest(pneumo, nodes, counts(2, 3000), 10).node);
+    }
+
+    /** The subtree is held to the same floor, so a stray read below the species does not name it either. */
+    @Test
+    public void testAMinimumAppliesToTheSubtreeToo() {
+        List<SmallTaxIdNode> nodes = Arrays.asList(strainCluster, genus);
+        assertSame(pneumo, TaxonCallReport.nearest(
+                pneumo, nodes, counts(2, 3000), PathVoteTaxonModel.NO_MINIMUM).node);
+        assertSame(genus, TaxonCallReport.nearest(pneumo, nodes, counts(2, 3000), 10).node);
+    }
+
+    /** A minimum nothing on the lineage meets leaves the columns empty rather than naming the root. */
+    @Test
+    public void testAMinimumNothingMeetsAnswersWithNothing() {
+        assertNull(TaxonCallReport.nearest(pneumo, Arrays.asList(genus), counts(5), 10));
     }
 
     /** Without a target the columns are not measured at all, which is the default for every other database. */
     @Test
     public void testNoTargetAnswersWithNothing() {
-        assertNull(TaxonCallReport.nearest(null, Arrays.asList(genus), counts(3000)));
+        assertNull(TaxonCallReport.nearest(null, Arrays.asList(genus), counts(3000),
+                PathVoteTaxonModel.NO_MINIMUM));
     }
 }

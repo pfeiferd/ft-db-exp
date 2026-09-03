@@ -69,7 +69,10 @@ public class TaxonComposition {
             Map<String, Integer> own = new LinkedHashMap<>();
             SmallTaxTree.SmallTaxIdNode[] subNodes = node.getSubNodes();
             if (subNodes == null || subNodes.length == 0) {
-                own.put(speciesOf(node), 1);
+                String leafClass = classOfLeaf(node);
+                if (leafClass != null) {
+                    own.put(leafClass, 1);
+                }
             } else {
                 for (SmallTaxTree.SmallTaxIdNode sub : subNodes) {
                     Map<String, Integer> subCounts = countsByPos.get(sub.getPosition());
@@ -134,6 +137,30 @@ public class TaxonComposition {
      * @param leaf the leaf to resolve
      * @return the tax id of its species, or {@link #UNPLACED} if its lineage names none
      */
+    /**
+     * The class a leaf contributes to the candidate sets above it, or {@code null} where it
+     * contributes none.
+     * <p>
+     * A childless node of rank {@link Rank#REFINED} is an OTHER bucket: the refinement creates it to
+     * stand for "none of the siblings", it holds no genome, and in every database of this paper no
+     * k-mer either. It is not an organism a k-mer could have come from, so it must not enter the
+     * candidate set. Counting it added exactly one to every refined node above it and to no unrefined
+     * node at all, since the unrefined tree has none: the genus of {@code strepto} reported 158
+     * species against the unrefined 157, and the node holding the mitis complex reported nine against
+     * eight. The measure understated the refinement it was there to assess.
+     * <p>
+     * {@link #UNPLACED} stays a candidate where a real leaf produces it. A genome under
+     * {@code unclassified Streptococcus} names no species, and a k-mer there genuinely could have
+     * come from an organism the taxonomy cannot place; that is a fact about the reference and not an
+     * artefact of the refinement.
+     *
+     * @param leaf a node without sub-nodes
+     * @return its species, {@link #UNPLACED}, or {@code null} for an OTHER bucket
+     */
+    static String classOfLeaf(SmallTaxTree.SmallTaxIdNode leaf) {
+        return leaf.getRank() == Rank.REFINED ? null : speciesOf(leaf);
+    }
+
     static String speciesOf(SmallTaxTree.SmallTaxIdNode leaf) {
         String species = UNPLACED;
         for (SmallTaxTree.SmallTaxIdNode n = leaf; n != null; n = n.getParent()) {

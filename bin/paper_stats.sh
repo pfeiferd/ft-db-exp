@@ -264,6 +264,78 @@ with open(out, 'w', encoding='utf-8') as fh:
             entries += emitgroup(fh, db, 'pipe', [x for x in sel if x[0] not in culture and x[0] in pipeline])
             entries += emitgroup(fh, db, 'none', [x for x in sel if x[0] not in culture and x[0] not in pipeline])
 
+    # Where a sample's evidence stops on the reference organism's lineage, from the nearest-node
+    # columns of <db>_<key>_taxoncall.csv. One row per currency and variant, the samples bucketed by
+    # how many species the node they stopped at still leaves open.
+    #
+    # The buckets are decided by the candidate count except for the coarsest, which is decided by the
+    # node: `genus' means the walk got no further than the root of the subtree, and saying so by tax
+    # id rather than by a count keeps the bucket honest if the count ever changes.
+    #
+    # A sample with no signal on the lineage at all is its own bucket and not a zero. Under a
+    # refinement it can mean the opposite of failure: the evidence moved to a branch that excludes
+    # the organism, which is a negative answer about it rather than no answer.
+    def nearestbuckets(path, rootid):
+        by = {}
+        for r in rows(path):
+            cur = (r.get('currency') or '').strip()
+            var = (r.get('variant') or '').strip()
+            if not cur or not var:
+                continue
+            node = (r.get('nearest node') or '').strip()
+            cand = (r.get('nearest candidates') or '').strip()
+            shareat = (r.get('nearest share at') or '').strip()
+            sharebelow = (r.get('nearest share at or below') or '').strip()
+            b = by.setdefault((cur, var), {'species': 0, 'fine': 0, 'mid': 0, 'coarse': 0,
+                                           'genus': 0, 'none': 0, 'at': [], 'below': []})
+            if not cand:
+                b['none'] += 1
+                continue
+            n = int(cand)
+            if node == rootid:
+                b['genus'] += 1
+            elif n <= 1:
+                b['species'] += 1
+            else:
+                b['fine' if n <= 10 else 'mid' if n <= 50 else 'coarse'] += 1
+                # Only the samples that stopped between the species and the genus. Those are the ones
+                # a refinement created a node for, and the only ones whose candidate count needs
+                # guarding: a species-level answer rests on the species and needs no such warning.
+                if shareat:
+                    b['at'].append(float(shareat))
+                if sharebelow:
+                    b['below'].append(float(sharebelow))
+        return by
+
+    for db, key, rootid in (('strepto', 'lri', '1301'),):
+        path = os.path.join(results, '%s_%s_taxoncall.csv' % (db, key))
+        if not rows(path):
+            continue
+        by = nearestbuckets(path, rootid)
+        for (cur, var), b in by.items():
+            if cur not in ('reads', 'kmers'):
+                continue
+            tag = '%s/%s/%s' % (db, cur.replace(' ', ''), 'u' if var == 'unrefined' else 'f')
+            for name in ('species', 'fine', 'mid', 'coarse', 'genus', 'none'):
+                emit(fh, 'nn', '%s/%s' % (tag, name), str(b[name]))
+                entries += 1
+            # The median share of the sample that the answer rests on, over the samples that stopped
+            # on a node between the species and the genus. Without it a candidate count of eight says
+            # nothing about whether eight species were narrowed down or one stray read was. The
+            # unrefined tree has no such node, so it has no such median either.
+            # Two shares, and the difference between them is the point. `at' is the evidence whose
+            # lowest common ancestor is the reported node itself -- the material that genuinely could
+            # not be placed deeper, and the only thing the candidate count rests on. `below' counts
+            # the whole clade, the commensal siblings included, so it is large wherever the sample
+            # holds any of them and says nothing about how far the pneumococcal lineage was followed.
+            for name, values in (('medianshareat', b['at']), ('mediansharebelow', b['below'])):
+                sh = sorted(values)
+                if not sh:
+                    continue
+                mid = sh[len(sh) // 2] if len(sh) % 2 else (sh[len(sh) // 2 - 1] + sh[len(sh) // 2]) / 2.0
+                emit(fh, 'nn', '%s/%s' % (tag, name), '%.4f' % mid)
+                entries += 1
+
 print('wrote %s with %d entries' % (out, entries))
 if missing:
     print('  %d database(s) had no dbinfo.csv in %s and were skipped' % (missing, results))
