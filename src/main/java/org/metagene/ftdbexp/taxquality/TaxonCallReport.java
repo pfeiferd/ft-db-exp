@@ -55,6 +55,18 @@ public class TaxonCallReport {
     /** How many of the heaviest votes are reported per sample, variant and currency. */
     private static final int TOP_VOTES = 3;
 
+    /**
+     * Where the second-coarsest bucket of the summary stops.
+     * <p>
+     * Above this a node leaves so much of the tree open that reporting it apart from the root would
+     * suggest a narrowing that did not happen: for {@code strepto} the root holds 157 species, and a
+     * node still leaving 120 has narrowed nothing worth a column of its own.
+     */
+    private static final int COARSE_MAX = 100;
+
+    /** The buckets of the summary, coarsest last. The ranges are on the candidate count. */
+    private static final String[] BUCKETS = {"species", "2-10", "11-50", "51-100", "above 100"};
+
     private enum Currency {
         READS("reads"), KMERS("kmers"), UNIQUE("unique kmers");
 
@@ -186,7 +198,242 @@ public class TaxonCallReport {
             }
         }
         System.out.println("Wrote " + file);
+        writeSummary(db, reportKey, rootTaxId, targetTaxId, byVariant, truth);
         return file;
+    }
+
+    /**
+     * Writes the per-currency, per-variant summary of the nearest-node columns, one row for each
+     * pair, to {@code <db>_<report key>_taxoncallsummary.csv}.
+     * <p>
+     * It exists so that a table can be typeset from a file rather than from figures somebody counted:
+     * the bucketing, the medians and the sums are made here, next to the data they describe and in
+     * the same pass that produced it, and the paper reads the result. A count that is wrong is then
+     * wrong in one place.
+     * <p>
+     * A bucket no sample reached carries an empty median rather than a zero: there is nothing to take
+     * a median of, and a zero would read as evidence of nothing where there is no evidence either
+     * way. The coarsest bucket takes the root of the walk whatever its candidate count, so that it
+     * stays right when that count moves.
+     */
+    private void writeSummary(String db, String reportKey, String rootTaxId, String targetTaxId,
+                              Map<Variant, Map<String, Map<Currency, List<Call>>>> byVariant,
+                              Map<String, List<String[]>> truth) throws IOException {
+        File file = new File(resultsDir, db + "_" + reportKey + "_taxoncallsummary.csv");
+        Set<String> samples = new LinkedHashSet<>();
+        for (Map<String, Map<Currency, List<Call>>> m : byVariant.values()) {
+            samples.addAll(m.keySet());
+        }
+        try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
+            StringBuilder header = new StringBuilder("db;currency;variant;samples;target;root species;");
+            for (String b : BUCKETS) {
+                header.append(b).append(';').append(b).append(" median;");
+            }
+            header.append("off lineage;median in-genus total;median at or below species;"
+                    + "max ladder candidates;unplaced;contributing nodes;top calls unchanged;"
+                    + "off lineage named target;median share at;median share at or below;"
+                    + "names target;names target list;misses target;misses target list;");
+            ps.println(header);
+            for (Currency currency : Currency.values()) {
+                for (Variant variant : Variant.values()) {
+                    Map<String, Map<Currency, List<Call>>> perSample = byVariant.get(variant);
+                    if (perSample == null) {
+                        continue;
+                    }
+                    int[] counts = new int[BUCKETS.length];
+                    List<List<Long>> atByBucket = new ArrayList<>();
+                    for (int i = 0; i < BUCKETS.length; i++) {
+                        atByBucket.add(new ArrayList<Long>());
+                    }
+                    List<Long> totals = new ArrayList<>();
+                    List<Long> belowSpecies = new ArrayList<>();
+                    // The shares are of the sample's own in-genus total, so they are per sample and
+                    // cannot be recovered from the sums above: a ratio of medians is not a median of
+                    // ratios. Kept only for the ladder nodes, the ones whose candidate count needs
+                    // guarding -- a species-level answer rests on the species and needs no warning.
+                    List<Double> shareAt = new ArrayList<>();
+                    List<Double> shareBelow = new ArrayList<>();
+                    List<String> names = new ArrayList<>();
+                    List<String> misses = new ArrayList<>();
+                    long off = 0, offNamed = 0, unplaced = 0, nodes = 0, maxLadder = 0;
+                    int rootSpecies = 0;
+                    for (String sample : samples) {
+                        Map<Currency, List<Call>> perCurrency = perSample.get(sample);
+                        List<Call> calls = perCurrency == null ? null : perCurrency.get(currency);
+                        if (calls == null || calls.isEmpty()) {
+                            continue;
+                        }
+                        Call c = calls.get(0);
+                        // What the top call says about the reference organism. The paper names these
+                        // samples, so a run that changes which they are must change the sentence: the
+                        // list is written out rather than left to be counted off the per-sample rows.
+                        if (targetTaxId != null) {
+                            if (targetTaxId.equals(c.nodeTaxId)) {
+                                names.add(sample);
+                            } else if (targetTaxId.equals(c.sigmaCulture)) {
+                                misses.add(sample + " (\\emph{" + shortSpecies(c.nodeName) + "})");
+                            }
+                        }
+                        totals.add(c.total);
+                        unplaced += c.unplaced;
+                        nodes += c.contributingNodes;
+                        if (c.nearTaxId == null) {
+                            off++;
+                            // A sample with no signal on the organism's lineage has not thereby been
+                            // shown free of it, and the paper calls this column `correctly off
+                            // lineage' on the strength of the reference standard naming something
+                            // else in every such sample. That is a property of the samples and not of
+                            // the column, so it is counted rather than assumed: anything but zero
+                            // here and the column has to be renamed.
+                            if (targetTaxId != null
+                                    && (targetTaxId.equals(c.sigmaCulture) || targetTaxId.equals(c.sigmaWimp))) {
+                                offNamed++;
+                            }
+                            continue;
+                        }
+                        boolean isRoot = rootTaxId.equals(c.nearTaxId);
+                        if (isRoot) {
+                            rootSpecies = Math.max(rootSpecies, c.nearCandidates);
+                        }
+                        int bucket = bucketOf(c.nearCandidates, isRoot);
+                        counts[bucket]++;
+                        if (!isRoot && c.nearCandidates > 1 && c.total > 0) {
+                            shareAt.add((double) c.nearAt / c.total);
+                            shareBelow.add((double) c.nearBelow / c.total);
+                        }
+                        atByBucket.get(bucket).add(c.nearAt);
+                        if (c.nearCandidates <= 1) {
+                            belowSpecies.add(c.nearBelow);
+                        } else if (!isRoot && c.nearCandidates <= COARSE_MAX) {
+                            maxLadder = Math.max(maxLadder, c.nearCandidates);
+                        }
+                    }
+                    ps.print(db); ps.print(';');
+                    ps.print(currency.label); ps.print(';');
+                    ps.print(variant.getLabel()); ps.print(';');
+                    ps.print(samples.size()); ps.print(';');
+                    ps.print(targetTaxId == null ? "" : targetTaxId); ps.print(';');
+                    ps.print(rootSpecies == 0 ? "" : Integer.toString(rootSpecies)); ps.print(';');
+                    for (int i = 0; i < BUCKETS.length; i++) {
+                        ps.print(counts[i]); ps.print(';');
+                        Long m = median(atByBucket.get(i));
+                        ps.print(m == null ? "" : Long.toString(m)); ps.print(';');
+                    }
+                    ps.print(off); ps.print(';');
+                    Long mt = median(totals);
+                    ps.print(mt == null ? "" : Long.toString(mt)); ps.print(';');
+                    Long mb = median(belowSpecies);
+                    ps.print(mb == null ? "" : Long.toString(mb)); ps.print(';');
+                    ps.print(maxLadder == 0 ? "" : Long.toString(maxLadder)); ps.print(';');
+                    ps.print(unplaced); ps.print(';');
+                    ps.print(nodes); ps.print(';');
+                    ps.print(unchangedTopCalls(byVariant, samples)); ps.print(';');
+                    ps.print(offNamed); ps.print(';');
+                    Double msa = medianOf(shareAt), msb = medianOf(shareBelow);
+                    ps.print(msa == null ? "" : String.format(Locale.ROOT, "%.4f", msa)); ps.print(';');
+                    ps.print(msb == null ? "" : String.format(Locale.ROOT, "%.4f", msb)); ps.print(';');
+                    ps.print(names.size()); ps.print(';');
+                    ps.print(joinNames(names)); ps.print(';');
+                    ps.print(misses.size()); ps.print(';');
+                    ps.print(joinNames(misses)); ps.println(';');
+                }
+            }
+        }
+        System.out.println("Wrote " + file);
+    }
+
+    /** @return the index in {@link #BUCKETS} a node with this many candidates belongs to */
+    static int bucketOf(int candidates, boolean isRoot) {
+        if (isRoot || candidates > COARSE_MAX) {
+            return BUCKETS.length - 1;
+        }
+        if (candidates <= 1) {
+            return 0;
+        }
+        return candidates <= 10 ? 1 : candidates <= 50 ? 2 : 3;
+    }
+
+    /** {@link #median} for shares, which do not round to whole numbers. */
+    static Double medianOf(List<Double> values) {
+        if (values.isEmpty()) {
+            return null;
+        }
+        List<Double> sorted = new ArrayList<>(values);
+        Collections.sort(sorted);
+        int n = sorted.size();
+        return n % 2 == 1 ? sorted.get(n / 2) : (sorted.get(n / 2 - 1) + sorted.get(n / 2)) / 2;
+    }
+
+    /** {@code Streptococcus mitis} as {@code S.~mitis}, for a name the paper typesets in italics. */
+    static String shortSpecies(String name) {
+        if (name == null) {
+            return "";
+        }
+        int space = name.indexOf(' ');
+        return space <= 0 ? name : name.charAt(0) + ".~" + name.substring(space + 1);
+    }
+
+    /** {@code a, b and c}; the separator avoids the semicolon this file is delimited with. */
+    static String joinNames(List<String> names) {
+        if (names.isEmpty()) {
+            return "";
+        }
+        if (names.size() == 1) {
+            return names.get(0);
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < names.size() - 1; i++) {
+            if (i > 0) {
+                sb.append(", ");
+            }
+            sb.append(names.get(i));
+        }
+        return sb.append(" and ").append(names.get(names.size() - 1)).toString();
+    }
+
+    /** @return the middle value, averaged over the two middle ones for an even count, or null */
+    static Long median(List<Long> values) {
+        if (values.isEmpty()) {
+            return null;
+        }
+        List<Long> sorted = new ArrayList<>(values);
+        Collections.sort(sorted);
+        int n = sorted.size();
+        return n % 2 == 1 ? sorted.get(n / 2) : (sorted.get(n / 2 - 1) + sorted.get(n / 2)) / 2;
+    }
+
+    /**
+     * How many samples the two variants give the same top call for, in every currency at once. It is
+     * the figure behind the paper's claim that a classifier stated per sample cannot see a
+     * refinement, so it is counted here rather than inferred from the per-sample rows afterwards.
+     */
+    private static int unchangedTopCalls(Map<Variant, Map<String, Map<Currency, List<Call>>>> byVariant,
+                                         Set<String> samples) {
+        int same = 0;
+        for (String sample : samples) {
+            boolean allEqual = true;
+            for (Currency currency : Currency.values()) {
+                String first = null;
+                boolean seen = false;
+                for (Variant variant : Variant.values()) {
+                    Map<String, Map<Currency, List<Call>>> perSample = byVariant.get(variant);
+                    Map<Currency, List<Call>> perCurrency = perSample == null ? null : perSample.get(sample);
+                    List<Call> calls = perCurrency == null ? null : perCurrency.get(currency);
+                    String name = calls == null || calls.isEmpty() || calls.get(0).nodeName == null
+                            ? "" : calls.get(0).nodeName;
+                    if (!seen) {
+                        first = name;
+                        seen = true;
+                    } else if (!first.equals(name)) {
+                        allEqual = false;
+                    }
+                }
+            }
+            if (allEqual) {
+                same++;
+            }
+        }
+        return same;
     }
 
     /** What one rule said about one sample, in one currency. */

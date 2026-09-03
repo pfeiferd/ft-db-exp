@@ -221,6 +221,8 @@ with open(out, 'w', encoding='utf-8') as fh:
     # Which samples name the pneumococcus, by culture and by the source study's own pipeline.
     # Columns 6 and 7 of ground_truth.csv are the two tax ids; a sample may carry several rows.
     culture, pipeline = set(), set()
+    # Filled from the summary CSV's own count further down, not decided here.
+    offwrong = set()
     gtpath = os.path.join(results, 'ground_truth.csv')
     if os.path.exists(gtpath):
         with open(gtpath, encoding='utf-8') as gh:
@@ -264,77 +266,82 @@ with open(out, 'w', encoding='utf-8') as fh:
             entries += emitgroup(fh, db, 'pipe', [x for x in sel if x[0] not in culture and x[0] in pipeline])
             entries += emitgroup(fh, db, 'none', [x for x in sel if x[0] not in culture and x[0] not in pipeline])
 
-    # Where a sample's evidence stops on the reference organism's lineage, from the nearest-node
-    # columns of <db>_<key>_taxoncall.csv. One row per currency and variant, the samples bucketed by
-    # how many species the node they stopped at still leaves open.
-    #
-    # The buckets are decided by the candidate count except for the coarsest, which is decided by the
-    # node: `genus' means the walk got no further than the root of the subtree, and saying so by tax
-    # id rather than by a count keeps the bucket honest if the count ever changes.
-    #
-    # A sample with no signal on the lineage at all is its own bucket and not a zero. Under a
-    # refinement it can mean the opposite of failure: the evidence moved to a branch that excludes
-    # the organism, which is a negative answer about it rather than no answer.
-    def nearestbuckets(path, rootid):
-        by = {}
-        for r in rows(path):
+    # Where a sample's evidence stops on the reference organism's lineage. The figures are NOT made
+    # here: TaxonCallReport writes them, one row per currency and variant, into
+    # <db>_<key>_taxoncallsummary.csv in the same pass that produced the per-sample rows. This only
+    # carries them across into macros, by column name, so that a table can name a value instead of
+    # counting rows. Bucketing, medians and sums belong next to the data they describe, and having
+    # them in one place is the difference between a figure that is wrong and two that disagree.
+    SUMMARY = (('samples', 'samples'), ('rootspecies', 'root species'),
+               ('species', 'species'), ('speciesmed', 'species median'),
+               ('fine', '2-10'), ('finemed', '2-10 median'),
+               ('mid', '11-50'), ('midmed', '11-50 median'),
+               ('coarse', '51-100'), ('coarsemed', '51-100 median'),
+               ('genus', 'above 100'), ('genusmed', 'above 100 median'),
+               ('none', 'off lineage'), ('mediantotal', 'median in-genus total'),
+               ('speciesbelowmed', 'median at or below species'),
+               ('maxladder', 'max ladder candidates'),
+               ('unplaced', 'unplaced'), ('contribnodes', 'contributing nodes'),
+               ('topsame', 'top calls unchanged'),
+               ('offnamed', 'off lineage named target'),
+               ('medianshareat', 'median share at'),
+               ('mediansharebelow', 'median share at or below'),
+               ('topnamed', 'names target'), ('topnamedlist', 'names target list'),
+               ('topmissed', 'misses target'), ('topmissedlist', 'misses target list'))
+
+    for db, key in (('strepto', 'lri'),):
+        summary = rows(os.path.join(results, '%s_%s_taxoncallsummary.csv' % (db, key)))
+        if not summary:
+            print('  no %s_%s_taxoncallsummary.csv in %s' % (db, key, results))
+            print('  -> rerun the `taxoncall\' goal; the nearest-node table shows its marker until then')
+            continue
+        emit(fh, 'nn', '%s/currencies' % db,
+             str(len({(r.get('currency') or '').strip() for r in summary if (r.get('currency') or '').strip()})))
+        entries += 1
+        # The node the refinement builds directly above the reference organism, and what it holds.
+        # A lookup in the refined dbinfo, which is where a node's stored k-mers are recorded; the
+        # classification report never sees them.
+        ftinfo = rows(os.path.join(results, db + '_ftdbinfo.csv'))
+        levels = []
+        for r in ftinfo:
+            try:
+                levels.append((int((r.get('level') or '').strip()), r))
+            except ValueError:
+                pass
+        target = next(((r.get('target') or '').strip() for r in summary if (r.get('target') or '').strip()), '')
+        at = next((i for i, (lv, r) in enumerate(levels)
+                   if target and (r.get('taxid') or '').strip() == target), None)
+        if at is not None:
+            lvl = levels[at][0]
+            par = next((i for i in range(at - 1, -1, -1) if levels[i][0] < lvl), None)
+            if par is not None:
+                plvl, prow = levels[par]
+                emit(fh, 'nn', '%s/parentkmers' % db, (prow.get('stored kmers') or '').strip())
+                entries += 1
+        for r in summary:
             cur = (r.get('currency') or '').strip()
             var = (r.get('variant') or '').strip()
-            if not cur or not var:
-                continue
-            node = (r.get('nearest node') or '').strip()
-            cand = (r.get('nearest candidates') or '').strip()
-            shareat = (r.get('nearest share at') or '').strip()
-            sharebelow = (r.get('nearest share at or below') or '').strip()
-            b = by.setdefault((cur, var), {'species': 0, 'fine': 0, 'mid': 0, 'coarse': 0,
-                                           'genus': 0, 'none': 0, 'at': [], 'below': []})
-            if not cand:
-                b['none'] += 1
-                continue
-            n = int(cand)
-            if node == rootid:
-                b['genus'] += 1
-            elif n <= 1:
-                b['species'] += 1
-            else:
-                b['fine' if n <= 10 else 'mid' if n <= 50 else 'coarse'] += 1
-                # Only the samples that stopped between the species and the genus. Those are the ones
-                # a refinement created a node for, and the only ones whose candidate count needs
-                # guarding: a species-level answer rests on the species and needs no such warning.
-                if shareat:
-                    b['at'].append(float(shareat))
-                if sharebelow:
-                    b['below'].append(float(sharebelow))
-        return by
-
-    for db, key, rootid in (('strepto', 'lri', '1301'),):
-        path = os.path.join(results, '%s_%s_taxoncall.csv' % (db, key))
-        if not rows(path):
-            continue
-        by = nearestbuckets(path, rootid)
-        for (cur, var), b in by.items():
             if cur not in ('reads', 'kmers'):
                 continue
-            tag = '%s/%s/%s' % (db, cur.replace(' ', ''), 'u' if var == 'unrefined' else 'f')
-            for name in ('species', 'fine', 'mid', 'coarse', 'genus', 'none'):
-                emit(fh, 'nn', '%s/%s' % (tag, name), str(b[name]))
-                entries += 1
-            # The median share of the sample that the answer rests on, over the samples that stopped
-            # on a node between the species and the genus. Without it a candidate count of eight says
-            # nothing about whether eight species were narrowed down or one stray read was. The
-            # unrefined tree has no such node, so it has no such median either.
-            # Two shares, and the difference between them is the point. `at' is the evidence whose
-            # lowest common ancestor is the reported node itself -- the material that genuinely could
-            # not be placed deeper, and the only thing the candidate count rests on. `below' counts
-            # the whole clade, the commensal siblings included, so it is large wherever the sample
-            # holds any of them and says nothing about how far the pneumococcal lineage was followed.
-            for name, values in (('medianshareat', b['at']), ('mediansharebelow', b['below'])):
-                sh = sorted(values)
-                if not sh:
+            tag = '%s/%s/%s' % (db, cur, 'u' if var == 'unrefined' else 'f')
+            # See the column's own comment in TaxonCallReport: anything but zero and the paper's
+            # `correctly off lineage' heading is no longer a correct statement.
+            if (r.get('off lineage named target') or '0').strip() not in ('', '0'):
+                offwrong.add('%s/%s' % (cur, var))
+            for name, column in SUMMARY:
+                v = (r.get(column) or '').strip()
+                if not v:
                     continue
-                mid = sh[len(sh) // 2] if len(sh) % 2 else (sh[len(sh) // 2 - 1] + sh[len(sh) // 2]) / 2.0
-                emit(fh, 'nn', '%s/%s' % (tag, name), '%.4f' % mid)
+                # The three that describe the database rather than one row of it are emitted once,
+                # without the currency and variant in their key.
+                emit(fh, 'nn', '%s/%s' % (db if name in ('samples', 'rootspecies') else tag, name), v)
                 entries += 1
+
+if offwrong:
+    print('  WARNING: in %s the summary counts samples off the reference organism\'s lineage that the'
+          % ', '.join(sorted(offwrong)))
+    print("  reference standard names it for. The `correctly off lineage' column of the nearest-node")
+    print("  table is then no longer correct: rename it to `off the lineage' and say what changed.")
 
 print('wrote %s with %d entries' % (out, entries))
 if missing:
