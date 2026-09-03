@@ -29,6 +29,7 @@
 # generated output and are valid on any machine.
 !/data/fastq/strepto_lri_real.txt
 !/data/fastq/strepto_lri_neg.txt
+!/data/fastq/nocardia_mngs.txt
 
 # RefSeq and Genbank archives, the taxonomy dumps and the assembly summaries.
 /data/common/*
