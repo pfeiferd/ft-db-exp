@@ -2,14 +2,45 @@
 #   Zhang Y, Ai J-W, Cui P, Zhang W-H, et al.: "Rapid Detection of Nocardia by Next-Generation
 #   Sequencing." Front Cell Infect Microbiol 2020;10:13.  (PMC7040243)
 #
-# WHAT KIND OF STANDARD THIS IS, and it is weaker than the one `strepto' has. The fourteen deposited
-# runs are the study's NG group, which per the footnote of its Table S2 is the group whose
-# nocardiosis was found by *sequencing*; the culture-diagnosed cases are the CG group, 11-21, and
-# they are not deposited. So the species named below is the source study's own mNGS call, not an
-# independent culture result. It is corroborated by the clinical course -- every one of these
-# patients was treated with anti-Nocardia therapy (linezolid, sulfamethoxazole, amikacin) and Table
-# S2 records the outcome -- but it is not the culture-versus-sequencing comparison that
-# `strepto/ground_truth.csv' rests on. A claim built on it must say so.
+# WHAT KIND OF STANDARD THIS IS, and it is weaker than the one `strepto' has. The study sorts 85
+# samples into three disjoint groups, and only one of them is deposited:
+#
+#   NG  14 samples, and these are the deposited ones. "Nocardia spp. detected in clinical samples by
+#       NGS ... with clinical and/or radiological signs indicating a diagnosis of nocardiosis
+#       regardless of the culture results of the same sample site." So the *disease* is confirmed
+#       clinically and radiologically. The *species* is not: it is the source study's own mNGS call.
+#   CG  16 samples, not deposited. Culture positive for Nocardia regardless of the synchronous NGS
+#       result -- 11 culture-only and 5 both. The five dual-positives are counted here, so the
+#       deposited NG samples are those without a concurrent positive culture at the same site.
+#   NN  55 samples, not deposited. Nocardia detected by NGS but contradicted by the patient's final
+#       diagnosis, i.e. documented false positives.
+#
+# Two consequences. The species below cannot be checked against culture for any deposited sample, so
+# a disagreement between our call and this file is not evidence that we are wrong. And the group
+# that would have made the best specificity control -- NN, 55 samples where the detection was wrong
+# -- is exactly the group that was not deposited. There is no negative control for this database.
+#
+# BUT WATCH THIS ACCESSION: NCBI BioProject **PRJNA1380976**, "Nocardia metagenome", submitted by
+# Huashan Hospital Fudan University -- the same centre -- registered 2025-12-14 with data type "Raw
+# sequence reads" and described as "Clinical Nocardia specimens derived from sputum, bronchoalveolar
+# lavage fluid, skin tissue, blood, and cerebrospinal fluid."
+#
+# Skin tissue and blood are the tell. In Table S3 of the 2020 paper skin tissue occurs in four
+# samples, all NN, and blood in three, all CG; neither type occurs anywhere in the NG group
+# deposited as PRJEB34974. So this project covers specimen types the deposit below does not, which
+# is what a release of CG and NN -- or of a later, larger cohort -- would look like.
+#
+# It carries no reads yet. Checked 2026-09-03: ENA reports 0 runs for it and NCBI SRA returns
+# count 0 for PRJNA1380976[BioProject]. A registered raw-reads project with nothing attached is
+# normally under embargo pending publication. If it is released and holds the NN group, that is a
+# purpose-built specificity control for this exact genus, and it is worth asking the authors about
+# by name rather than asking them to dig out six-year-old data.
+#
+# The species names are also only as good as the reference they were called against. The study
+# aligned reads with BWA 0.7.10 against an in-house set of "3,446 bacterial genomes or scaffolds"
+# for the whole bacterial kingdom; RefSeq holds 1,045 Nocardia assemblies alone. A best-hit aligner
+# always names something, so a species their reference did not carry would be reported as the
+# nearest one it did -- a real risk across a genus of 124 species.
 #
 # Two further limits, both from Table S4 itself. The cohort holds 29,175 Nocardia reads, of which
 # case 10's lung tissue and case 2's BALF hold 82 per cent between them; and case 8 has two reads.
@@ -19,21 +50,33 @@
 # counts are whole-sample totals and the counts below are Nocardia-specific. The comparison that
 # needs no mapping is the multiset of species over the fourteen runs, given at the end of this file.
 #
-# case;specimen;species;species taxid;nocardia reads;proportion at species
-1;BALF;Nocardia farcinica;37329;208;0.76752768
-2;BALF;Nocardia farcinica;37329;7767;0.90313953
-3;cutaneous pus;Nocardia brasiliensis;37326;17;0.77272727
-4;sputum;Nocardia brasiliensis;37326;332;0.58865248
-5;CSF;Nocardia farcinica;37329;2712;0.84302145
-6;lung tissue;Nocardia africana;134964;495;0.60736196
-6;CSF;Nocardia africana;134964;590;0.55037313
-7;BALF;Nocardia cyriacigeorgica;135487;42;0.97674419
-8;sputum;Nocardia brasiliensis;37326;2;0.5
-9;CSF;Nocardia terpenica;455432;617;0.18254438
-9;CSF;Nocardia terpenica;455432;41;0.83673469
-9;CSF;Nocardia terpenica;455432;54;0.2231405
-10;BALF;Nocardia otitidiscaviarum;1823;155;0.68281938
-10;lung tissue;Nocardia otitidiscaviarum;1823;16143;0.78072254
+# COLUMN ORDER IS THE ONE TaxonCallReport.GroundTruth.read EXPECTS, and the two standard columns
+# mean here what they mean for `strepto': the fourth is the independent standard and the fifth is
+# what the source study's own pipeline reported. For this cohort the fourth is therefore EMPTY --
+# these are NG samples, with no concurrent positive culture at the same site -- and the fifth holds
+# the mNGS species call. That is not a transcription gap, it is the finding: there is nothing
+# independent to check the species against. Columns past the seventh are ignored by the reader and
+# kept for us.
+#
+# The sample key is the paper's case number, and it does NOT join to the fastq map, whose keys are
+# run accessions. Nothing publishes that mapping (see above), so the culture and q columns of the
+# taxon-call report will come out empty for this database. That is correct rather than broken.
+#
+# case;group;specimen;culture;ngs species;culture taxid;ngs taxid;nocardia reads;proportion at species
+1;NG;BALF;;Nocardia farcinica;;37329;208;0.76752768
+2;NG;BALF;;Nocardia farcinica;;37329;7767;0.90313953
+3;NG;cutaneous pus;;Nocardia brasiliensis;;37326;17;0.77272727
+4;NG;sputum;;Nocardia brasiliensis;;37326;332;0.58865248
+5;NG;CSF;;Nocardia farcinica;;37329;2712;0.84302145
+6;NG;lung tissue;;Nocardia africana;;134964;495;0.60736196
+6;NG;CSF;;Nocardia africana;;134964;590;0.55037313
+7;NG;BALF;;Nocardia cyriacigeorgica;;135487;42;0.97674419
+8;NG;sputum;;Nocardia brasiliensis;;37326;2;0.5
+9;NG;CSF;;Nocardia terpenica;;455432;617;0.18254438
+9;NG;CSF;;Nocardia terpenica;;455432;41;0.83673469
+9;NG;CSF;;Nocardia terpenica;;455432;54;0.2231405
+10;NG;BALF;;Nocardia otitidiscaviarum;;1823;155;0.68281938
+10;NG;lung tissue;;Nocardia otitidiscaviarum;;1823;16143;0.78072254
 #
 # The mapping-free check: over the fourteen runs the species called must be exactly
 #   Nocardia farcinica          3

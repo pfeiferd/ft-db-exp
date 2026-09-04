@@ -6,6 +6,9 @@
 #   viral        InSilicoSeq applies its Illumina "MiSeq" and "HiSeq" error models to exactly
 #   protozoa     those genomes the database was built from, extracted by the goal
 #   strepto      `extractrefseqfasta' (see make_iss below).
+#   nocardia     the same. Its real reads are BGISEQ 50-100 bp single-end, so the simulated set is
+#                what a calibration can be taken from; without it the estimate columns of the
+#                real-read table stay empty, as they do for `strepto'.
 #   tick-borne   NanoSim trains an error model on the real Nanopore reads of a tick sample and
 #                applies it to the RefSeq genomes of the twelve tick-borne genera.
 #
@@ -15,6 +18,7 @@
 #   sh ./bin/make_fastqs.sh viral
 #   sh ./bin/make_fastqs.sh protozoa
 #   sh ./bin/make_fastqs.sh strepto
+#   sh ./bin/make_fastqs.sh nocardia
 #   sh ./bin/make_fastqs.sh tick-borne
 #   N_READS=10k sh ./bin/make_fastqs.sh viral      # quick smoke test instead of a full run
 #   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # error-free reads, see below
@@ -609,11 +613,12 @@ case "$what" in
   viral)         make_iss viral ;;
   protozoa)      make_iss protozoa ;;
   strepto)       make_iss strepto ;;
+  nocardia)      make_iss nocardia ;;
   tick-borne)    make_ticks ;;
   all)           make_iss_all_regimes viral; make_iss_all_regimes protozoa
-                 make_iss_all_regimes strepto
+                 make_iss_all_regimes strepto; make_iss_all_regimes nocardia
                  make_ticks ;;
-  *)             echo "Usage: $0 [viral|protozoa|strepto|tick-borne|all]" >&2; exit 1 ;;
+  *)             echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|all]" >&2; exit 1 ;;
 esac
 
 echo

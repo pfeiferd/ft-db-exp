@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|tick-borne|accuracy|perf|real|taxoncall|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|accuracy|perf|real|taxoncall|all]
 #
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
@@ -280,34 +280,49 @@ case "$what" in
   viral)        run_iss viral; run_perf viral viral_sim.txt ;;
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
   strepto)      run_iss strepto; run_perf strepto strepto_sim.txt ;;
+  # `nocardia' has real reads but they are few and very unevenly spread -- 29,175 Nocardia reads over
+  # fourteen samples, of which two hold 82 per cent and one holds two. The simulated set is what
+  # makes a calibration possible at all; the real one is read case by case, not averaged.
+  nocardia)     run_iss nocardia; run_perf nocardia nocardia_sim.txt ;;
   # A tool, not a measurement of the paper. A sputum sample carries a community of streptococci, so a
   # rule that crowns one taxon per sample answers a question the material does not pose; the paper
   # reports the per-read measure of `real' instead. Kept because it was needed to find that out.
   taxoncall)    run_taxoncall strepto strepto_lri_real.txt lri 1301 1313
-                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 1313 ;;
+                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 1313
+                # 1817 is Nocardia. No single target species: the cohort names six, so the
+                # nearest-node columns are left unmeasured and the ranked votes carry it.
+                run_taxoncall nocardia nocardia_mngs.txt mngs 1817 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
-  accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto; run_ticks ;;
+  accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
+                run_iss_all_regimes nocardia; run_ticks ;;
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real strepto strepto_lri_real.txt lri
                 run_real strepto strepto_lri_neg.txt lrineg
+                run_real nocardia nocardia_mngs.txt mngs
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
-                run_perf strepto strepto_sim.txt; run_perf tick-borne ticks_sim.txt
+                run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
+                run_perf tick-borne ticks_sim.txt
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
-  all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto; run_ticks
+  all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
+                run_iss_all_regimes nocardia; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
-                run_perf strepto strepto_sim.txt; run_perf tick-borne ticks_sim.txt
+                run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
+                run_perf tick-borne ticks_sim.txt
                 run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real strepto strepto_lri_real.txt lri
                 run_real strepto strepto_lri_neg.txt lrineg
+                run_real nocardia nocardia_mngs.txt mngs
                 # `taxoncall' stays out of `all' and out of `real': it names one taxon per sample,
-                # which the paper does not report. Run the target of that name if you want it.
+                # which is not a measure the paper reports. It is not optional any more, though --
+                # the paper typesets a table from its summary file -- so run_all_exps.sh has a step
+                # of its own for it. Run the target of that name if you are not running that script.
                 ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|tick-borne|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
 esac
 
 echo

@@ -31,7 +31,7 @@ if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  projects="viral tick-borne strepto protozoa parasites vineyard"
+  projects="viral tick-borne strepto nocardia protozoa parasites vineyard"
   restricted=""
 fi
 
@@ -167,6 +167,19 @@ for db in viral tick-borne protozoa; do
     mvn exec:exec@db -Dname=$db -Dgoal=branchhistorankcsv
   fi
 done
+
+# The branching-degree screen. Cheap once the k-mer index exists, and it answers the question that
+# decides whether a genus was worth refining at all: how much of a node's k-mer mass sits at a low
+# branching degree, where a refined node can claim it. Run for every database and not only for a new
+# one, because the figure is worth stating in the paper for all of them -- and because a database
+# whose headroom turns out to be a few per cent explains its own flat result.
+#
+# `prescreen' reads the histogram and prints the verdict; it builds nothing.
+for db in $projects;
+  do
+    mvn exec:exec@db -Dname=$db -Dgoal=branchhistocsv
+    mvn exec:exec@prescreen -Dname=$db
+  done
 
 # Intrinsic quality of DBs.
 #

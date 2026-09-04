@@ -124,7 +124,8 @@ if [ -z "${skip:-}" ]; then
   fi
   # The real-read step fails on a missing map rather than skipping it, so say so now instead of
   # after however many hours step 10 takes to get there.
-  for map in "${SALIVA_MAP:-saliva_real.txt}" seventicks.txt; do
+  for map in "${SALIVA_MAP:-saliva_real.txt}" seventicks.txt strepto_lri_real.txt \
+             strepto_lri_neg.txt nocardia_mngs.txt; do
     if [ -f "data/fastq/${map}" ]; then
       echo "OK    data/fastq/${map}"
     else
@@ -250,6 +251,20 @@ if [ -z "${skip:-}" ]; then
   # both collections. This is also where the per-taxon match results are preserved, one CSV per
   # fastq key per database variant, keyed by the run they belong to.
   run env ERROR_SALIVA= sh ./bin/run_classification_exps.sh all
+fi
+skip=""
+
+########################################################################################
+step "classification: the taxon calls" || skip=1
+if [ -z "${skip:-}" ]; then
+  # Separate from the step above because `run_classification_exps.sh all' deliberately leaves it
+  # out: the taxon call names one taxon per sample, which is not a measure the paper reports.
+  #
+  # It runs here all the same, and must, because the paper now typesets a table from its summary --
+  # how far towards a reference organism each sample's evidence reached and how many species are
+  # still open there, which is the only way a refined node can be described at all, having no name
+  # in the reference taxonomy. Skip this and that table shows its markers.
+  run sh ./bin/run_classification_exps.sh taxoncall
 fi
 skip=""
 
