@@ -168,11 +168,17 @@ for db in viral tick-borne protozoa; do
   fi
 done
 
-# The branching-degree screen. Cheap once the k-mer index exists, and it answers the question that
-# decides whether a genus was worth refining at all: how much of a node's k-mer mass sits at a low
-# branching degree, where a refined node can claim it. Run for every database and not only for a new
-# one, because the figure is worth stating in the paper for all of them -- and because a database
-# whose headroom turns out to be a few per cent explains its own flat result.
+# The branching-degree screen, for every database and on the same footing as the others. It is a
+# report over the k-mer store and the index, exactly as `dbinfo' is a report over the store and
+# `dbquality' one over the update -- KMerBranchHistoGoal takes the loaded database and the k-mer
+# index Bloom filter and nothing else. It says how much of a node's k-mer mass sits at a low
+# branching degree, which is the mass a refined node can claim.
+#
+# It is deliberately not run as a gate before `ftdb' for a new database. That would treat one
+# project differently from the rest for little gain: the histogram needs the k-mer index, and the
+# index already costs a full pass over the genomes, so gating would save the clustering and not the
+# pass. The figure is worth having for all seven anyway -- a database whose headroom turns out to be
+# a few per cent explains its own flat result.
 #
 # `prescreen' reads the histogram and prints the verdict; it builds nothing.
 for db in $projects;
