@@ -31,10 +31,23 @@
 		     on 2026-08-22. The other databases never came close - `parasites', the largest before
 		     it, peaked at 35 GB - so the setting survived a long time without being wrong any less.
 
-		     48G leaves 16 GB for all of the above. It does not change the figures of the paper's
-		     performance table, which record the high-water mark of a run and not the limit it was
-		     allowed. -->
-		<gs.xmx>48G</gs.xmx>
+		     Raised to 56G on 2026-09-12 for `nocardia', whose fill is the largest this project has
+		     asked for: 2,420,546,219 distinct k-mers means a 22.6 GB store (FillDBGoal logs 10 bytes
+		     per k-mer) beside a 14.9 GB fill Bloom filter at fillBloomFilterFpp=1e-11, and the two are
+		     live together because FillDBGoal:118 passes the filter as a constructor argument, so it is
+		     built before RadixKMerStore:294 begins allocating the buckets. That is 37.5 GB of the 48
+		     and it still died with "OutOfMemoryError: Java heap space", so something else holds the
+		     rest -- the accession map is sized by the whole `bacteria' category rather than by the
+		     project's taxa and is the first place to look.
+
+		     56G is deliberately close to the 64G that was wrong, and leaves only ~6 GB for metaspace,
+		     the thread stacks, direct buffers, the GC's structures and the page cache. If a goal is
+		     killed with `Process exited with an error: 137' this is why, and the answer is to go back
+		     to 48G and find what is holding the missing 10 GB rather than to climb further. Goal.java
+		     now logs `Max heap size' beside the other two, so a failing run at least records the limit
+		     it failed against. It does not change the figures of the paper's performance table, which
+		     record the high-water mark of a run and not the limit it was allowed. -->
+		<gs.xmx>56G</gs.xmx>
 		<!-- Worker threads for the Genestrip goals. A negative value means one thread per
 		     available processor less one, which is Genestrip's own default. The classification
 		     experiments use exactly that, since AccuracyEvaluator sets it in code and the
