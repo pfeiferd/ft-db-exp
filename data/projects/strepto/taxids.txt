@@ -51,8 +51,8 @@
 # unlike Mycobacterium, where NCBI already supplies the MTBC (77643) and MAC (120793) nodes and the
 # only thing left to refine is within-complex, i.e. the situation that killed the C. difficile study.
 #
-# Run bin/prescreen.sh streptococcus before building anything else; it decides whether that headroom
-# really carries k-mers.
+# Whether that headroom really carries k-mers is what the `branchhistocsv' goal reports, and
+# run_exps.sh runs it for every database alongside the rest.
 #
 # THE TWO BRANCHES THAT CARRY NO NAMES are struck out below, and `refseq.updateScope=allButExcluded'
 # in config.properties keeps them out of the LCA update as well -- without that line they would be

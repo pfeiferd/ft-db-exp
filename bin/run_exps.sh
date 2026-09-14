@@ -168,23 +168,19 @@ for db in viral tick-borne protozoa; do
   fi
 done
 
-# The branching-degree screen, for every database and on the same footing as the others. It is a
-# report over the k-mer store and the index, exactly as `dbinfo' is a report over the store and
-# `dbquality' one over the update -- KMerBranchHistoGoal takes the loaded database and the k-mer
-# index Bloom filter and nothing else. It says how much of a node's k-mer mass sits at a low
-# branching degree, which is the mass a refined node can claim.
+# The branching-degree histogram, per node, for every database and on the same footing as the
+# others. It is a report over the k-mer store and the index, exactly as `dbinfo' is a report over the
+# store and `dbquality' one over the update -- KMerBranchHistoGoal takes the loaded database and the
+# k-mer index Bloom filter and nothing else. It says how much of a node's k-mer mass sits at a low
+# branching degree, which is the mass a refined node can claim, and a database whose headroom turns
+# out to be a few per cent explains its own flat result.
 #
-# It is deliberately not run as a gate before `ftdb' for a new database. That would treat one
-# project differently from the rest for little gain: the histogram needs the k-mer index, and the
-# index already costs a full pass over the genomes, so gating would save the clustering and not the
-# pass. The figure is worth having for all seven anyway -- a database whose headroom turns out to be
-# a few per cent explains its own flat result.
-#
-# `prescreen' reads the histogram and prints the verdict; it builds nothing.
+# Every database gets it and none is treated as a special case. There was once a `prescreen' step
+# that read this CSV and printed a verdict on whether a database was worth refining; it decided
+# nothing that the results do not show for themselves and has been removed.
 for db in $projects;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=branchhistocsv
-    mvn exec:exec@prescreen -Dname=$db
   done
 
 # Intrinsic quality of DBs.

@@ -309,27 +309,7 @@
 							</arguments>
 						</configuration>
 					</execution>
-					<execution>
-						<!-- The ground-truth-free measurement on real reads: no precision, no recall,
-						     only how far each database variant narrows the species down. -->
-						<id>prescreen</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<configuration>
-							<executable>java</executable>
-							<includeProjectDependencies>true</includeProjectDependencies>
-							<includePluginDependencies>true</includePluginDependencies>
-							<arguments>
-								<argument>-Xmx${gs.xmx}</argument>
-								<argument>-classpath</argument>
-								<classpath />
-								<argument>org.metagene.ftdbexp.FTPrescreenMain</argument>
-								<argument>${gs.project.name}</argument>
-							</arguments>
-						</configuration>
-					</execution>
-					<execution>
+										<execution>
 						<id>taxoncall</id>
 						<goals>
 							<goal>exec</goal>
