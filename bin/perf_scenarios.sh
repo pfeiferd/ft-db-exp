@@ -97,6 +97,20 @@ run_per_file() {
     # A one-key map beside the original, so Genestrip resolves the file names the same way.
     _pf_map="perf_${_pf_sc}_${key}.txt"
     awk -v k="$key" '!/^#/ && $1 == k' "$_pf_src" > "${fastqdir}/${_pf_map}"
+    # The map declares what the scenario covers; the disk decides what can be measured. The saliva
+    # runs are hundreds of gigabytes each and arrive one at a time, so a map naming three of them
+    # while one is present is the normal state, not an error -- but classifying a file that is not
+    # there fails several minutes in, after the database has been loaded. Say so and move on; the
+    # missing run's cells stay empty, which is what this script does everywhere else too.
+    _pf_absent=""
+    for _pf_f in $(awk '{print $2}' "${fastqdir}/${_pf_map}"); do
+      [ -s "${fastqdir}/${_pf_f}" ] || _pf_absent="${_pf_absent} ${_pf_f}"
+    done
+    if [ -n "$_pf_absent" ]; then
+      echo "  SKIP ${key} in scenario ${_pf_sc} -- not on disk:${_pf_absent}" >&2
+      rm -f "${fastqdir}/${_pf_map}"
+      continue
+    fi
     run_pair "$_pf_db" "$_pf_map" "${_pf_sc}_${key}"
     rm -f "${fastqdir}/${_pf_map}"
   done
@@ -252,9 +266,15 @@ per_file('b', '(b)')
 joint('(c)')
 
 out = os.path.join(res, 'matchperf.csv')
-with open(out, 'w', encoding='utf-8') as fh:
-    fh.write('scenario;parameter;unrefined;refined;\n')
-    for r in rows:
-        fh.write(';'.join(r) + ';\n')
-print('Wrote %s (%d rows)' % (out, len(rows)))
+# A header alone is worse than no file at all: the paper's \perfrows prints its "---" fallback only
+# when the file is absent, so an empty one would typeset a table with no rows and no marker. Refuse
+# to write it, and leave whatever is there -- a run that measured nothing must not erase one that did.
+if not rows:
+    print('No measured runs for any scenario - %s left as it is.' % out)
+else:
+    with open(out, 'w', encoding='utf-8') as fh:
+        fh.write('scenario;parameter;unrefined;refined;\n')
+        for r in rows:
+            fh.write(';'.join(r) + ';\n')
+    print('Wrote %s (%d rows)' % (out, len(rows)))
 PY
