@@ -166,8 +166,26 @@ fetch_via_ena() {
     # transient failures a transfer of this length inevitably meets. The download goes to .part and
     # is moved into place only once its md5 checks out, so an interrupted run never leaves a file
     # that the presence check above would accept.
-    curl -L --fail --retry 10 --retry-delay 15 --retry-connrefused \
-        -C - -o "${target}.part" "https://${url}"
+    # A transfer of this length rarely fails outright; it stalls. curl's --retry fires on an error,
+    # not on a connection that goes quiet without closing, so such a transfer hangs and the run
+    # appears to "break" without saying anything. --speed-limit/--speed-time turn a stall into an
+    # error that --retry can act on, and the loop resumes across what retries do not cover: an
+    # exhausted retry budget, a peer that drops the connection at the same byte count every time, a
+    # proxy that times the request out. Every attempt resumes the same .part, so the cost of another
+    # attempt is the bytes still missing, never the file.
+    tries=0
+    until curl -L --fail --retry 10 --retry-delay 15 --retry-connrefused ${retry_all_errors} \
+          --speed-limit 1024 --speed-time 120 \
+          -C - -o "${target}.part" "https://${url}"; do
+      tries=$((tries + 1))
+      if [ "$tries" -ge "${FETCH_TRIES:-20}" ]; then
+        echo "gave up on ${acc} mate ${mate} after ${tries} attempts - ${target}.part is kept," >&2
+        echo "so re-running resumes from where it stopped." >&2
+        return 1
+      fi
+      echo "  attempt ${tries} ended early at $(du -h "${target}.part" 2>/dev/null | cut -f1) - resuming in 30 s" >&2
+      sleep 30
+    done
 
     if verify "${target}.part" "$md5"; then
       mv "${target}.part" "$target"
@@ -183,6 +201,13 @@ fetch_via_ena() {
 
 # --- go --------------------------------------------------------------------------------------
 command -v curl >/dev/null 2>&1 || { echo "curl is missing." >&2; exit 1; }
+
+# Retrying a transfer that ended in an HTTP error rather than a connection failure needs curl 7.71;
+# older ones reject the option outright, which would fail every download rather than none.
+retry_all_errors=""
+if curl --help all 2>/dev/null | grep -q -- "--retry-all-errors"; then
+  retry_all_errors="--retry-all-errors"
+fi
 
 for acc in $runs; do
   fetch_via_ena "$acc"
