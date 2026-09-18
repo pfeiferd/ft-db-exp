@@ -110,11 +110,14 @@ record_simparams() {
   _rs_qerr=$(printf '%s' "$_rs_m" | cut -d';' -f2)
   _rs_n=$(printf '%s' "$_rs_m" | cut -d';' -f3)
   _rs_n=$((_rs_n * _rs_mates))
-  # An error rate passed in (NanoSim's, from its training alignment) arrives with the full float
-  # precision its TSV carries. The measured one is already at four decimals, and the paper's table
-  # is formatted for four, so bring the two onto the same footing here rather than in the table.
+  # An error rate passed in is NanoSim's, read from its training_error_rate.tsv, and that file states
+  # a FRACTION: `Total error rate: 0.163697...' means 16.37 % per base, not 0.16 %. The rate measured
+  # from quality strings above is already a percentage, and the column both feed is headed "%", so
+  # the fraction has to be scaled here -- otherwise every NanoSim row understates its error by two
+  # orders of magnitude while the InSilicoSeq rows beside it are right. Four decimals either way, as
+  # the paper's table is formatted for four.
   if [ -n "$_rs_error" ]; then
-    _rs_error=$(awk -v e="$_rs_error" 'BEGIN { printf "%.4f\n", e }')
+    _rs_error=$(awk -v e="$_rs_error" 'BEGIN { printf "%.4f\n", e * 100 }')
   else
     _rs_error=$_rs_qerr
   fi

@@ -195,11 +195,16 @@ with open(out, 'w', encoding='utf-8') as fh:
                 cls = int((r.get('classified unrefined') or '0').strip())
                 pu = (r.get('ungated precision unrefined') or '').strip()
                 pf = (r.get('ungated precision refined') or '').strip()
+                # Present only where a calibration was supplied; SpecificityReport leaves them
+                # empty otherwise, and a group then reports no estimate rather than a wrong one.
+                eu = (r.get('est prec g u') or '').strip()
+                ef = (r.get('est prec g f') or '').strip()
             except ValueError:
                 continue
             if n <= 0 or not pu or not pf:
                 continue
-            out.append((r.get('sample', '').strip(), n, float(pu), float(pf), reads, cls))
+            out.append((r.get('sample', '').strip(), n, float(pu), float(pf), reads, cls,
+                        float(eu) if eu else None, float(ef) if ef else None))
         return out
 
     # Everything a row of Table \ref{realgain} needs, for one group of samples. `strepto' prints
@@ -223,7 +228,15 @@ with open(out, 'w', encoding='utf-8') as fh:
         emit(fh, 'rg', '%s/%sgain' % (db, tag), '%.0f' % (100.0 * (pf - pu) / pu) if pu else '0')
         emit(fh, 'rg', '%s/%sopenu' % (db, tag), '%.1f' % (1.0 / pu) if pu else '0')
         emit(fh, 'rg', '%s/%sopenf' % (db, tag), '%.1f' % (1.0 / pf) if pf else '0')
-        return 10
+        # The gated estimates, averaged over |R'_g| exactly as the precisions above are. Emitted
+        # only when every sample of the group carries one, since an average over part of a group
+        # would be read as an average over all of it.
+        n_emitted = 10
+        if all(x[6] is not None and x[7] is not None for x in sel):
+            emit(fh, 'rg', '%s/%sestu' % (db, tag), '%.4f' % (sum(x[1] * x[6] for x in sel) / N))
+            emit(fh, 'rg', '%s/%sestf' % (db, tag), '%.4f' % (sum(x[1] * x[7] for x in sel) / N))
+            n_emitted += 2
+        return n_emitted
 
     # Which samples name the pneumococcus, by culture and by the source study's own pipeline.
     # Columns 6 and 7 of ground_truth.csv are the two tax ids; a sample may carry several rows.
