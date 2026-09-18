@@ -158,6 +158,13 @@ with open(out, 'w', encoding='utf-8') as fh:
                     if name == 'root' and above.isdigit() and K > 0:
                         emit(fh, 'leafshare', db, '%.3f' % (100.0 * (K - int(above)) / K))
                         entries += 1
+                elif (r.get('subtree kmers above data') or '').strip() == '0':
+                    # Undefined rather than missing: every k-mer of this subtree sits at a data
+                    # taxon, where p(a) = 1 by construction, so sp* has nothing to average over.
+                    # An em-dash says so; the marker below would claim the measurement failed.
+                    # Braced, because the column is an siunitx S column and this is text.
+                    emit(fh, kind + 'x', key, '{---}')
+                    entries += 1
                 else:
                     # No fallback. Deriving the value from the dbinfo file instead means mixing two
                     # accountings: the quality file counts only the k-mers for which p is defined,

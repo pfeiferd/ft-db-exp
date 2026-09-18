@@ -183,6 +183,20 @@ run_ticks() {
   mvn exec:exec@accuracy -Dname=tick-borne -Dfqmap=ticks_sim.txt -Dreportkey=nanosim -Dsimulator=NANOSIM
 }
 
+# The one NanoSim set of `strepto'. Unlike the ticks, whose eight simulations each carry the name of
+# the sample they were trained on, this is a single file keyed `nanosim': it is trained on a
+# cross-section of all 83 runs of PRJEB30781, and SpecificityReport applies a one-row calibration to
+# every sample. See make_fastqs.sh for why one set rather than 83.
+run_strepto_nanosim() {
+  map="${basedir}/data/fastq/strepto_sim_nanosim.txt"
+  if [ ! -f "$map" ]; then
+    echo "Missing ${map} - run 'sh ./bin/make_fastqs.sh strepto-nanosim' first." >&2
+    return 1
+  fi
+  echo "############ strepto: NanoSim reads, unrefined vs. refined ############"
+  mvn exec:exec@accuracy -Dname=strepto -Dfqmap=strepto_sim_nanosim.txt -Dreportkey=nanosim -Dsimulator=NANOSIM
+}
+
 # Wall time and maximum RAM of classifying the same fastq files, once against the unrefined and
 # once against the refined database. This is measured separately from the accuracy runs above and
 # not derived from them, for two reasons: those run both variants inside a single JVM, so their
@@ -279,7 +293,7 @@ publish_match_results() {
 case "$what" in
   viral)        run_iss viral; run_perf viral viral_sim.txt ;;
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
-  strepto)      run_iss strepto; run_perf strepto strepto_sim.txt ;;
+  strepto)      run_iss strepto; run_strepto_nanosim; run_perf strepto strepto_sim.txt ;;
   # `nocardia' has real reads but they are few and very unevenly spread -- 29,175 Nocardia reads over
   # fourteen samples, of which two hold 82 per cent and one holds two. The simulated set is what
   # makes a calibration possible at all; the real one is read case by case, not averaged.
@@ -294,11 +308,11 @@ case "$what" in
                 run_taxoncall nocardia nocardia_mngs.txt mngs 1817 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
-                run_iss_all_regimes nocardia; run_ticks ;;
+                run_iss_all_regimes nocardia; run_ticks; run_strepto_nanosim ;;
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
-                run_real strepto strepto_lri_real.txt lri
-                run_real strepto strepto_lri_neg.txt lrineg
+                run_real strepto strepto_lri_real.txt lri nanosim
+                run_real strepto strepto_lri_neg.txt lrineg nanosim
                 run_real nocardia nocardia_mngs.txt mngs
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
@@ -308,14 +322,14 @@ case "$what" in
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
-                run_iss_all_regimes nocardia; run_ticks
+                run_iss_all_regimes nocardia; run_ticks; run_strepto_nanosim
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
                 run_perf tick-borne ticks_sim.txt
                 run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
-                run_real strepto strepto_lri_real.txt lri
-                run_real strepto strepto_lri_neg.txt lrineg
+                run_real strepto strepto_lri_real.txt lri nanosim
+                run_real strepto strepto_lri_neg.txt lrineg nanosim
                 run_real nocardia nocardia_mngs.txt mngs
                 # `taxoncall' stays out of `all' and out of `real': it names one taxon per sample,
                 # which is not a measure the paper reports. It is not optional any more, though --

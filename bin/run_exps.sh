@@ -4,8 +4,8 @@
 # the paper reads.
 #
 #   sh ./bin/run_exps.sh                 # everything
-#   sh ./bin/run_exps.sh vineyard          # only that project
-#   sh ./bin/run_exps.sh vineyard viral     # only those
+#   sh ./bin/run_exps.sh protozoa          # only that project
+#   sh ./bin/run_exps.sh protozoa viral     # only those
 #
 # Naming projects restricts every per-project step to them and skips the steps that belong to other
 # projects - the Orthopox figures of the Methods section and the rank statistics of the Introduction.
@@ -31,7 +31,10 @@ if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  projects="viral tick-borne strepto nocardia protozoa parasites vineyard"
+  # `vineyard' is commented out rather than deleted: the paper dropped it on 2026-09-18 as more of
+  # the same, so building it and refining it is compute spent on numbers nothing reads. Put the name
+  # back here to have it built again -- the project itself is untouched.
+  projects="viral tick-borne strepto nocardia protozoa parasites"   # vineyard
   restricted=""
 fi
 

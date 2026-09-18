@@ -46,3 +46,26 @@
 # experiment. Do not go looking again without a new lead; the isolate runs are the alternative, as
 # a NanoSim training set or as spike-ins into a background sample.
 1817
+
+# THE UNNAMED BUCKET, LEFT OUT (as under tick-borne, protozoa, parasites and strepto).
+#
+# `unclassified Nocardia' (2637762) is a direct child of the genus and holds nothing but unnamed
+# genomes -- `Nocardia sp.', `Nocardia sp. C-14-1', and so on. It is not passive: under the LCA
+# update a k-mer that a named species shares with one of those genomes has its ancestor at the
+# genus, because the bucket hangs off the genus as a sibling of the named species' lineage. The
+# species loses the k-mer to a genome that carries no name to be told apart from.
+#
+# The `-' leaves its genomes out of the database; refseq.updateScope=allButExcluded in
+# config.properties leaves its regions out of the update as well, which is where the effect above
+# actually comes from.
+#
+# Measured on 2026-09-18 from nocardia_dbinfo.csv, i.e. on the database built WITHOUT this line:
+#
+#   287 species-rank taxa, none of them named
+#   988,259,836 k-mers in the bucket's subtree -- 40.2 % of this database's 2,456,358,245
+#   199,099,314 of those sit at the bucket node itself
+#
+# So this is a far larger cut than in the other projects (protozoa 4.1 %, parasites well under a
+# percent), and the rebuilt database will be about 40 % smaller. Every nocardia figure the paper
+# states -- stored k-mers, subtree precision, wall time, RAM -- has to be taken from the new build.
+-2637762   # unclassified Nocardia   287 species, 988,259,836 k-mers in its subtree

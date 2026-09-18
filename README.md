@@ -68,7 +68,7 @@ for a few distribution packages. Run `install_tools.sh` once beforehand.
 | `FETCH_SALIVA=1` | Fetch the human saliva runs (about 400 GB) before the real-read step. Off by default. |
 | `KEEP_TICK_SIMS=1` | Never delete a simulated tick fastq. By default the script deletes exactly those whose NanoSim abundance table was not preserved, since only re-simulating produces it -- see section 3. |
 | `SKIP_BUILD=1` | Do not run `mvn install` first. |
-| `PAPER_RESULTS` | Where the results are copied at the end. Defaults to the paper's own folder if it is beside this checkout; set it empty to skip the copy. |
+| `PAPER_RESULTS` | An existing folder to copy the results to at the end, in addition to `./results`. Unset by default, and there is no default path: this project does not know where a consumer keeps its inputs. |
 
 Two things the script does that are easy to miss when running the steps by hand. It builds the Java
 first, because the evaluation reports -- the labels their CSV files carry and the columns they are
@@ -433,9 +433,10 @@ experiments.
 
 ## Results
 
-All experiments write to `./results`. Those files are consumed directly by the paper: copy them into
-its own `results` folder, i.e. `genestrip-docs2/ft-paper/results`, from where the LaTeX sources
-include the CSV, SVG and LaTeX fragments by name. `run_all_exps.sh` does that copy as its last step.
+All experiments write to `./results`. Those files are meant to be consumed as they are: a paper
+includes the CSV, SVG and LaTeX fragments by name from a results folder of its own, so copy them
+there. `run_all_exps.sh` does that copy as its last step when `PAPER_RESULTS` names the folder, and
+otherwise leaves everything in `./results`.
 
 | File | Written by | Section |
 | --- | --- | --- |

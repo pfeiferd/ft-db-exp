@@ -3,8 +3,8 @@
 # Determines the disk size of the unrefined and the refined (FT) database of each
 # project and expresses the refined size as a percentage of the unrefined one.
 #
-# The results feed the "Disk (MB)" and "Disk (%)" columns of the database refinement
-# performance table in the ft-paper. Run this after the databases have been built,
+# The results feed the "Disk (MB)" and "Disk (%)" columns of a database refinement
+# performance table. Run this after the databases have been built,
 # i.e. after the "DB Build Performance" loop of run_exps.sh, and before clean_all.sh
 # removes them again.
 #
@@ -24,7 +24,8 @@ csv=${res_path}/db_disk_sizes.csv
 if [ $# -gt 0 ]; then
     projects="$@"
 else
-    projects="viral tick-borne strepto nocardia protozoa parasites vineyard"
+    # vineyard is left out with run_exps.sh, which no longer builds it; see the note there.
+    projects="viral tick-borne strepto nocardia protozoa parasites"   # vineyard
 fi
 
 # Echoes the path of the database artifact of project $1 for the goal $2 ("db" or

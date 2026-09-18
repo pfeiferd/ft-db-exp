@@ -26,8 +26,10 @@
 #                   default, since they are usually already on the machine or deliberately absent.
 #   KEEP_TICK_SIMS=1  never delete a simulated tick fastq -- see step 5, which by default deletes
 #                   exactly those whose NanoSim abundance table was not preserved.
-#   PAPER_RESULTS   where step 11 copies the results to. Defaults to the paper's results folder if
-#                   it is beside this checkout; set to the empty string to skip the copy.
+#   PAPER_RESULTS   a folder to copy the results to when the run is done, in addition to leaving
+#                   them in ./results. Unset by default: this project stands on its own and knows
+#                   nothing about where a paper or any other consumer keeps its inputs. The folder
+#                   must exist; step 13 copies into it and regenerates its LaTeX macros there.
 #   SKIP_BUILD=1    do not run `mvn install' in step 1.
 #
 # Wall time is days, not hours, and the disk needs well over a terabyte -- see README.md.
@@ -38,7 +40,29 @@ scriptdir=$(dirname "$0")
 cd "$scriptdir/.."
 basedir=$(pwd)
 
-paper_results=${PAPER_RESULTS-"${basedir}/../genestrip-docs2/ft-paper/results"}
+# Empty unless asked for -- see PAPER_RESULTS above. No default path here: a consumer's layout is
+# not this project's to guess, and a guess that misses produces a warning after a run of days.
+paper_results=${PAPER_RESULTS:-}
+paper_results_said=""
+
+# States once what becomes of the results at the end of the run. The preflight calls it so that a
+# PAPER_RESULTS pointing nowhere is known in the first minute rather than after the last step, and
+# step 13 calls it again -- where it stays silent, having already said its piece. Without that the
+# same warning is printed once per invocation, three times over a run resumed twice.
+check_paper_results() {
+  if [ -n "$paper_results_said" ]; then
+    return 0
+  fi
+  paper_results_said=1
+  if [ -z "$paper_results" ]; then
+    echo "OK    results stay in ${basedir}/results (PAPER_RESULTS is unset)"
+  elif [ -d "$paper_results" ]; then
+    echo "OK    step 13 copies them to ${paper_results}"
+  else
+    echo "WARNING: PAPER_RESULTS=${paper_results} does not exist - the results will stay in" >&2
+    echo "         ${basedir}/results. Create the folder, or copy them by hand afterwards." >&2
+  fi
+}
 # The samples make_fastqs.sh simulates, mirrored here for step 5. Kept in step with its own default.
 tick_samples=${SAMPLES:-"tick1 tick2 tick3 tick4 tick5 tick6 tick7 tick8"}
 
@@ -133,7 +157,7 @@ if [ -z "${skip:-}" ]; then
     fi
   done
   echo "OK    results go to ${basedir}/results"
-  [ -n "$paper_results" ] && echo "OK    step 11 copies them to ${paper_results}"
+  check_paper_results
 fi
 skip=""
 
@@ -201,7 +225,8 @@ skip=""
 step "simulated reads: the reported regimes" || skip=1
 if [ -z "${skip:-}" ]; then
   # The two Illumina models and the error-free set for every InSilicoSeq project, plus the eight
-  # NanoSim tick simulations. ERROR_SALIVA is explicitly cleared: it is not one of the reported
+  # NanoSim tick simulations and the single NanoSim set of `strepto', which calibrates its 83
+  # nanopore runs wholesale rather than one by one. ERROR_SALIVA is explicitly cleared: it is not one of the reported
   # regimes, and make_iss picks the first regime variable that is non-empty, so one inherited from
   # the caller's environment would silently redirect this call.
   run env ERROR_SALIVA= sh ./bin/make_fastqs.sh all
@@ -269,17 +294,32 @@ fi
 skip=""
 
 ########################################################################################
-step "copy the results into the paper" || skip=1
+step "record the machine and regenerate the macros" || skip=1
 if [ -z "${skip:-}" ]; then
-  # The paper includes its CSV files from its own results folder, so nothing reaches a table until
-  # it is copied there. run_exps.sh runs paper_stats.sh at the end of step 4, i.e. before any
-  # classification result exists, which is why the copy happens here and the macros are regenerated
-  # afterwards from what the paper will actually read.
-  if [ -z "$paper_results" ]; then
-    echo "PAPER_RESULTS is empty - leaving the results in ${basedir}/results."
-  elif [ ! -d "$paper_results" ]; then
-    echo "WARNING: ${paper_results} does not exist - results stay in ${basedir}/results." >&2
-    echo "         Set PAPER_RESULTS to the paper's results folder, or copy them by hand." >&2
+  # sysinfo.sh writes results/sysinfo.txt and results/sysinfo.tex: the hardware and JVM facts a
+  # paper states about the machine its measurements were taken on. Here rather than in the preflight
+  # so that it describes the run that has just happened. Run under sudo it also records DMI and
+  # SMART detail; nothing in the LaTeX file needs it.
+  run sh ./bin/sysinfo.sh -q
+  # paper_stats.sh runs a second time here -- run_exps.sh already ran it at the end of step 4, which
+  # is before any classification result exists, so the dbstats.tex it left describes half a run.
+  # Regenerating it now means ./results is complete and consistent on its own, which is what a
+  # results folder carried off this machine by hand consists of. Step 13 runs it once more against
+  # PAPER_RESULTS, where the folder may hold files from other batches as well.
+  run sh ./bin/paper_stats.sh
+fi
+skip=""
+
+########################################################################################
+step "copy the results to PAPER_RESULTS" || skip=1
+if [ -z "${skip:-}" ]; then
+  # A consumer that reads the CSV files from a folder of its own sees nothing until they are copied
+  # there. run_exps.sh runs paper_stats.sh at the end of step 4, i.e. before any classification
+  # result exists, which is why the copy happens here and the macros are regenerated afterwards from
+  # what the target folder actually holds.
+  if [ -z "$paper_results" ] || [ ! -d "$paper_results" ]; then
+    check_paper_results
+    echo "Nothing copied - the results are in ${basedir}/results."
   else
     # -R because the results hold the `logs' folder as well, which a plain cp would refuse to copy
     # and so would fail the step.

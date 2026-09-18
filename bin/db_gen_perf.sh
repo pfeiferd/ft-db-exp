@@ -10,7 +10,7 @@
 # can be re-run at any time without re-measuring anything; but it cannot invent a
 # measurement that was never taken, and it leaves the corresponding fields empty then.
 #
-# The results feed the database refinement performance table of the ft-paper, which
+# The results feed a database refinement performance table, whose consumer
 # reads this CSV directly instead of restating its numbers. Run it after the databases
 # have been built and after db_disk_sizes.sh, whose CSV it consumes.
 #
@@ -38,7 +38,8 @@ if [ $# -gt 0 ]; then
     projects="$@"
 else
     # In the order the paper's table lists them.
-    projects="viral tick-borne strepto nocardia protozoa vineyard parasites"
+    # vineyard is left out with run_exps.sh, which no longer builds it; see the note there.
+    projects="viral tick-borne strepto nocardia protozoa parasites"   # vineyard
 fi
 
 # Echoes the short name the paper uses for project $1, or the project name itself.
@@ -128,6 +129,20 @@ for p in $projects; do
     fi
     if [ -f "$ft_log" ] && [ -z "$ft_wall" ]; then
         echo "  warning: $ft_log holds no cgmemtime fields - it was written without measuring" >&2
+    fi
+    # A refinement measured on top of an existing k-mer index is not the refinement's cost. The goal
+    # `kmerindexbloom' builds that index; it runs as part of `ftdb' and nowhere else, and it is the
+    # larger half of the work -- 99 % of tick-borne's 21,308 s and 86 % of strepto's 36,572 s in the
+    # batch of 2026-09. clear_refinement.sh keeps the serialised index on purpose, so an `ftdb' built
+    # after it measures the update alone and the percentage this script prints understates the
+    # refinement severalfold. Only the genestrip log says which goals actually ran, so it is consulted
+    # here; the row is written either way, with this warning beside it.
+    gs_log=${res_path}/logs/ftdb_gen_${p}.genestrip.log
+    if [ -f "$gs_log" ] && [ -n "$ft_wall" ] && ! grep -q "Making kmerindexbloom took" "$gs_log"; then
+        echo "  warning: ${p}'s refinement was measured with the k-mer index already built" >&2
+        echo "           (no kmerindexbloom in $gs_log), so its Wall(%) and RAM(%) leave out the" >&2
+        echo "           larger half of the work. Delete the refined database *and* its" >&2
+        echo "           *_storekmerindex.ser.gz, then re-run the ftdb goal to measure it whole." >&2
     fi
 done
 
