@@ -116,6 +116,47 @@ run_per_file() {
   done
 }
 
+# Everything a measured run must not find already there.
+#
+# Genestrip does not remake a file goal whose output is on disk: it reports the goal as made, exits
+# after a second, and cgmemtime then times a JVM start -- 0.9 s and 180 MB, which reads like a
+# measurement and is none. That is exactly what the tick runs of 2026-09-19 recorded. So the two
+# goals' results go first, for every key of every map this script measures, together with this
+# script's own logs, so that no figure of an earlier batch survives into the next CSV.
+#
+# Deliberately narrow: only `match' and `ftmatch' of the projects and keys below. The databases, the
+# fastq files and every other goal's results are left alone -- they are days of work and are not
+# what stands in the way here. KEEP_RESULTS=1 skips this, for a re-run that only wants the logs of
+# runs it is about to do anyway.
+clear_previous_results() {
+  if [ -n "${KEEP_RESULTS:-}" ]; then
+    echo "KEEP_RESULTS is set - leaving previous match results in place."
+    echo "  A goal whose result is still there will not be remade, and its run measures nothing." >&2
+    return 0
+  fi
+  rm -f "${res_path}"/perf_*.log
+  for _cp_spec in "viral:${SALIVA_MAP:-saliva_real.txt}" "tick-borne:seventicks.txt"; do
+    _cp_db=${_cp_spec%%:*}
+    _cp_map="${fastqdir}/${_cp_spec#*:}"
+    [ -f "$_cp_map" ] || continue
+    for _cp_key in $(map_keys "$_cp_map"); do
+      for _cp_f in "${basedir}/data/projects/${_cp_db}/csv/${_cp_db}_match_${_cp_key}.csv" \
+                   "${basedir}/data/projects/${_cp_db}/csv/${_cp_db}_ftmatch_${_cp_key}.csv"; do
+        for _cp_x in "$_cp_f" "${_cp_f}.gz"; do
+          if [ -f "$_cp_x" ]; then
+            echo "  removing $(basename "$_cp_x")"
+            rm -f "$_cp_x"
+          fi
+        done
+      done
+    done
+  done
+}
+
+case "$what" in
+  a|b|c|all) clear_previous_results ;;
+esac
+
 case "$what" in
   a|all) run_per_file viral "${SALIVA_MAP:-saliva_real.txt}" a ;;
 esac
@@ -135,17 +176,24 @@ esac
 # Wall time and RAM come from cgmemtime's own summary, which it appends to the log:
 #
 #     wall:   0.763 s
+#     child_RSS_high:     181716 KiB
 #     group_mem_high:     201220 KiB
 #
-# group_mem_high is the high-water mark of the whole cgroup, i.e. the JVM and everything Maven
-# forked, which is what "RAM of the run" should mean. child_RSS_high sits beside it and is the
-# largest single process; for a forked JVM the two are close but the group figure is the honest one.
+# child_RSS_high is the high-water mark of the largest single process -- the JVM -- and that is what
+# this reports. group_mem_high sits beside it and is the whole cgroup, which sounds like the honest
+# figure and is not: the kernel charges the page cache of everything the group reads to it, and
+# scenario (a) reads 78 to 171 GB of gzip per run. Measured on the saliva runs of 2026-09-19, where
+# the database itself takes 3,485 MB of heap: child_RSS_high averages 6,756 MB unrefined and 5,977 MB
+# refined, group_mem_high 38,619 and 47,861 -- a factor of 6 to 8 of cache, and the refined figures
+# sit at 49 GB for all three runs, i.e. against the 56 GB heap ceiling rather than at any demand.
+# Table "ftdbperf" of the paper reports child_RSS_high too, so the two tables now agree.
 #
 # The read counts are taken from the evaluation's own CSVs rather than recounted here: they are
 # exact, already written, and counting a 139 GB fastq again to reproduce them would cost an hour.
 
 python3 - "$res_path" "$fastqdir" "$bp_sample_reads" <<'PY'
-import csv, glob, os, re, subprocess, sys
+import csv
+import glob, os, re, subprocess, sys
 
 res, fastqdir, bp_sample = sys.argv[1], sys.argv[2], int(sys.argv[3])
 
@@ -164,10 +212,18 @@ def measurement(path):
         text = open(path, encoding='utf-8', errors='replace').read()
     except OSError:
         return None
+    # A goal whose results are already on disk is not remade: Genestrip reports the file goals as
+    # made in no time and exits, and cgmemtime then times a JVM start -- 0.9 s and 180 MB, which
+    # looks like a measurement and is not one. The run that classified reads says so in its log
+    # ("Making match took 1342 s"); the one that did nothing never mentions the goal at all.
+    if not re.search(r'Making (ft)?match took', text):
+        print('  not measured: %s classified nothing (its goal was already made)'
+              % os.path.basename(path), file=sys.stderr)
+        return None
     w = re.search(r'^wall:\s+([0-9.]+)\s*s', text, re.M)
-    m = re.search(r'^group_mem_high:\s+([0-9]+)\s*KiB', text, re.M)
+    m = re.search(r'^child_RSS_high:\s+([0-9]+)\s*KiB', text, re.M)
     if not m:
-        m = re.search(r'^child_RSS_high:\s+([0-9]+)\s*KiB', text, re.M)
+        m = re.search(r'^group_mem_high:\s+([0-9]+)\s*KiB', text, re.M)
     if not w or not m:
         return None
     return float(w.group(1)), int(m.group(1)) / 1024.0
