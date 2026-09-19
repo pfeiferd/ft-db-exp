@@ -73,11 +73,44 @@ measure() {
 }
 
 # Runs both database variants over one map. $1 = db, $2 = map file name, $3 = log key.
+# The output files of one goal for every key of a map, removed so that the goal is actually made.
+#
+# `-Dgs.target=clean' below is supposed to do this and evidently did not on 2026-09-19 -- every tick
+# run reported its goals as made and classified nothing. Removing the files here as well costs a
+# millisecond and does not depend on the clean target behaving as expected.
+clear_goal_outputs() {
+  _cg_db=$1; _cg_goal=$2; _cg_map="${fastqdir}/$3"
+  [ -f "$_cg_map" ] || return 0
+  for _cg_key in $(map_keys "$_cg_map"); do
+    rm -f "${basedir}/data/projects/${_cg_db}/csv/${_cg_db}_${_cg_goal}_${_cg_key}.csv" \
+          "${basedir}/data/projects/${_cg_db}/csv/${_cg_db}_${_cg_goal}_${_cg_key}.csv.gz"
+  done
+}
+
+# Whether every fastq file a map names is on disk. A goal whose input is missing is not made either,
+# and that looks exactly like a goal that was already made: no work, no error, a one-second log.
+map_files_present() {
+  _mf_map="${fastqdir}/$1"
+  _mf_absent=""
+  for _mf_f in $(awk '!/^#/ && NF >= 2 { print $2 }' "$_mf_map"); do
+    [ -s "${fastqdir}/${_mf_f}" ] || _mf_absent="${_mf_absent} ${_mf_f}"
+  done
+  if [ -n "$_mf_absent" ]; then
+    echo "  SKIP $1 -- fastq files not on disk:${_mf_absent}" >&2
+    return 1
+  fi
+  return 0
+}
+
 run_pair() {
   _rp_db=$1; _rp_map=$2; _rp_key=$3
+  map_files_present "$_rp_map" || return 0
   for goal in match ftmatch; do
     echo "############ ${_rp_key}: ${goal} ############"
     # Clear the previous output first and do NOT measure that: it is bookkeeping, not classification.
+    # Both ways, because (b) and (c) run over the same map and so write the same files: whatever (b)
+    # leaves behind would make (c) a no-op, which is what the batch of 2026-09-19 recorded.
+    clear_goal_outputs "$_rp_db" "$goal" "$_rp_map"
     mvn exec:exec@match -Dname="$_rp_db" -Dgoal="$goal" -Dfqmap="$_rp_map" -Dgs.target=clean
     measure "${res_path}/perf_${_rp_key}_${goal}.log" \
         mvn exec:exec@match -Dname="$_rp_db" -Dgoal="$goal" -Dfqmap="$_rp_map"
@@ -134,8 +167,13 @@ clear_previous_results() {
     echo "  A goal whose result is still there will not be remade, and its run measures nothing." >&2
     return 0
   fi
-  rm -f "${res_path}"/perf_*.log
-  for _cp_spec in "viral:${SALIVA_MAP:-saliva_real.txt}" "tick-borne:seventicks.txt"; do
+  for _cp_sc in $1; do
+    rm -f "${res_path}"/perf_${_cp_sc}_*.log
+  done
+  for _cp_spec in "a:viral:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne:seventicks.txt" \
+                  "c:tick-borne:seventicks.txt"; do
+    case " $1 " in *" ${_cp_spec%%:*} "*) ;; *) continue ;; esac
+    _cp_spec=${_cp_spec#*:}
     _cp_db=${_cp_spec%%:*}
     _cp_map="${fastqdir}/${_cp_spec#*:}"
     [ -f "$_cp_map" ] || continue
@@ -153,8 +191,11 @@ clear_previous_results() {
   done
 }
 
+# Only for the scenarios about to run: a measurement of the others is days of wall time and must
+# survive a re-run of one of them. `all' clears everything, since it remeasures everything.
 case "$what" in
-  a|b|c|all) clear_previous_results ;;
+  all)   clear_previous_results "a b c" ;;
+  a|b|c) clear_previous_results "$what" ;;
 esac
 
 case "$what" in
