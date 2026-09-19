@@ -188,7 +188,7 @@
 								<argument>${gs.project.name}</argument>
 								<argument>${gs.project.goal}</argument>
 								<!-- `make' unless asked otherwise. A goal whose *inputs* changed without its
-								     output file changing - a different `clusterMethod', say - is not noticed
+								     output file changing - a different `ft.clusterMethod', say - is not noticed
 								     by the make system, so dropping the stale file is the only way to have it
 								     rebuilt. Mind which target does what, and check the chain before using one:
 								     `clean' aggregates the request into an internal goal and cleans only that,
