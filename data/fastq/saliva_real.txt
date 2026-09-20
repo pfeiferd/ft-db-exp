@@ -24,8 +24,16 @@
 # in results/viral_human_virus_errors_gs_ku_comp.csv and results/viral_saliva_rel_accuracy.csv, so
 # omitting two of them would compare against less data than the study this one builds upon.
 #
-# Both mates of a run share its key, so Genestrip analyses them together -- the convention the
-# generated maps of make_fastqs.sh use for the simulated paired-end sets too.
+# ONLY THE FIRST MATE OF EACH RUN IS LISTED, so that these numbers can be held against the first
+# paper's. Genestrip has no notion of a pair: it classifies every record on its own, so a second
+# mate is simply a second read, and reading both doubles the reads of a run rather than pairing
+# them. That paper's Table "analysisperf" reports 824,743,085 reads per file at 101 bp -- exactly
+# the mean of the five runs' spot counts at one mate's length, i.e. it analysed one mate per run.
+# Reading both here would double every read count, wall time and |R'_g| against it and make the two
+# studies incomparable for no gain in evidence: the second mate of a fragment comes from the same
+# organism as the first and adds no independent observation of what is in the sample.
+#
+# The second mates stay on disk and are listed commented out, so taking them back in is one edit.
 #
 #   key         #    read pairs      bases     gzipped   read length
 #   SRR5571985  1    812,085,208     164 Gbp   112 GB    101 bp
@@ -41,23 +49,27 @@
 # difference and does not disturb the calibration of Section "Estimating the gain without ground
 # truth", but it is worth knowing before the two sets are held against each other.
 #
-# THE TWO ERR RUNS ARE COMMENTED OUT and are the largest of the five: 171 GB and 154 GB against the
-# 139, 112 and 78 GB of the SRR ones, i.e. more than the other three together. They were left out on
-# 2026-08-22 for disk and wall time, not because they do not belong -- the first paper reports them,
-# and the table above stays so that the decision is visible rather than the runs simply absent.
-# Uncomment both lines of a run to take it back in, and fetch it with bin/fetch_saliva.sh <acc>.
+# ALL FIVE RUNS, as in the first paper. The two ERR ones were left out on 2026-08-22 for disk and
+# wall time -- at 171 and 154 GB for both mates they are the largest of the set -- and are back
+# because only the first mate of each run is fetched and read: 326 GB for all five against 654.
 #
-# Scoring even the three in one call is a multi-day proposition -- saliva_srr5571991.txt exists to
-# take them one at a time.
+# They are not equally informative. SRR5571990 leaves 734 of its 22 million classified reads at a
+# genus, 0.003 %, against 0.13 % for SRR5571985 and 0.08 % for SRR5571991, and over half of those sit
+# under one genus -- so its precision rests on very little and should be read with |R'_g| beside it,
+# which is why the paper's table prints that column.
+#
+# Scoring even the three in one call is a multi-day proposition. To take them one at a time, copy
+# the line of one run into a map of its own -- perf_scenarios.sh does exactly that per key and
+# removes the file again, which is why no single-run map is kept here.
 #
 # key        file
 SRR5571985 SRR5571985_1.fastq.gz
-SRR5571985 SRR5571985_2.fastq.gz
-#ERR1395613 ERR1395613_1.fastq.gz
+#SRR5571985 SRR5571985_2.fastq.gz
+ERR1395613 ERR1395613_1.fastq.gz
 #ERR1395613 ERR1395613_2.fastq.gz
 SRR5571991 SRR5571991_1.fastq.gz
-SRR5571991 SRR5571991_2.fastq.gz
-#ERR1395610 ERR1395610_1.fastq.gz
+#SRR5571991 SRR5571991_2.fastq.gz
+ERR1395610 ERR1395610_1.fastq.gz
 #ERR1395610 ERR1395610_2.fastq.gz
 SRR5571990 SRR5571990_1.fastq.gz
-SRR5571990 SRR5571990_2.fastq.gz
+#SRR5571990 SRR5571990_2.fastq.gz

@@ -307,9 +307,17 @@ def per_file(scenario, label):
     if not keys:
         return
     n = [reads.get(k) for k in keys]
+    missing = [k for k, x in zip(keys, n) if not x]
     n = [x for x in n if x]
     lens = [mean_read_length(k) for k in keys]
     lens = [x for x in lens if x]
+    # An average over some of the runs must not be printed as the average over all of them. The read
+    # counts come from the evaluation's CSVs, and a run measured here whose classification was never
+    # evaluated has none -- which is why the speed below is left out in that case too. Say which.
+    if missing:
+        print('  %s: no read count for %s - its rows over the files stay empty'
+              % (label, ', '.join(missing)), file=sys.stderr)
+        n = []
     if n:
         if scenario == 'b':
             rows.append((label, 'Min. reads per fastq file', fmt(min(n)), fmt(min(n))))

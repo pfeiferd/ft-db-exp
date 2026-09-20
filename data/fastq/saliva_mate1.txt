@@ -1,8 +1,0 @@
-# The human saliva run SRR5571991 (#3 of the first Genestrip paper's Table "errorsviral"), mate 1
-# only -- the file that is actually on this machine. saliva_real.txt is the full map and lists both
-# mates of all three runs; this one exists because only this half is present.
-#
-# Mate 1 alone is a legitimate analysis: Genestrip classifies each read on its own, and the measure
-# of Section "Estimating the gain without ground truth" averages over reads, so nothing here depends
-# on pairing. It halves the data, not the validity.
-SRR5571991 SRR5571991_1.fastq.gz

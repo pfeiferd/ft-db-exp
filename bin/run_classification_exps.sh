@@ -142,6 +142,24 @@ run_real() {
       ( cd "$basedir" && mvn exec:exec@fastqdl -Dname="$1" -Dfqmap="$2" )
     fi
   fi
+  # Every file the map names must be on disk. Genestrip drops a missing one silently and classifies
+  # what is left, which for a paired run means one mate: SRR5571991 was analysed that way on
+  # 2026-09-19 because its second mate had stopped downloading at 426 MB of 69 GB, and the result --
+  # half the reads of a run whose siblings were counted whole -- looked like a measurement. A key
+  # that resolves to fewer files than its siblings is reported for the same reason.
+  _rr_absent=""
+  for _rr_f in $(awk '!/^#/ && NF >= 2 && $2 !~ /^https?:/ { print $2 }' "$map"); do
+    [ -s "${basedir}/data/fastq/${_rr_f}" ] || _rr_absent="${_rr_absent} ${_rr_f}"
+  done
+  if [ -n "$_rr_absent" ]; then
+    echo "WARNING: $2 names files that are not on disk:${_rr_absent}" >&2
+    echo "         Those runs are classified without them -- a paired run then yields one mate." >&2
+  fi
+  awk '!/^#/ && NF >= 2 { n[$1]++ }
+       END { for (k in n) if (n[k] > most) most = n[k]
+             for (k in n) if (n[k] < most)
+               printf "WARNING: %s resolves to %d file(s) where others have %d.\n", k, n[k], most > "/dev/stderr" }' "$map"
+
   echo "############ $1: real reads (${3}), unrefined vs. refined ############"
   mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.project.calibration="${4:-}"
 }

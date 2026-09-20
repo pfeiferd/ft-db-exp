@@ -29,7 +29,7 @@
 #   PAPER_RESULTS   a folder to copy the results to when the run is done, in addition to leaving
 #                   them in ./results. Unset by default: this project stands on its own and knows
 #                   nothing about where a paper or any other consumer keeps its inputs. The folder
-#                   must exist; step 13 copies into it and regenerates its LaTeX macros there.
+#                   must exist; step 14 copies into it and regenerates its LaTeX macros there.
 #   SKIP_BUILD=1    do not run `mvn install' in step 1.
 #
 # Wall time is days, not hours, and the disk needs well over a terabyte -- see README.md.
@@ -47,7 +47,7 @@ paper_results_said=""
 
 # States once what becomes of the results at the end of the run. The preflight calls it so that a
 # PAPER_RESULTS pointing nowhere is known in the first minute rather than after the last step, and
-# step 13 calls it again -- where it stays silent, having already said its piece. Without that the
+# step 14 calls it again -- where it stays silent, having already said its piece. Without that the
 # same warning is printed once per invocation, three times over a run resumed twice.
 check_paper_results() {
   if [ -n "$paper_results_said" ]; then
@@ -57,7 +57,7 @@ check_paper_results() {
   if [ -z "$paper_results" ]; then
     echo "OK    results stay in ${basedir}/results (PAPER_RESULTS is unset)"
   elif [ -d "$paper_results" ]; then
-    echo "OK    step 13 copies them to ${paper_results}"
+    echo "OK    step 14 copies them to ${paper_results}"
   else
     echo "WARNING: PAPER_RESULTS=${paper_results} does not exist - the results will stay in" >&2
     echo "         ${basedir}/results. Create the folder, or copy them by hand afterwards." >&2
@@ -294,6 +294,20 @@ fi
 skip=""
 
 ########################################################################################
+step "classification performance: the three scenarios" || skip=1
+if [ -z "${skip:-}" ]; then
+  # Table "matchperf" of the paper reads results/matchperf.csv, and nothing else writes it: the
+  # measurement lives in perf_scenarios.sh, which until now had to be remembered by hand -- so the
+  # table showed whatever the last manual run had left, or its markers.
+  #
+  # After the classification steps, because it deletes the `match' and `ftmatch' results of the keys
+  # it measures: a goal whose output is still there is not remade, and the run then times a JVM
+  # start instead of a classification. Step 10 has copied what it needs into results/ by then.
+  run sh ./bin/perf_scenarios.sh all
+fi
+skip=""
+
+########################################################################################
 step "record the machine and regenerate the macros" || skip=1
 if [ -z "${skip:-}" ]; then
   # sysinfo.sh writes results/sysinfo.txt and results/sysinfo.tex: the hardware and JVM facts a
@@ -304,7 +318,7 @@ if [ -z "${skip:-}" ]; then
   # paper_stats.sh runs a second time here -- run_exps.sh already ran it at the end of step 4, which
   # is before any classification result exists, so the dbstats.tex it left describes half a run.
   # Regenerating it now means ./results is complete and consistent on its own, which is what a
-  # results folder carried off this machine by hand consists of. Step 13 runs it once more against
+  # results folder carried off this machine by hand consists of. Step 14 runs it once more against
   # PAPER_RESULTS, where the folder may hold files from other batches as well.
   run sh ./bin/paper_stats.sh
 fi

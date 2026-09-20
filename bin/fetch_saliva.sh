@@ -5,27 +5,28 @@
 # data without ground truth that `cv' is applied to.
 #
 # Usage:
-#   sh ./bin/fetch_saliva.sh                      # the three runs the first paper used
+#   sh ./bin/fetch_saliva.sh                      # all five runs, first mate of each (326 GB)
 #   sh ./bin/fetch_saliva.sh SRR5571991           # a single run
 #   SKIP_MD5=1 sh ./bin/fetch_saliva.sh           # do not verify (saves ~10 min per 70 GB file)
+#   MATES=2 sh ./bin/fetch_saliva.sh ERR1395613   # both mates of a run, which nothing reads today
 #
 # Files are named after their accession, exactly as bin/make_fastqs.sh of the original
 # genestrip-db-exp project named them, so that runs already downloaded there are picked up rather
 # than fetched again -- which at these volumes is the difference between minutes and days.
 #
 # BEWARE OF THE VOLUME, but note that it is the *download* that is large, not the working set.
-# All five runs of that table, in its own order, with the sizes the ENA reports today:
+# All five runs of that table, in its own order, with the sizes the ENA reports today -- and only
+# the first mate of each is fetched, which is what the analysis reads and what halves the total:
 #
-#   SRR5571985  #1   812,085,208 read pairs   164 Gbp   112 GB gzipped
-#   ERR1395613  #2   900,709,176 read pairs   180 Gbp   171 GB gzipped
-#   SRR5571991  #3   980,879,835 read pairs   198 Gbp   139 GB gzipped   <- reported in detail there
-#   ERR1395610  #4   824,479,570 read pairs   165 Gbp   154 GB gzipped
-#   SRR5571990  #5   605,561,636 read pairs   122 Gbp    78 GB gzipped
+#   SRR5571985  #1   812,085,208 read pairs   164 Gbp    55.5 GB (mate 1)   112 GB (both)
+#   ERR1395613  #2   900,709,176 read pairs   180 Gbp    85.7 GB            171 GB
+#   SRR5571991  #3   980,879,835 read pairs   198 Gbp    69.1 GB            139 GB   <- reported in
+#   ERR1395610  #4   824,479,570 read pairs   165 Gbp    77.1 GB            154 GB      detail there
+#   SRR5571990  #5   605,561,636 read pairs   122 Gbp    38.5 GB             78 GB
 #
-#   all five                                            654 GB gzipped
+#   all five                                            326 GB             654 GB
 #
-# The two ERR runs are the largest of the set, so fetching them roughly doubles what the other three
-# cost. All five are Illumina HiSeq 2000; the SRR runs are 101 bp per mate, the ERR runs 100 bp.
+# All five are Illumina HiSeq 2000; the SRR runs are 101 bp per mate, the ERR runs 100 bp.
 #
 # ---------------------------------------------------------------------------------------------
 # Why this fetches from the ENA over HTTPS rather than through sra-tools
@@ -78,7 +79,16 @@ mkdir -p "$fastqdir"
 # 154 GB, more than the other three together -- and were dropped again on 2026-08-22 for disk and
 # wall time. They are still fetched on request, since the ENA resolves them like any other
 # accession: sh ./bin/fetch_saliva.sh ERR1395613 ERR1395610 .
-DEFAULT_RUNS="SRR5571985 SRR5571991 SRR5571990"
+# All five runs of the first paper's Table "errorsviral", in its order. Fetching one mate each makes
+# that affordable -- 326 GB against 654 -- and the first paper analysed one mate per run as well, so
+# the two studies stay comparable run for run.
+DEFAULT_RUNS="SRR5571985 ERR1395613 SRR5571991 ERR1395610 SRR5571990"
+
+# How many mates of each run to fetch. One, because that is what is analysed: Genestrip classifies
+# mates independently, and saliva_real.txt lists the first of each run so that the read counts stay
+# comparable with the first paper's. Fetching both would double a download of hundreds of gigabytes
+# for files nothing opens. MATES=2 restores the old behaviour.
+MATES=${MATES:-1}
 
 runs=${*:-$DEFAULT_RUNS}
 
@@ -146,7 +156,7 @@ fetch_via_ena() {
   fi
 
   mate=1
-  while [ "$mate" -le 2 ]; do
+  while [ "$mate" -le "$MATES" ]; do
     url=$(echo "$urls" | cut -d';' -f"$mate")
     md5=$(echo "$md5s" | cut -d';' -f"$mate")
     if [ -z "$url" ]; then

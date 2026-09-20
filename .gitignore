@@ -21,8 +21,6 @@
 # Single-sample maps, written by hand to score one file at a time. Like the two above they name
 # files rather than absolute paths, so they are valid anywhere.
 !/data/fastq/ticks_sim_tick1.txt
-!/data/fastq/saliva_mate1.txt
-!/data/fastq/saliva_srr5571991.txt
 # The Nanopore lower-respiratory runs of ENA study PRJEB30781 that the strepto project is
 # applied to, and the process-extraction negatives of the same study. Both declare their runs by
 # URL for the goal `fastqdownload', exactly as ticks_real.txt does, so they are input rather than

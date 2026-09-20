@@ -438,6 +438,19 @@ includes the CSV, SVG and LaTeX fragments by name from a results folder of its o
 there. `run_all_exps.sh` does that copy as its last step when `PAPER_RESULTS` names the folder, and
 otherwise leaves everything in `./results`.
 
+**Copying the folder by hand means one more command.** Two of the files a paper reads are derived
+from the others rather than written by a goal: `dbstats.tex`, which holds every figure the text
+states as a macro, and `matchperf.csv`, which is condensed from the `perf_*.log` files. The copy
+step regenerates the first in its target; an rsync does not. So after copying, run
+
+```sh
+sh ./bin/paper_stats.sh /path/to/the/paper/results
+```
+
+against the folder you copied into — otherwise its tables keep the numbers of the previous batch
+while the CSVs beside them are new, which is exactly the mismatch that script exists to prevent.
+`matchperf.csv` needs nothing extra: step 12 writes it into `./results` before the copy.
+
 | File | Written by | Section |
 | --- | --- | --- |
 | `<db>_dbinfo.csv`, `<db>_ftdbinfo.csv` | `run_exps.sh` | 2 |
@@ -450,6 +463,7 @@ otherwise leaves everything in `./results`.
 | `<db>_<key>_specificity.csv` | `run_classification_exps.sh` | 4 |
 | `match_<logkey>.log`, `ftmatch_<logkey>.log` | `run_classification_exps.sh` | 5 |
 | `<goal>_<logkey>_<key>.csv` | `run_classification_exps.sh` | 5 |
+| `perf_<scenario>_<key>_<goal>.log`, `matchperf.csv` | `perf_scenarios.sh` | 5 |
 | `dbstats.tex` | `paper_stats.sh` | below |
 | `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | 6 |
 
