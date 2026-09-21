@@ -240,7 +240,12 @@ if [ -z "${skip:-}" ]; then
   # side; it exists so that the calibration factors of the real saliva runs can be measured at the
   # parameters of the data they are applied to -- 101 bp at 2.07 % per-base error, which no stock
   # InSilicoSeq model reproduces.
+  #
+  # For both databases the saliva runs are classified against: `cv' and `strepto'. A calibration is
+  # a property of the pair (database, read set), so each needs its own -- `strepto' is not calibrated
+  # by viral reads, and its Nanopore simulation belongs to the clinical long-read samples, not here.
   run env ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral
+  run env ERROR_SALIVA=1 sh ./bin/make_fastqs.sh strepto
 fi
 skip=""
 
@@ -261,11 +266,11 @@ skip=""
 ########################################################################################
 step "classification: the saliva-matched set" || skip=1
 if [ -z "${skip:-}" ]; then
-  # Before step 10, not after. This run writes results/viral_iss_saliva_summary.csv, and the real
-  # saliva runs of step 10 read exactly that file for their calibration -- `run_real viral ... saliva
+  # Before step 10, not after. This run writes results/<db>_iss_saliva_summary.csv, and the real
+  # saliva runs of step 10 read exactly that file for their calibration -- `run_real <db> ... saliva
   # iss_saliva'. Run in the other order, the estimate columns of the real-read table come from
   # whatever stale copy happened to be lying in results/, or from nothing at all.
-  run env ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral
+  run sh ./bin/run_classification_exps.sh saliva
 fi
 skip=""
 
@@ -294,7 +299,7 @@ fi
 skip=""
 
 ########################################################################################
-step "classification performance: the three scenarios" || skip=1
+step "classification performance: the four scenarios" || skip=1
 if [ -z "${skip:-}" ]; then
   # Table "matchperf" of the paper reads results/matchperf.csv, and nothing else writes it: the
   # measurement lives in perf_scenarios.sh, which until now had to be remembered by hand -- so the

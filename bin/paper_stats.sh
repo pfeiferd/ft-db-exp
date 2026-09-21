@@ -258,14 +258,17 @@ with open(out, 'w', encoding='utf-8') as fh:
                 if c[6].strip() == '1313':
                     pipeline.add(c[0].strip())
 
-    for db, key in (('strepto', 'lri'), ('strepto', 'lrineg'), ('tick-borne', 'ticks'), ('viral', 'saliva')):
+    # (database, report key, macro tag). The tag keeps two collections of one database apart:
+    # `strepto' is run on its clinical samples and on the saliva runs, and both write their figures
+    # under the same database name. An empty tag is the collection the prose speaks of by default.
+    for db, key, tag in (('strepto', 'lri', ''), ('strepto', 'lrineg', 'neg'),
+                         ('strepto', 'saliva', 'saliva'), ('tick-borne', 'ticks', ''),
+                         ('viral', 'saliva', '')):
         path = os.path.join(results, '%s_%s_specificity.csv' % (db, key))
         allrows = rows(path)
         if not allrows:
             continue
         sel = specrows(path)
-        pre = db if key in ('lri', 'ticks', 'saliva') else '%s/%s' % (db, key)
-        tag = '' if key != 'lrineg' else 'neg'
         totreads = sum(int((r.get('reads') or '0').strip()) for r in allrows)
         totcls = sum(int((r.get('classified unrefined') or '0').strip()) for r in allrows)
         emit(fh, 'rg', '%s/%sreads' % (db, tag), str(totreads))

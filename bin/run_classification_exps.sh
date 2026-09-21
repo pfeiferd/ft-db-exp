@@ -325,19 +325,36 @@ case "$what" in
                 # nearest-node columns are left unmeasured and the ranked votes carry it.
                 run_taxoncall nocardia nocardia_mngs.txt mngs 1817 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
+  # The saliva-matched simulations, one per database the real saliva runs are classified against.
+  # Accuracy only: this set exists to calibrate those runs, its own performance is not reported, and
+  # a per-database target would drag the plain simulated runs along with it. ERROR_SALIVA is set and
+  # restored here rather than expected in the environment, for the reason run_iss_all_regimes gives:
+  # one left standing sends a later call to the wrong read set without saying so.
+  saliva)       _cl_saved=${ERROR_SALIVA:-}
+                ERROR_SALIVA=1
+                run_iss viral; run_iss strepto
+                ERROR_SALIVA=$_cl_saved ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
                 run_iss_all_regimes nocardia; run_ticks; run_strepto_nanosim ;;
+  # `strepto' runs on the saliva files as well as on its own clinical ones. Saliva is a
+  # streptococcal habitat -- the oral species of the mitis and salivarius groups are what a healthy
+  # mouth carries -- so the same five runs put a bacterial database of one genus beside the viral
+  # one on identical material, with the calibration taken from the saliva-matched simulation of that
+  # database rather than from its Nanopore one.
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
+                run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real strepto strepto_lri_real.txt lri nanosim
                 run_real strepto strepto_lri_neg.txt lrineg nanosim
                 run_real nocardia nocardia_mngs.txt mngs
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real_perf strepto "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
                 run_perf tick-borne ticks_sim.txt
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
+                run_real_perf strepto "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf tick-borne seventicks.txt ticks ;;
   all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
                 run_iss_all_regimes nocardia; run_ticks; run_strepto_nanosim
@@ -345,6 +362,7 @@ case "$what" in
                 run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
                 run_perf tick-borne ticks_sim.txt
                 run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
+                run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne seventicks.txt ticks nanosim
                 run_real strepto strepto_lri_real.txt lri nanosim
                 run_real strepto strepto_lri_neg.txt lrineg nanosim
@@ -354,7 +372,7 @@ case "$what" in
                 # the paper typesets a table from its summary file -- so run_all_exps.sh has a step
                 # of its own for it. Run the target of that name if you are not running that script.
                 ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
 esac
 
 echo

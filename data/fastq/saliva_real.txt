@@ -1,12 +1,13 @@
 # The human saliva runs of the first Genestrip paper (its Table "errorsviral"): DNA sequencing of
 # saliva from different donors, downloaded from the SRA. They are the real data without ground truth
-# that `cv', the complete viral database, is applied to, exactly as in that paper.
+# that `cv', the complete viral database, is applied to, exactly as in that paper -- and, since saliva
+# is a streptococcal habitat, that `strepto' is applied to as well, on the very same files.
 #
 # Unlike ticks_real.txt this map holds no URLs, because these runs are paired: each arrives as two
 # files that have to be read under one key, and the URLs have to be resolved per accession. That is
 # what the fetch script does, so the files are downloaded separately:
 #
-#   sh ./bin/fetch_saliva.sh                  # the three runs -- see that script's volume warning
+#   sh ./bin/fetch_saliva.sh                  # every run below -- see that script's volume warning
 #   sh ./bin/fetch_saliva.sh SRR5571991       # a single run
 #
 # It fetches the gzipped fastq files from the ENA over HTTPS, resumably and md5-verified. Going

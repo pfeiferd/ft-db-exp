@@ -154,7 +154,14 @@ be evaluated without it:
 
 ```sh
 ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral              # 101 bp at 2.07 % per-base error
+ERROR_SALIVA=1 sh ./bin/make_fastqs.sh strepto            # the same, for the second database
 ```
+
+Two databases are classified against the saliva runs -- `cv` and `strepto`, saliva being a
+streptococcal habitat -- and a calibration belongs to the pair of database and read set, so each
+needs a saliva-matched set of its own. The accuracy runs over both are what
+`sh ./bin/run_classification_exps.sh saliva` does, in one call and with the regime variable set and
+restored inside it.
 
 The real saliva runs are Illumina HiSeq 2000 at 101 base pairs and 2.07 % per-base error, which no
 stock InSilicoSeq model reproduces -- its "HiSeq" model is an order of magnitude cleaner than the

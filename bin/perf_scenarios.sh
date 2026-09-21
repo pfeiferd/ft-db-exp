@@ -7,12 +7,15 @@
 #   (a) `cv' on the human saliva runs, each file on its own
 #   (b) `tb' on the real tick runs, each file on its own
 #   (c) `tb' on the real tick runs, all of them analyzed jointly in one Genestrip call
+#   (d) `strepto' on the same saliva runs as (a), each file on its own
 #
 # (b) and (c) differ in more than bookkeeping: a joint run loads the database once and amortises it
-# over every file, which is why the first paper reports both.
+# over every file, which is why the first paper reports both. (a) and (d) differ in the database
+# alone -- same files, same machine, a viral database against a bacterial one of a single genus --
+# which is what makes the cost of classifying comparable across databases rather than across tools.
 #
 # Usage:
-#   sh ./bin/perf_scenarios.sh              # run all three, then write the CSV
+#   sh ./bin/perf_scenarios.sh              # run all four, then write the CSV
 #   sh ./bin/perf_scenarios.sh a            # one scenario
 #   sh ./bin/perf_scenarios.sh csv          # only re-derive the CSV from existing logs
 #
@@ -171,7 +174,7 @@ clear_previous_results() {
     rm -f "${res_path}"/perf_${_cp_sc}_*.log
   done
   for _cp_spec in "a:viral:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne:seventicks.txt" \
-                  "c:tick-borne:seventicks.txt"; do
+                  "c:tick-borne:seventicks.txt" "d:strepto:${SALIVA_MAP:-saliva_real.txt}"; do
     case " $1 " in *" ${_cp_spec%%:*} "*) ;; *) continue ;; esac
     _cp_spec=${_cp_spec#*:}
     _cp_db=${_cp_spec%%:*}
@@ -194,8 +197,8 @@ clear_previous_results() {
 # Only for the scenarios about to run: a measurement of the others is days of wall time and must
 # survive a re-run of one of them. `all' clears everything, since it remeasures everything.
 case "$what" in
-  all)   clear_previous_results "a b c" ;;
-  a|b|c) clear_previous_results "$what" ;;
+  all)     clear_previous_results "a b c d" ;;
+  a|b|c|d) clear_previous_results "$what" ;;
 esac
 
 case "$what" in
@@ -208,8 +211,11 @@ case "$what" in
   c|all) run_pair tick-borne seventicks.txt c_joint ;;
 esac
 case "$what" in
-  a|b|c|all|csv) ;;
-  *) echo "Usage: $0 [a|b|c|all|csv]" >&2; exit 1 ;;
+  d|all) run_per_file strepto "${SALIVA_MAP:-saliva_real.txt}" d ;;
+esac
+case "$what" in
+  a|b|c|d|all|csv) ;;
+  *) echo "Usage: $0 [a|b|c|d|all|csv]" >&2; exit 1 ;;
 esac
 
 # --- deriving the table --------------------------------------------------------------------------
@@ -369,6 +375,7 @@ def joint(label):
 per_file('a', '(a)')
 per_file('b', '(b)')
 joint('(c)')
+per_file('d', '(d)')
 
 out = os.path.join(res, 'matchperf.csv')
 # A header alone is worse than no file at all: the paper's \perfrows prints its "---" fallback only
