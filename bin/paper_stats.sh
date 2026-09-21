@@ -220,6 +220,11 @@ with open(out, 'w', encoding='utf-8') as fh:
         cls = sum(x[5] for x in sel)
         emit(fh, 'rg', '%s/%ssamples' % (db, tag), str(len(sel)))
         emit(fh, 'rg', '%s/%ssubset' % (db, tag), str(N))
+        # The smallest and the largest observable subset among the samples of the group. The prose
+        # states that range, and states it from here rather than from a reading of the table, so
+        # that a collection gaining a sample does not leave a stale pair of numbers behind.
+        emit(fh, 'rg', '%s/%ssubsetmin' % (db, tag), str(min(x[1] for x in sel)))
+        emit(fh, 'rg', '%s/%ssubsetmax' % (db, tag), str(max(x[1] for x in sel)))
         emit(fh, 'rg', '%s/%sgroupreads' % (db, tag), str(reads))
         emit(fh, 'rg', '%s/%sgroupclassified' % (db, tag), str(cls))
         emit(fh, 'rg', '%s/%sgroupshare' % (db, tag), '%.2f' % (100.0 * N / cls) if cls else '0')

@@ -75,10 +75,11 @@ mkdir -p "$fastqdir"
 # study this one builds upon. The ENA resolves ERR accessions natively -- fetch_via_ena() asks the
 # filereport API and derives nothing from the prefix -- so they present no special difficulty.
 #
-# The default is the three SRR runs. The two ERR ones are the largest of the five -- 171 GB and
-# 154 GB, more than the other three together -- and were dropped again on 2026-08-22 for disk and
-# wall time. They are still fetched on request, since the ENA resolves them like any other
-# accession: sh ./bin/fetch_saliva.sh ERR1395613 ERR1395610 .
+# The default is all five. The two ERR ones are the largest -- 171 GB and 154 GB, more than the
+# other three together -- and were left out between 2026-08-22 and 2026-09-20 for disk and wall
+# time; they are back because SRR5571990 leaves too few reads at a genus for its row to say
+# anything, and five runs are what the first paper reports. A single accession is still fetched on
+# its own: sh ./bin/fetch_saliva.sh ERR1395613 ERR1395610 .
 # All five runs of the first paper's Table "errorsviral", in its order. Fetching one mate each makes
 # that affordable -- 326 GB against 654 -- and the first paper analysed one mate per run as well, so
 # the two studies stay comparable run for run.
