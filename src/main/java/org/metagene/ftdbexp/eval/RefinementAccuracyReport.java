@@ -269,12 +269,11 @@ public class RefinementAccuracyReport {
      * Writes {@code <db>_<report key>_quality.csv}: one row per read set rather than per variant, so
      * that a table can put the unrefined and the refined figure of a measure side by side.
      * <p>
-     * The boolean counts are given once, for the unrefined database only. That is not a shortcut but
-     * the finding: a refinement inserts nodes between a genus and its species and moves k-mers onto
-     * them, which changes how many species an answer leaves open, not whether the answer is right.
-     * Across every read set here the boolean genus and species scores move by less than 0.0007
-     * between the two variants -- they cannot see what the refinement does. The candidate-weighted
-     * measures, which can, are therefore given for both.
+     * Every measure is given for both variants, so that a table can show what the boolean counts do
+     * -- namely almost nothing: a refinement inserts nodes between a genus and its species and moves
+     * k-mers onto them, which changes how many species an answer leaves open, not whether the
+     * answer is right. The candidate-weighted measures do see it, which is the contrast the paper's
+     * two blocks are meant to make visible.
      *
      * @param resultsDir the directory to write to
      * @param db         the name of the database project
@@ -287,7 +286,8 @@ public class RefinementAccuracyReport {
         File file = new File(resultsDir, db + "_" + reportKey + "_quality.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
             ps.println("db;fastq key;read set"
-                    + ";f1 genus;precision species;recall species;f1 species"
+                    + ";prec genus u;prec genus f;recall genus u;recall genus f;f1 genus u;f1 genus f"
+                    + ";prec species u;prec species f;recall species u;recall species f;f1 species u;f1 species f"
                     + ";prec cand u;prec cand f;recall cand u;recall cand f;f1 cand u;f1 cand f;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
@@ -301,14 +301,20 @@ public class RefinementAccuracyReport {
                 ps.print(';');
                 ps.print(displayModel(fastqKey));
                 ps.print(';');
-                ps.print(format(u.getF1(Rank.GENUS)));
-                ps.print(';');
-                ps.print(format(u.getPrecision(Rank.SPECIES)));
-                ps.print(';');
-                ps.print(format(u.getRecall(Rank.SPECIES)));
-                ps.print(';');
-                ps.print(format(u.getF1(Rank.SPECIES)));
-                ps.print(';');
+                for (Rank rank : new Rank[] { Rank.GENUS, Rank.SPECIES }) {
+                    ps.print(format(u.getPrecision(rank)));
+                    ps.print(';');
+                    ps.print(format(f.getPrecision(rank)));
+                    ps.print(';');
+                    ps.print(format(u.getRecall(rank)));
+                    ps.print(';');
+                    ps.print(format(f.getRecall(rank)));
+                    ps.print(';');
+                    ps.print(format(u.getF1(rank)));
+                    ps.print(';');
+                    ps.print(format(f.getF1(rank)));
+                    ps.print(';');
+                }
                 ps.print(format(u.getSpeciesCandidatePrecision()));
                 ps.print(';');
                 ps.print(format(f.getSpeciesCandidatePrecision()));
