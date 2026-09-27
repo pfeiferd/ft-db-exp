@@ -256,6 +256,9 @@ public class RefinementAccuracyReport {
         if ("iss_saliva".equals(fastqKey)) {
             return "saliva-like";
         }
+        if ("iss_mngs".equals(fastqKey)) {
+            return "mNGS-like";
+        }
         // Anything else keeps its identity, which is what names the read set. For the tick-borne
         // data that is the sample -- tick1, tick2 and so on -- and mapping those to the simulator
         // would collapse eight distinct read sets into eight identical labels. Which simulator

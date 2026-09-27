@@ -148,8 +148,7 @@ if [ -z "${skip:-}" ]; then
   fi
   # The real-read step fails on a missing map rather than skipping it, so say so now instead of
   # after however many hours step 10 takes to get there.
-  for map in "${SALIVA_MAP:-saliva_real.txt}" seventicks.txt strepto_lri_real.txt \
-             strepto_lri_neg.txt nocardia_mngs.txt; do
+  for map in "${SALIVA_MAP:-saliva_real.txt}" eightticks.txt nocardia_mngs.txt; do
     if [ -f "data/fastq/${map}" ]; then
       echo "OK    data/fastq/${map}"
     else
@@ -234,7 +233,7 @@ fi
 skip=""
 
 ########################################################################################
-step "simulated reads: the saliva-matched set" || skip=1
+step "simulated reads: the calibration sets" || skip=1
 if [ -z "${skip:-}" ]; then
   # Its own invocation, and it has to be. This set is not one of the three the paper reports side by
   # side; it exists so that the calibration factors of the real saliva runs can be measured at the
@@ -243,9 +242,11 @@ if [ -z "${skip:-}" ]; then
   #
   # For both databases the saliva runs are classified against: `cv' and `strepto'. A calibration is
   # a property of the pair (database, read set), so each needs its own -- `strepto' is not calibrated
-  # by viral reads, and its Nanopore simulation belongs to the clinical long-read samples, not here.
+  # by viral reads.
   run env ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral
   run env ERROR_SALIVA=1 sh ./bin/make_fastqs.sh strepto
+  # The same for `nocardia' and its BGISEQ runs, at 70 bp and 2.05 % rather than 101 bp and 2.07 %.
+  run env ERROR_MNGS=1 sh ./bin/make_fastqs.sh nocardia
 fi
 skip=""
 
@@ -264,13 +265,15 @@ fi
 skip=""
 
 ########################################################################################
-step "classification: the saliva-matched set" || skip=1
+step "classification: the calibration sets" || skip=1
 if [ -z "${skip:-}" ]; then
   # Before step 10, not after. This run writes results/<db>_iss_saliva_summary.csv, and the real
   # saliva runs of step 10 read exactly that file for their calibration -- `run_real <db> ... saliva
   # iss_saliva'. Run in the other order, the estimate columns of the real-read table come from
   # whatever stale copy happened to be lying in results/, or from nothing at all.
   run sh ./bin/run_classification_exps.sh saliva
+  # And the mNGS-matched set of `nocardia', for the same reason and before the same step.
+  run sh ./bin/run_classification_exps.sh mngs
 fi
 skip=""
 
@@ -281,20 +284,6 @@ if [ -z "${skip:-}" ]; then
   # both collections. This is also where the per-taxon match results are preserved, one CSV per
   # fastq key per database variant, keyed by the run they belong to.
   run env ERROR_SALIVA= sh ./bin/run_classification_exps.sh all
-fi
-skip=""
-
-########################################################################################
-step "classification: the taxon calls" || skip=1
-if [ -z "${skip:-}" ]; then
-  # Separate from the step above because `run_classification_exps.sh all' deliberately leaves it
-  # out: the taxon call names one taxon per sample, which is not a measure the paper reports.
-  #
-  # It runs here all the same, and must, because the paper now typesets a table from its summary --
-  # how far towards a reference organism each sample's evidence reached and how many species are
-  # still open there, which is the only way a refined node can be described at all, having no name
-  # in the reference taxonomy. Skip this and that table shows its markers.
-  run sh ./bin/run_classification_exps.sh taxoncall
 fi
 skip=""
 

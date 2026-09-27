@@ -8,7 +8,11 @@
 #   strepto      `extractrefseqfasta' (see make_iss below).
 #   nocardia     the same. Its real reads are BGISEQ 50-100 bp single-end, so the simulated set is
 #                what a calibration can be taken from; without it the estimate columns of the
-#                real-read table stay empty, as they do for `strepto'.
+#                real-read table stay empty. The two stock models will not do: SpecificityReport
+#                applies a summary of ONE row to every sample and matches by key otherwise, and
+#                `nocardia_iss_summary.csv' holds two rows whose keys are models, not runs. A
+#                calibration for that cohort needs a single set at its parameters, the way
+#                ERROR_SALIVA makes one for the saliva runs.
 #   tick-borne   NanoSim trains an error model on the real Nanopore reads of a tick sample and
 #                applies it to the RefSeq genomes of the twelve tick-borne genera.
 #
@@ -27,6 +31,7 @@
 #   NANOPORE_READ_LENGTH=1000 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa  # ... 1 kb reads
 #   ERROR_NANOPORE_LONG=1 sh ./bin/make_fastqs.sh protozoa # ... at 3,926 bp, 200k reads
 #   ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral   # matched to the real human saliva runs, see below
+#   ERROR_MNGS=1 sh ./bin/make_fastqs.sh nocardia  # matched to the real BGISEQ mNGS runs, see below
 #
 # A single project follows the error-regime variables; `all' ignores them and generates the two
 # Illumina sets and the error-free one of every InSilicoSeq project, which is what the paper reports.
@@ -269,6 +274,17 @@ make_iss() {
   # fractional-phred patch, being far inside the spread the calibration is meant to bridge.
   saliva_error=${SALIVA_ERROR_PCT:-2.07}
   saliva_read_length=${SALIVA_READ_LENGTH:-101}
+
+  # The same regime for the other real cohort that needs one, the fourteen BGISEQ-500 runs of
+  # PRJEB34974 behind `nocardia'. They are single-end and trimmed, so the length varies -- 36 bp at
+  # the mode and 66.6, 74.9 and 70.8 bp on average in ERR3606885, ERR3606886 and ERR3606888 -- and
+  # their quality strings give 2.31 %, 1.84 % and 1.99 % mean per-base error. A single set at 70 bp
+  # and 2.05 % stands for the cohort, the way the saliva set stands for its three runs. Neither
+  # stock model comes close: "HiSeq" is 126 bp at 0.20 % and "MiSeq" 301 bp at 0.73 %, and a
+  # two-row summary would not be applied at all, since SpecificityReport matches more than one
+  # calibration row by fastq key and these keys are run accessions.
+  mngs_error=${MNGS_ERROR_PCT:-2.05}
+  mngs_read_length=${MNGS_READ_LENGTH:-70}
   mkdir -p "$workdir"
 
   # InSilicoSeq wants one uncompressed multi-FASTA. The concatenation is removed again at the end,
@@ -302,6 +318,9 @@ make_iss() {
   elif [ -n "${ERROR_SALIVA:-}" ]; then
     models="saliva"
     mapfile="${fastqdir}/${db}_sim_saliva.txt"
+  elif [ -n "${ERROR_MNGS:-}" ]; then
+    models="mngs"
+    mapfile="${fastqdir}/${db}_sim_mngs.txt"
   else
     models="miseq hiseq"
     mapfile="${fastqdir}/${db}_sim.txt"
@@ -324,6 +343,9 @@ make_iss() {
     elif [ "$model" = saliva ]; then
       model_reads=$n_reads
       model_read_length=$saliva_read_length
+    elif [ "$model" = mngs ]; then
+      model_reads=$n_reads
+      model_read_length=$mngs_read_length
     else
       model_reads=$n_reads
       model_read_length=$nanopore_read_length
@@ -333,7 +355,8 @@ make_iss() {
       # No error model at all: the reads differ from the reference only by where they were cut.
       "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$model_reads" \
         --cpus "$cpus" --compress --output "$prefix"
-    elif [ "$model" = nanopore ] || [ "$model" = nanoporelong ] || [ "$model" = saliva ]; then
+    elif [ "$model" = nanopore ] || [ "$model" = nanoporelong ] || [ "$model" = saliva ] \
+         || [ "$model" = mngs ]; then
       # InSilicoSeq's `basic' model substitutes a base with probability 10^(-q/10), so a phred
       # value of q gives a uniform per-base error rate of choice; ISS_BASIC_PHRED is honoured by
       # the patch install_tools.sh applies. Note that these are substitutions only, whereas real
@@ -341,6 +364,8 @@ make_iss() {
       # which is what the classification depends on.
       if [ "$model" = saliva ]; then
         model_error=$saliva_error
+      elif [ "$model" = mngs ]; then
+        model_error=$mngs_error
       else
         model_error=$nanopore_error
       fi
@@ -423,9 +448,10 @@ make_iss_all_regimes() {
   saved_nanopore=${ERROR_NANOPORE:-}
   saved_nanopore_long=${ERROR_NANOPORE_LONG:-}
   saved_saliva=${ERROR_SALIVA:-}
-  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""
+  saved_mngs=${ERROR_MNGS:-}
+  ERROR_FREE=""; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""; ERROR_MNGS=""
   make_iss "$1"
-  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""
+  ERROR_FREE=1; ERROR_NANOPORE=""; ERROR_NANOPORE_LONG=""; ERROR_SALIVA=""; ERROR_MNGS=""
   make_iss "$1"
   # The two Nanopore regimes are deliberately NOT part of `all'. InSilicoSeq's `basic' model
   # substitutes bases, whereas real Nanopore error is indel-heavy, so those sets only ever
@@ -436,6 +462,7 @@ make_iss_all_regimes() {
   ERROR_NANOPORE=$saved_nanopore
   ERROR_NANOPORE_LONG=$saved_nanopore_long
   ERROR_SALIVA=$saved_saliva
+  ERROR_MNGS=$saved_mngs
 }
 
 ############################## tick-borne / NanoSim ##############################
@@ -652,154 +679,16 @@ make_ticks() {
   echo "Wrote ${fastqdir}/ticks_sim.txt"
 }
 
-# The NanoSim set for `strepto', and the reason it stands beside make_ticks rather than inside it:
-# it simulates ONE file, not one per sample.
-#
-# The clinical data of this project are the 83 Oxford Nanopore runs of PRJEB30781, and a calibration
-# factor rho has to be measured on simulated reads of the same chemistry -- which for ONT means
-# NanoSim, since InSilicoSeq models Illumina instruments and says nothing about a nanopore run. One
-# training per real sample, as for the ticks, would be 83 trainings of several hours, and nothing
-# would come of it: SpecificityReport applies a calibration consisting of a single row to every
-# sample -- see its readCalibration() -- which is the case it already serves for the saliva runs.
-#
-# The one set is therefore trained on a cross-section of the study: PER_SAMPLE_READS reads from each
-# of the 83 runs rather than everything from the first few, so that the error and length model
-# describes the study and not its first patients. The pooled file is kept, because rebuilding it
-# means reading all 83 runs again.
-#
-# For a per-group calibration instead -- the three groups Table "realgain" of the paper reports --
-# run this with SAMPLE_MAP and NS_KEY set per group and classify each group's map on its own; the
-# machinery below does not care which samples it pools.
-make_strepto_nanosim() {
-  db=strepto
-  map_file=${SAMPLE_MAP:-strepto_lri_real.txt}
-  ns_key=${NS_KEY:-nanosim}
-  out="${fastqdir}/${db}_${ns_key}_sim.fastq"
-
-  nsvenv="${basedir}/tools/nanosim-venv"
-  nanosimdir="${basedir}/tools/NanoSim"
-  if [ ! -x "${nsvenv}/bin/python" ] || [ ! -f "${nanosimdir}/src/simulator.py" ]; then
-    echo "NanoSim is missing - run ./bin/install_tools.sh first." >&2
-    exit 1
-  fi
-  export PATH="${basedir}/tools/bin:${PATH}"
-  python="${nsvenv}/bin/python"
-
-  genomes=${GENOME_LIST:-${basedir}/data/projects/${db}/csv/${db}_nanosim.tsv}
-  nswork="${basedir}/tools/work-nanosim"
-  mkdir -p "$nswork" "${basedir}/results"
-  reads=${READS:-10000000}
-  cpus=${CPUS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
-
-  if [ -s "$out" ]; then
-    echo "SKIP  ${out} exists"
-  else
-    # The genome list, as for the ticks: each entry labels a genome "<taxid>x<index>", which becomes
-    # the prefix of every simulated read's name and is how the ground truth is recovered.
-    if [ ! -f "$genomes" ] || grep -qv '^[^	]*	/' "$genomes" 2>/dev/null; then
-      echo "=== ${genomes} is missing or holds relative paths - generating it ==="
-      ( cd "$basedir" && mvn exec:exec@nanosimlist -Dname="$db" )
-      if [ ! -f "$genomes" ]; then
-        echo "mvn exec:exec@nanosimlist -Dname=${db} did not produce ${genomes}." >&2
-        echo "It derives the list from the per-accession fastas of 'extractrefseqfasta', so check" >&2
-        echo "that the ${db} database has been built and that goal has run." >&2
-        exit 1
-      fi
-    fi
-
-    keys=$(awk '$1 !~ /^#/ && NF >= 2 {print $1}' "${basedir}/data/fastq/${map_file}")
-    if [ -z "$keys" ]; then
-      echo "No sample keys in data/fastq/${map_file}." >&2
-      exit 1
-    fi
-
-    # The real runs are the training input, so fetch whatever is absent before starting rather than
-    # train on a subset that happens to be on disk. Genestrip's own goal resolves and names them.
-    if [ -z "${SKIP_FETCH:-}" ]; then
-      missing=""
-      for key in $keys; do
-        [ -s "${fastqdir}/${key}.fastq.gz" ] || missing="yes"
-      done
-      if [ -n "$missing" ]; then
-        echo "=== ${db}: fetching the runs of ${map_file} ==="
-        ( cd "$basedir" && mvn exec:exec@fastqdl -Dname="$db" -Dfqmap="$map_file" )
-      fi
-    fi
-    absent=""
-    for key in $keys; do
-      [ -s "${fastqdir}/${key}.fastq.gz" ] || absent="${absent} ${key}"
-    done
-    if [ -n "$absent" ]; then
-      echo "Missing real reads for:${absent}" >&2
-      exit 1
-    fi
-
-    # The cross-section. awk stops each run after its share instead of head(1), whose closed pipe
-    # would leave the decompressor killed by SIGPIPE in the middle of a `set -e' script.
-    per=${PER_SAMPLE_READS:-20000}
-    pool="${fastqdir}/${db}_${ns_key}_pool.fastq.gz"
-    if [ ! -s "$pool" ]; then
-      echo "=== ${db}: pooling ${per} reads from each of $(echo "$keys" | wc -w) runs ==="
-      {
-        for key in $keys; do
-          gunzip -c "${fastqdir}/${key}.fastq.gz" | awk -v n=$((per * 4)) 'NR > n { exit } { print }'
-        done
-      } | gzip -c > "${pool}.tmp"
-      mv "${pool}.tmp" "$pool"
-      echo "Wrote ${pool}"
-    fi
-
-    echo "=== ${db}: training the error model on ${pool} ==="
-    ( cd "$nswork" && "$python" "${nanosimdir}/src/read_analysis.py" metagenome \
-        -q --fastq -gl "$genomes" -i "$pool" -t "$cpus" )
-
-    # Preserved before the sed below rewrites the header, and because NanoSim writes every run under
-    # the same `training_' prefix in one working directory: the cleanup at the end removes them.
-    for what in quantification error_rate; do
-      if [ -f "${nswork}/training_${what}.tsv" ]; then
-        cp "${nswork}/training_${what}.tsv" "${fastqdir}/${db}_${ns_key}_sim_${what}.tsv"
-        cp "${nswork}/training_${what}.tsv" "${basedir}/results/${db}_${ns_key}_${what}.tsv"
-      else
-        echo "  WARNING: no training_${what}.tsv for ${db}/${ns_key} - it is not preserved." >&2
-      fi
-    done
-
-    echo "=== ${db}: simulating ${reads} reads ==="
-    sed -i "s/Abundance/${reads}/g" "${nswork}/training_quantification.tsv"
-    ( cd "$nswork" && NANOSIM_NO_UNALIGNED=1 "$python" "${nanosimdir}/src/simulator.py" metagenome \
-        --seed 42 --fastq -gl "$genomes" -t "$cpus" -a training_quantification.tsv )
-    mv "${nswork}/simulated_sample0_aligned_reads.fastq" "$out"
-    rm -f "${nswork}"/training* "${nswork}/reference_metagenome.fasta" \
-          "${nswork}"/simulated_sample0_*
-    echo "OK    ${out}"
-  fi
-
-  # The alignment-derived error rate, as for the ticks: the quality strings of an ONT run say
-  # nothing, so this is the honest per-base figure and only the training could produce it.
-  ns_error=""
-  if [ -f "${fastqdir}/${db}_${ns_key}_sim_error_rate.tsv" ]; then
-    ns_error=$(awk '/[Ee]rror rate/ { for (i = 1; i <= NF; i++) if ($i ~ /^[0-9.]+%?$/) { gsub(/%/, "", $i); print $i; exit } }' \
-        "${fastqdir}/${db}_${ns_key}_sim_error_rate.tsv")
-  fi
-  record_simparams "$db" "$ns_key" "$out" "$ns_error" 1
-
-  cp "$genomes" "${basedir}/results/${db}_${ns_key}_genomes.tsv"
-  # One key, one file: this is what the accuracy run and the calibration are addressed by.
-  echo "${ns_key} $(basename "$out")" > "${fastqdir}/${db}_sim_${ns_key}.txt"
-  echo "Wrote ${fastqdir}/${db}_sim_${ns_key}.txt"
-}
-
 case "$what" in
   viral)         make_iss viral ;;
   protozoa)      make_iss protozoa ;;
-  strepto)       make_iss strepto; make_strepto_nanosim ;;
-  strepto-nanosim) make_strepto_nanosim ;;
+  strepto)       make_iss strepto ;;
   nocardia)      make_iss nocardia ;;
   tick-borne)    make_ticks ;;
   all)           make_iss_all_regimes viral; make_iss_all_regimes protozoa
                  make_iss_all_regimes strepto; make_iss_all_regimes nocardia
-                 make_ticks; make_strepto_nanosim ;;
-  *)             echo "Usage: $0 [viral|protozoa|strepto|strepto-nanosim|nocardia|tick-borne|all]" >&2; exit 1 ;;
+                 make_ticks ;;
+  *)             echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|all]" >&2; exit 1 ;;
 esac
 
 echo

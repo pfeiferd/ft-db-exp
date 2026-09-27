@@ -173,8 +173,8 @@ clear_previous_results() {
   for _cp_sc in $1; do
     rm -f "${res_path}"/perf_${_cp_sc}_*.log
   done
-  for _cp_spec in "a:viral:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne:seventicks.txt" \
-                  "c:tick-borne:seventicks.txt" "d:strepto:${SALIVA_MAP:-saliva_real.txt}"; do
+  for _cp_spec in "a:viral:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne:eightticks.txt" \
+                  "c:tick-borne:eightticks.txt" "d:strepto:${SALIVA_MAP:-saliva_real.txt}"; do
     case " $1 " in *" ${_cp_spec%%:*} "*) ;; *) continue ;; esac
     _cp_spec=${_cp_spec#*:}
     _cp_db=${_cp_spec%%:*}
@@ -205,10 +205,10 @@ case "$what" in
   a|all) run_per_file viral "${SALIVA_MAP:-saliva_real.txt}" a ;;
 esac
 case "$what" in
-  b|all) run_per_file tick-borne seventicks.txt b ;;
+  b|all) run_per_file tick-borne eightticks.txt b ;;
 esac
 case "$what" in
-  c|all) run_pair tick-borne seventicks.txt c_joint ;;
+  c|all) run_pair tick-borne eightticks.txt c_joint ;;
 esac
 case "$what" in
   d|all) run_per_file strepto "${SALIVA_MAP:-saliva_real.txt}" d ;;

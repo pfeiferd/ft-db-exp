@@ -196,11 +196,6 @@ with open(out, 'w', encoding='utf-8') as fh:
     # The average is weighted by |R'_g|, the observable subset each row is itself an average over.
     # Weighting by sample instead would let a sample with one such read count as much as one with
     # four thousand, and `strepto' has both.
-    #
-    # The three groups split the samples by what the reference standard says about the pneumococcus,
-    # which is the comparison the Streptococcus case study rests on. They need ground_truth.csv
-    # beside the CSVs; run_all_exps.sh copies it there with everything else. Without it the grouped
-    # macros are simply not emitted and the paper shows its marker.
     def specrows(path):
         out = []
         for r in rows(path):
@@ -258,31 +253,11 @@ with open(out, 'w', encoding='utf-8') as fh:
             n_emitted += 2
         return n_emitted
 
-    # Which samples name the pneumococcus, by culture and by the source study's own pipeline.
-    # Columns 6 and 7 of ground_truth.csv are the two tax ids; a sample may carry several rows.
-    culture, pipeline = set(), set()
-    # Filled from the summary CSV's own count further down, not decided here.
-    offwrong = set()
-    gtpath = os.path.join(results, 'ground_truth.csv')
-    if os.path.exists(gtpath):
-        with open(gtpath, encoding='utf-8') as gh:
-            for line in gh:
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                c = line.split(';')
-                if len(c) < 7:
-                    continue
-                if c[5].strip() == '1313':
-                    culture.add(c[0].strip())
-                if c[6].strip() == '1313':
-                    pipeline.add(c[0].strip())
-
     # (database, report key, macro tag). The tag keeps two collections of one database apart:
     # `strepto' is run on its clinical samples and on the saliva runs, and both write their figures
     # under the same database name. An empty tag is the collection the prose speaks of by default.
-    for db, key, tag in (('strepto', 'lri', ''), ('strepto', 'lrineg', 'neg'),
-                         ('strepto', 'saliva', 'saliva'), ('tick-borne', 'ticks', ''),
+
+    for db, key, tag in (('strepto', 'saliva', 'saliva'), ('tick-borne', 'ticks', ''),
                          ('viral', 'saliva', '')):
         path = os.path.join(results, '%s_%s_specificity.csv' % (db, key))
         allrows = rows(path)
@@ -304,87 +279,6 @@ with open(out, 'w', encoding='utf-8') as fh:
             emit(fh, 'rg', '%s/%sflat' % (db, tag), str(sum(1 for x in sel if x[3] == x[2])))
             emit(fh, 'rg', '%s/%sworse' % (db, tag), str(sum(1 for x in sel if x[3] < x[2])))
             entries += 4
-        if db == 'strepto' and key == 'lri' and culture:
-            entries += emitgroup(fh, db, 'cult', [x for x in sel if x[0] in culture])
-            entries += emitgroup(fh, db, 'pipe', [x for x in sel if x[0] not in culture and x[0] in pipeline])
-            entries += emitgroup(fh, db, 'none', [x for x in sel if x[0] not in culture and x[0] not in pipeline])
-
-    # Where a sample's evidence stops on the reference organism's lineage. The figures are NOT made
-    # here: TaxonCallReport writes them, one row per currency and variant, into
-    # <db>_<key>_taxoncallsummary.csv in the same pass that produced the per-sample rows. This only
-    # carries them across into macros, by column name, so that a table can name a value instead of
-    # counting rows. Bucketing, medians and sums belong next to the data they describe, and having
-    # them in one place is the difference between a figure that is wrong and two that disagree.
-    SUMMARY = (('samples', 'samples'), ('rootspecies', 'root species'),
-               ('species', 'species'), ('speciesmed', 'species median'),
-               ('fine', '2-10'), ('finemed', '2-10 median'),
-               ('mid', '11-50'), ('midmed', '11-50 median'),
-               ('coarse', '51-100'), ('coarsemed', '51-100 median'),
-               ('genus', 'above 100'), ('genusmed', 'above 100 median'),
-               ('none', 'off lineage'), ('mediantotal', 'median in-genus total'),
-               ('speciesbelowmed', 'median at or below species'),
-               ('maxladder', 'max ladder candidates'),
-               ('unplaced', 'unplaced'), ('contribnodes', 'contributing nodes'),
-               ('topsame', 'top calls unchanged'),
-               ('offnamed', 'off lineage named target'),
-               ('medianshareat', 'median share at'),
-               ('mediansharebelow', 'median share at or below'),
-               ('topnamed', 'names target'), ('topnamedlist', 'names target list'),
-               ('topmissed', 'misses target'), ('topmissedlist', 'misses target list'))
-
-    for db, key in (('strepto', 'lri'),):
-        summary = rows(os.path.join(results, '%s_%s_taxoncallsummary.csv' % (db, key)))
-        if not summary:
-            print('  no %s_%s_taxoncallsummary.csv in %s' % (db, key, results))
-            print('  -> rerun the `taxoncall\' goal; the nearest-node table shows its marker until then')
-            continue
-        emit(fh, 'nn', '%s/currencies' % db,
-             str(len({(r.get('currency') or '').strip() for r in summary if (r.get('currency') or '').strip()})))
-        entries += 1
-        # The node the refinement builds directly above the reference organism, and what it holds.
-        # A lookup in the refined dbinfo, which is where a node's stored k-mers are recorded; the
-        # classification report never sees them.
-        ftinfo = rows(os.path.join(results, db + '_ftdbinfo.csv'))
-        levels = []
-        for r in ftinfo:
-            try:
-                levels.append((int((r.get('level') or '').strip()), r))
-            except ValueError:
-                pass
-        target = next(((r.get('target') or '').strip() for r in summary if (r.get('target') or '').strip()), '')
-        at = next((i for i, (lv, r) in enumerate(levels)
-                   if target and (r.get('taxid') or '').strip() == target), None)
-        if at is not None:
-            lvl = levels[at][0]
-            par = next((i for i in range(at - 1, -1, -1) if levels[i][0] < lvl), None)
-            if par is not None:
-                plvl, prow = levels[par]
-                emit(fh, 'nn', '%s/parentkmers' % db, (prow.get('stored kmers') or '').strip())
-                entries += 1
-        for r in summary:
-            cur = (r.get('currency') or '').strip()
-            var = (r.get('variant') or '').strip()
-            if cur not in ('reads', 'kmers'):
-                continue
-            tag = '%s/%s/%s' % (db, cur, 'u' if var == 'unrefined' else 'f')
-            # See the column's own comment in TaxonCallReport: anything but zero and the paper's
-            # `correctly off lineage' heading is no longer a correct statement.
-            if (r.get('off lineage named target') or '0').strip() not in ('', '0'):
-                offwrong.add('%s/%s' % (cur, var))
-            for name, column in SUMMARY:
-                v = (r.get(column) or '').strip()
-                if not v:
-                    continue
-                # The three that describe the database rather than one row of it are emitted once,
-                # without the currency and variant in their key.
-                emit(fh, 'nn', '%s/%s' % (db if name in ('samples', 'rootspecies') else tag, name), v)
-                entries += 1
-
-if offwrong:
-    print('  WARNING: in %s the summary counts samples off the reference organism\'s lineage that the'
-          % ', '.join(sorted(offwrong)))
-    print("  reference standard names it for. The `correctly off lineage' column of the nearest-node")
-    print("  table is then no longer correct: rename it to `off the lineage' and say what changed.")
 
 print('wrote %s with %d entries' % (out, entries))
 if missing:

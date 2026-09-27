@@ -14,9 +14,8 @@
 # make_fastqs.sh tick-borne runs that itself for whatever is missing. Genestrip skips a file that is
 # already in place, so it is safe to repeat; about 3.2 GB in total.
 #
-# Not to be confused with seventicks.txt beside it, which maps the same runs to their local files for
-# *classifying* the real reads, as the first paper did, and leaves tick5 out because KrakenUniq hung
-# on it. This map declares all eight, since the simulation trains on each of them in turn.
+# Not to be confused with eightticks.txt beside it, which maps the same runs to their local files
+# for *classifying* the real reads. Both declare all eight runs.
 #
 # The URLs are NCBI's own SRA fastq endpoint, under the host the original genestrip-db-exp project
 # used for exactly these eight runs. It serves gzip, despite the URL not saying so, which is

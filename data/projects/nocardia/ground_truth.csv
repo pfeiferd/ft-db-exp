@@ -1,6 +1,7 @@
 # Per-sample reference standard for ENA study PRJEB34974, transcribed from Table S4 of
-#   Zhang Y, Ai J-W, Cui P, Zhang W-H, et al.: "Rapid Detection of Nocardia by Next-Generation
-#   Sequencing." Front Cell Infect Microbiol 2020;10:13.  (PMC7040243)
+#   Weng S-S, Zhang H-Y, Ai J-W, Gao Y, Liu Y-Y, Xu B, Zhang W-H: "Rapid Detection of Nocardia by
+#   Next-Generation Sequencing." Front Cell Infect Microbiol 2020;10:13, doi 10.3389/fcimb.2020.00013
+#   (PMC7040243). The author list was wrong here until 2026-09-27, checked against Europe PMC.
 #
 # WHAT KIND OF STANDARD THIS IS, and it is weaker than the one `strepto' has. The study sorts 85
 # samples into three disjoint groups, and only one of them is deposited:

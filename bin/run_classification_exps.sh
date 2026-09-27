@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|accuracy|perf|real|taxoncall|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|accuracy|perf|real|all]
 #
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
@@ -64,6 +64,10 @@ run_iss() {
     mapname="${db}_sim_saliva.txt"
     reportkey="iss_saliva"
     what="InSilicoSeq reads matched to the human saliva runs"
+  elif [ -n "${ERROR_MNGS:-}" ]; then
+    mapname="${db}_sim_mngs.txt"
+    reportkey="iss_mngs"
+    what="InSilicoSeq reads matched to the BGISEQ mNGS runs"
   else
     mapname="${db}_sim.txt"
     reportkey="iss"
@@ -164,24 +168,6 @@ run_real() {
   mvn exec:exec@specificity -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.project.calibration="${4:-}"
 }
 
-# $1 = database project, $2 = fastq map, $3 = report key, $4 = the taxid the vote is restricted to,
-# $5 = the reference organism the nearest-node columns are measured towards (optional)
-#
-# Names the taxon each sample's reads point at below one node, for both database variants, and holds
-# the answers against the per-sample reference standard in data/projects/<db>/ground_truth.csv. Where
-# run_real measures how much more specific the refined answers are without naming any of them, this
-# names them -- which is what a standard stated per sample rather than per read can be held against.
-run_taxoncall() {
-  map="${basedir}/data/fastq/$2"
-  if [ ! -f "$map" ]; then
-    echo "Missing ${map}." >&2
-    return 1
-  fi
-  echo "############ $1: taxon call (${3}) below ${4} ############"
-  mvn exec:exec@taxoncall -Dname="$1" -Dfqmap="$2" -Dreportkey="$3" -Dgs.taxoncall.root="$4" \
-      -Dgs.taxoncall.target="${5:-}"
-}
-
 # Wall time and maximum RAM of classifying the *real* reads, measured the same way as for the
 # simulated ones and for the same reason kept apart from the quality run above -- see the comment on
 # run_perf(). The log key distinguishes these from the simulated runs of the same database.
@@ -199,20 +185,6 @@ run_ticks() {
   fi
   echo "############ tick-borne: NanoSim reads, unrefined vs. refined ############"
   mvn exec:exec@accuracy -Dname=tick-borne -Dfqmap=ticks_sim.txt -Dreportkey=nanosim -Dsimulator=NANOSIM
-}
-
-# The one NanoSim set of `strepto'. Unlike the ticks, whose eight simulations each carry the name of
-# the sample they were trained on, this is a single file keyed `nanosim': it is trained on a
-# cross-section of all 83 runs of PRJEB30781, and SpecificityReport applies a one-row calibration to
-# every sample. See make_fastqs.sh for why one set rather than 83.
-run_strepto_nanosim() {
-  map="${basedir}/data/fastq/strepto_sim_nanosim.txt"
-  if [ ! -f "$map" ]; then
-    echo "Missing ${map} - run 'sh ./bin/make_fastqs.sh strepto-nanosim' first." >&2
-    return 1
-  fi
-  echo "############ strepto: NanoSim reads, unrefined vs. refined ############"
-  mvn exec:exec@accuracy -Dname=strepto -Dfqmap=strepto_sim_nanosim.txt -Dreportkey=nanosim -Dsimulator=NANOSIM
 }
 
 # Wall time and maximum RAM of classifying the same fastq files, once against the unrefined and
@@ -277,7 +249,7 @@ run_perf() {
 #
 # They must be copied here, inside the loop, rather than by a sweep at the end. Genestrip names them
 # after the fastq key, and the simulated and the real tick runs use the same keys tick1 .. tick8 from
-# two different maps (ticks_sim.txt and seventicks.txt), so the second run overwrites the first's
+# two different maps (ticks_sim.txt and eightticks.txt), so the second run overwrites the first's
 # files in the project folder -- and the `clean' target above deletes them outright. The log key,
 # which already keeps the two runs' performance logs apart, keeps their CSVs apart the same way.
 #
@@ -311,19 +283,11 @@ publish_match_results() {
 case "$what" in
   viral)        run_iss viral; run_perf viral viral_sim.txt ;;
   protozoa)     run_iss protozoa; run_perf protozoa protozoa_sim.txt ;;
-  strepto)      run_iss strepto; run_strepto_nanosim; run_perf strepto strepto_sim.txt ;;
+  strepto)      run_iss strepto; run_perf strepto strepto_sim.txt ;;
   # `nocardia' has real reads but they are few and very unevenly spread -- 29,175 Nocardia reads over
   # fourteen samples, of which two hold 82 per cent and one holds two. The simulated set is what
   # makes a calibration possible at all; the real one is read case by case, not averaged.
   nocardia)     run_iss nocardia; run_perf nocardia nocardia_sim.txt ;;
-  # A tool, not a measurement of the paper. A sputum sample carries a community of streptococci, so a
-  # rule that crowns one taxon per sample answers a question the material does not pose; the paper
-  # reports the per-read measure of `real' instead. Kept because it was needed to find that out.
-  taxoncall)    run_taxoncall strepto strepto_lri_real.txt lri 1301 1313
-                run_taxoncall strepto strepto_lri_neg.txt lrineg 1301 1313
-                # 1817 is Nocardia. No single target species: the cohort names six, so the
-                # nearest-node columns are left unmeasured and the ranked votes carry it.
-                run_taxoncall nocardia nocardia_mngs.txt mngs 1817 ;;
   tick-borne)   run_ticks; run_perf tick-borne ticks_sim.txt ;;
   # The saliva-matched simulations, one per database the real saliva runs are classified against.
   # Accuracy only: this set exists to calibrate those runs, its own performance is not reported, and
@@ -334,45 +298,42 @@ case "$what" in
                 ERROR_SALIVA=1
                 run_iss viral; run_iss strepto
                 ERROR_SALIVA=$_cl_saved ;;
+  # The same for `nocardia', whose real runs are BGISEQ-500 rather than saliva: one simulated set at
+  # their length and error, so that the estimate columns of the real-read table have a factor.
+  mngs)         _cl_saved=${ERROR_MNGS:-}
+                ERROR_MNGS=1
+                run_iss nocardia
+                ERROR_MNGS=$_cl_saved ;;
   accuracy)     run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
-                run_iss_all_regimes nocardia; run_ticks; run_strepto_nanosim ;;
-  # `strepto' runs on the saliva files as well as on its own clinical ones. Saliva is a
-  # streptococcal habitat -- the oral species of the mitis and salivarius groups are what a healthy
-  # mouth carries -- so the same five runs put a bacterial database of one genus beside the viral
-  # one on identical material, with the calibration taken from the saliva-matched simulation of that
-  # database rather than from its Nanopore one.
+                run_iss_all_regimes nocardia; run_ticks ;;
+  # `strepto' runs on the saliva files. Saliva is a streptococcal habitat -- the oral species of
+  # the mitis and salivarius groups are what a healthy mouth carries -- so the same five runs put a
+  # bacterial database of one genus beside the viral one on identical material, with the calibration
+  # taken from the saliva-matched simulation of that database. Its clinical runs are downloaded and
+  # still train the Nanopore simulation, but they are no longer classified for the paper.
   real)         run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
-                run_real tick-borne seventicks.txt ticks nanosim
-                run_real strepto strepto_lri_real.txt lri nanosim
-                run_real strepto strepto_lri_neg.txt lrineg nanosim
-                run_real nocardia nocardia_mngs.txt mngs
+                run_real tick-borne eightticks.txt ticks nanosim
+                run_real nocardia nocardia_mngs.txt mngs iss_mngs
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf strepto "${SALIVA_MAP:-saliva_real.txt}" saliva
-                run_real_perf tick-borne seventicks.txt ticks ;;
+                run_real_perf tick-borne eightticks.txt ticks ;;
   perf)         run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
                 run_perf tick-borne ticks_sim.txt
                 run_real_perf viral "${SALIVA_MAP:-saliva_real.txt}" saliva
                 run_real_perf strepto "${SALIVA_MAP:-saliva_real.txt}" saliva
-                run_real_perf tick-borne seventicks.txt ticks ;;
+                run_real_perf tick-borne eightticks.txt ticks ;;
   all)          run_iss_all_regimes viral; run_iss_all_regimes protozoa; run_iss_all_regimes strepto
-                run_iss_all_regimes nocardia; run_ticks; run_strepto_nanosim
+                run_iss_all_regimes nocardia; run_ticks
                 run_perf viral viral_sim.txt; run_perf protozoa protozoa_sim.txt
                 run_perf strepto strepto_sim.txt; run_perf nocardia nocardia_sim.txt
                 run_perf tick-borne ticks_sim.txt
                 run_real viral "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
-                run_real tick-borne seventicks.txt ticks nanosim
-                run_real strepto strepto_lri_real.txt lri nanosim
-                run_real strepto strepto_lri_neg.txt lrineg nanosim
-                run_real nocardia nocardia_mngs.txt mngs
-                # `taxoncall' stays out of `all' and out of `real': it names one taxon per sample,
-                # which is not a measure the paper reports. It is not optional any more, though --
-                # the paper typesets a table from its summary file -- so run_all_exps.sh has a step
-                # of its own for it. Run the target of that name if you are not running that script.
-                ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|accuracy|perf|real|taxoncall|all]" >&2; exit 1 ;;
+                run_real tick-borne eightticks.txt ticks nanosim
+                run_real nocardia nocardia_mngs.txt mngs iss_mngs ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 
 echo
