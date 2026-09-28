@@ -22,6 +22,13 @@
 # Writes results/perf_<scenario>_<key>_<goal>.log per measured run and results/matchperf.csv, which
 # Table "matchperf" of the paper reads.
 #
+# DB_SUFFIX runs the same four scenarios against differently named databases and keeps their results
+# apart: with DB_SUFFIX=-sa the scenarios classify against `viral-sa', `tick-borne-sa' and
+# `strepto-sa', and write perf_<scenario>sa_... logs and matchperf-sa.csv. That is how the k-mer store
+# comparison of bin/store_compare.sh measures the binary-search store without disturbing the
+# measurement of the default one. The scenario letters stay the same, so the two CSVs line up row by
+# row.
+#
 # THE MEASUREMENT IS THE POINT, so this script refuses to guess. A run whose log is missing or
 # unparseable leaves its cell empty rather than being averaged over the runs that did work.
 #
@@ -36,6 +43,11 @@ res_path="${RESULTS_DIR:-${basedir}/results}"
 mkdir -p "$res_path"
 
 what=${1:-all}
+
+# Appended to every project name below, empty by default. The log and CSV names take it too, with the
+# dash dropped, so a suffixed run writes perf_asa_... beside perf_a_... rather than over it.
+db_suffix=${DB_SUFFIX:-}
+key_suffix=$(echo "$db_suffix" | tr -d '-')
 
 # Number of reads sampled to establish the mean read length. Illumina reads are fixed length so any
 # sample will do; Nanopore lengths vary, and 100k reads settle the mean well within the precision
@@ -171,10 +183,10 @@ clear_previous_results() {
     return 0
   fi
   for _cp_sc in $1; do
-    rm -f "${res_path}"/perf_${_cp_sc}_*.log
+    rm -f "${res_path}"/perf_${_cp_sc}${key_suffix}_*.log
   done
-  for _cp_spec in "a:viral:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne:eightticks.txt" \
-                  "c:tick-borne:eightticks.txt" "d:strepto:${SALIVA_MAP:-saliva_real.txt}"; do
+  for _cp_spec in "a:viral${db_suffix}:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne${db_suffix}:eightticks.txt" \
+                  "c:tick-borne${db_suffix}:eightticks.txt" "d:strepto${db_suffix}:${SALIVA_MAP:-saliva_real.txt}"; do
     case " $1 " in *" ${_cp_spec%%:*} "*) ;; *) continue ;; esac
     _cp_spec=${_cp_spec#*:}
     _cp_db=${_cp_spec%%:*}
@@ -202,16 +214,16 @@ case "$what" in
 esac
 
 case "$what" in
-  a|all) run_per_file viral "${SALIVA_MAP:-saliva_real.txt}" a ;;
+  a|all) run_per_file "viral${db_suffix}" "${SALIVA_MAP:-saliva_real.txt}" "a${key_suffix}" ;;
 esac
 case "$what" in
-  b|all) run_per_file tick-borne eightticks.txt b ;;
+  b|all) run_per_file "tick-borne${db_suffix}" eightticks.txt "b${key_suffix}" ;;
 esac
 case "$what" in
-  c|all) run_pair tick-borne eightticks.txt c_joint ;;
+  c|all) run_pair "tick-borne${db_suffix}" eightticks.txt "c${key_suffix}_joint" ;;
 esac
 case "$what" in
-  d|all) run_per_file strepto "${SALIVA_MAP:-saliva_real.txt}" d ;;
+  d|all) run_per_file "strepto${db_suffix}" "${SALIVA_MAP:-saliva_real.txt}" "d${key_suffix}" ;;
 esac
 case "$what" in
   a|b|c|d|all|csv) ;;
@@ -238,11 +250,13 @@ esac
 # The read counts are taken from the evaluation's own CSVs rather than recounted here: they are
 # exact, already written, and counting a 139 GB fastq again to reproduce them would cost an hour.
 
-python3 - "$res_path" "$fastqdir" "$bp_sample_reads" <<'PY'
+python3 - "$res_path" "$fastqdir" "$bp_sample_reads" "$key_suffix" "$db_suffix" <<'PY'
 import csv
 import glob, os, re, subprocess, sys
 
 res, fastqdir, bp_sample = sys.argv[1], sys.argv[2], int(sys.argv[3])
+# The scenario letters stay a, b, c, d in the table; the logs of a suffixed run carry the suffix.
+key_suffix, db_suffix = sys.argv[4], sys.argv[5]
 
 def keys_of(res, scenario):
     pat = re.compile(r'^perf_' + re.escape(scenario) + r'_(.+)_match\.log$')
@@ -315,23 +329,13 @@ def per_file(scenario, label):
     n = [reads.get(k) for k in keys]
     missing = [k for k, x in zip(keys, n) if not x]
     n = [x for x in n if x]
-    lens = [mean_read_length(k) for k in keys]
-    lens = [x for x in lens if x]
-    # An average over some of the runs must not be printed as the average over all of them. The read
-    # counts come from the evaluation's CSVs, and a run measured here whose classification was never
-    # evaluated has none -- which is why the speed below is left out in that case too. Say which.
+    # The read counts are not reported here any more -- the paper's table of the real data carries
+    # them -- but they still divide the wall time into a speed, so a run whose classification was
+    # never evaluated has none and the speed is left out rather than averaged over the rest. Say which.
     if missing:
-        print('  %s: no read count for %s - its rows over the files stay empty'
+        print('  %s: no read count for %s - its speed is left out'
               % (label, ', '.join(missing)), file=sys.stderr)
         n = []
-    if n:
-        if scenario == 'b':
-            rows.append((label, 'Min. reads per fastq file', fmt(min(n)), fmt(min(n))))
-            rows.append((label, 'Max. reads per fastq file', fmt(max(n)), fmt(max(n))))
-        rows.append((label, 'Avg. reads per fastq file', fmt(sum(n) / len(n)), fmt(sum(n) / len(n))))
-    if lens:
-        rows.append((label, 'Avg. BPs per read',
-                     fmt(sum(lens) / len(lens)), fmt(sum(lens) / len(lens))))
     cells = {}
     for goal, col in (('match', 0), ('ftmatch', 1)):
         got = [measurement(os.path.join(res, 'perf_%s_%s_%s.log' % (scenario, k, goal)))
@@ -354,7 +358,7 @@ def per_file(scenario, label):
 def joint(label):
     got = {}
     for goal, col in (('match', 0), ('ftmatch', 1)):
-        g = measurement(os.path.join(res, 'perf_c_joint_%s.log' % goal))
+        g = measurement(os.path.join(res, 'perf_c%s_joint_%s.log' % (key_suffix, goal)))
         if g:
             got[col] = g
     if not got:
@@ -372,12 +376,12 @@ def joint(label):
 
 # Short labels: the scenario column repeats on every row, so it has to stay narrow. What each of
 # them is belongs in the caption, where it is stated once.
-per_file('a', '(a)')
-per_file('b', '(b)')
+per_file('a' + key_suffix, '(a)')
+per_file('b' + key_suffix, '(b)')
 joint('(c)')
-per_file('d', '(d)')
+per_file('d' + key_suffix, '(d)')
 
-out = os.path.join(res, 'matchperf.csv')
+out = os.path.join(res, 'matchperf%s.csv' % db_suffix)
 # A header alone is worse than no file at all: the paper's \perfrows prints its "---" fallback only
 # when the file is absent, so an empty one would typeset a table with no rows and no marker. Refuse
 # to write it, and leave whatever is there -- a run that measured nothing must not erase one that did.

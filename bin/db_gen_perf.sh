@@ -30,9 +30,11 @@ cd $scriptdir/..
 
 mkdir -p results
 
-res_path=./results
-csv=${res_path}/db_gen_perf.csv
-sizes=${res_path}/db_disk_sizes.csv
+res_path=${RESULTS_DIR:-./results}
+# CSV_SUFFIX keeps a second batch of the same projects apart from the first, which is what the
+# store comparison of bin/store_compare.sh needs: same projects, another k-mer store, its own CSV.
+csv=${res_path}/db_gen_perf${CSV_SUFFIX:-}.csv
+sizes=${res_path}/db_disk_sizes${CSV_SUFFIX:-}.csv
 
 if [ $# -gt 0 ]; then
     projects="$@"
