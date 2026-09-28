@@ -38,6 +38,14 @@ else
   restricted=""
 fi
 
+# DB_ONLY stops after the databases themselves, i.e. after `db', `ftdb' and their two info goals. It
+# exists for the `-sa' twins of bin/store_compare.sh: they hold the same k-mers under the same
+# taxonomy as the originals and differ in the k-mer store alone, so every report over the store's
+# contents -- branchhistocsv, dbquality, ftquality and the rank statistics -- would spend hours
+# recomputing figures that must come out identical. The disk sizes and the generation timings are
+# still gathered, since those are what the comparison is about.
+db_only=${DB_ONLY:-}
+
 # True if project $1 is among the ones to work on.
 wanted() {
   case " ${projects} " in
@@ -162,6 +170,10 @@ for db in $projects;
     mvn exec:exec@db -Dname=$db -Dgoal=ftdbinfo
   done
 
+if [ -n "$db_only" ]; then
+  echo "### DB_ONLY is set - skipping the reports over the databases' contents"
+else
+
 # Now that the DBs are built:
 # Stats for figures in "Introduction" section
 for db in viral tick-borne protozoa; do
@@ -201,6 +213,8 @@ for db in $projects;
     mvn exec:exec@db -Dname=$db -Dgoal=ftquality
   done
 
+fi
+
 find "data" -type f \( -name "*.csv" -o -name "*.svg" -o -name "*.tex" \) | while read -r file; do
 	target="$res_path/$(basename "$file")"
 	if [ -e "$target" ]; then
@@ -227,5 +241,9 @@ done
 # LaTeX macros. It runs last and reads what the copy loop above has just placed in ${res_path}, so
 # dbstats.tex can never describe a different set of CSVs than the ones beside it -- which is the
 # whole point of generating it rather than copying the numbers by hand.
-./bin/paper_stats.sh "$res_path"
+if [ -n "$db_only" ]; then
+  echo "### DB_ONLY is set - not regenerating dbstats.tex, which describes the reported databases"
+else
+  ./bin/paper_stats.sh "$res_path"
+fi
 

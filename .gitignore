@@ -7,12 +7,18 @@
 # Per-accession FASTA files written by `extractrefseqcsv' (through the goal extractrefseqfasta).
 /data/projects/*/fasta/
 
+# The `-sa' twin of a project, which bin/sa_projects.sh writes from the original: symlinks to its
+# inputs and a config.properties generated from the original's, plus `sortedArrayStore=true'. Nothing
+# in there is maintained by hand, and checking it in would be a second copy of a configuration that
+# has to stay identical.
+/data/projects/*-sa/
+
 # Simulated and downloaded reads, together with the fastq mapping files that make_fastqs.sh writes
 # next to them. Those maps are generated from the reads they point at and hold absolute paths, so
 # they are valid only on the machine that produced them.
 /data/fastq/*
 # The accession list of the real Nanopore tick runs is input, not generated.
-!/data/fastq/seventicks.txt
+!/data/fastq/eightticks.txt
 # So is the map that declares those runs by URL for the goal `fastqdownload'. It holds URLs rather
 # than absolute paths, so unlike the generated maps above it is valid on any machine.
 !/data/fastq/ticks_real.txt
