@@ -16,8 +16,11 @@ import org.metagene.genestrip.tax.Rank;
 import org.metagene.genestrip.tax.SmallTaxTree;
 import org.metagene.genestrip.tax.TaxTree;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -168,7 +171,8 @@ public class AccuracyEvaluator {
                     // establish a happens-before edge covering everything the consumer did first,
                     // and afterKey() runs on that same producer thread. Should the reader ever stop
                     // handing entries back through `pooled', this reasoning has to be redone.
-                    record(localTally.get(), entry, dbTree, candidates, effectiveScope, baseline,
+                    record(localTally.get(), entry.readDescriptor, entry.readDescriptorSize,
+                            entry.classNode, dbTree, candidates, effectiveScope, baseline,
                             obsBaseline, collectBaseline, groundTruthFree);
                 }
 
@@ -235,14 +239,117 @@ public class AccuracyEvaluator {
      * @param candidates the candidate species counter for that taxonomy
      * @param scope      the scope restricting which reads count towards recall, may be {@code null}
      */
-    private void record(AccuracyTally tally, FastqKMerMatcher.MatcherReadEntry entry, SmallTaxTree dbTree,
+    /**
+     * Scores the output of an external classifier with the measures of this evaluator, on the very
+     * reads and against the very taxonomy the Genestrip runs were scored on.
+     * <p>
+     * The file is a Kraken-style per-read output: one line per read, the first three
+     * tab-separated fields being {@code C} or {@code U}, the read identifier and the assigned tax
+     * id. Kraken 2 and KrakenUniq both write it. The tax id is looked up in the <em>database's</em>
+     * taxonomy rather than in the NCBI one, exactly as a Genestrip classification is, so that the
+     * candidate counts behind {@code prec cand} mean the same thing for both. A tool cannot assign
+     * outside that tree by construction: it is built from the same sequences, and the least common
+     * ancestor of two of them is an ancestor of both, which the database's taxonomy extract holds.
+     * Should a tax id nevertheless be missing -- a taxonomy newer than the database is the way that
+     * happens -- the nearest ancestor that is present is taken and the case is counted and reported.
+     * <p>
+     * The baselines are consulted, never collected: the genus-only subsets belong to the unrefined
+     * Genestrip run, and scoring another classifier on a subset of its own would compare two
+     * different sets of reads.
+     *
+     * @param db            the name of the database project
+     * @param fqMapFile     the fastq mapping file the Genestrip runs used, so that the files come in
+     *                      the same order as the baselines expect
+     * @param loadDbGoalKey the goal loading the database whose taxonomy supplies the candidate counts
+     * @param scope         restricts the reads counting towards recall, or {@code null} for the
+     *                      database's own taxonomy
+     * @param baseline      the genus-only subset of the unrefined run, consulted per read
+     * @param obsBaseline   its observable counterpart
+     * @param outputs       the classifier's output file per fastq key
+     * @return the tallies keyed by fastq key, in the order of the mapping file
+     * @throws IOException if the database, the mapping file or an output file cannot be read
+     */
+    public Map<String, AccuracyTally> evaluateExternal(String db, String fqMapFile, GoalKey loadDbGoalKey,
+                                                       SmallTaxTree scope, GenusOnlyBaseline baseline,
+                                                       GenusOnlyBaseline obsBaseline,
+                                                       Map<String, File> outputs) throws IOException {
+        if (groundTruth == null) {
+            groundTruth = simulator.groundTruth(taxTree, extractedTaxIds);
+        }
+        FTProject project = newProject(db, fqMapFile);
+        FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
+        Map<String, AccuracyTally> result = new LinkedHashMap<String, AccuracyTally>();
+        try {
+            @SuppressWarnings("unchecked")
+            ObjectGoal<Database, FTProject> dbGoal =
+                    (ObjectGoal<Database, FTProject>) maker.getGoal(loadDbGoalKey);
+            SmallTaxTree dbTree = dbGoal.get().getTaxTree();
+            SpeciesCandidates candidates = new SpeciesCandidates();
+            SmallTaxTree effectiveScope = scope != null ? scope : dbTree;
+
+            for (Map.Entry<String, File> e : outputs.entrySet()) {
+                String fastqKey = e.getKey();
+                AccuracyTally tally = new AccuracyTally();
+                long lifted = 0;
+                long known = 0;
+                try (BufferedReader in = new BufferedReader(new InputStreamReader(
+                        new FileInputStream(e.getValue()), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = in.readLine()) != null) {
+                        if (line.isEmpty()) {
+                            continue;
+                        }
+                        String[] cells = line.split("\t", -1);
+                        if (cells.length < 3) {
+                            continue;
+                        }
+                        byte[] descriptor = cells[1].getBytes(StandardCharsets.UTF_8);
+                        SmallTaxTree.SmallTaxIdNode classNode = null;
+                        if ("C".equals(cells[0])) {
+                            classNode = dbTree.getNodeByTaxId(cells[2]);
+                            if (classNode == null) {
+                                TaxTree.TaxIdNode ncbi = taxTree.getNodeByTaxId(cells[2]);
+                                for (; ncbi != null && classNode == null; ncbi = ncbi.getParent()) {
+                                    classNode = dbTree.getNodeByTaxId(ncbi.getTaxId());
+                                }
+                                if (classNode != null) {
+                                    lifted++;
+                                }
+                            }
+                            if (classNode != null) {
+                                known++;
+                            }
+                        }
+                        record(tally, descriptor, descriptor.length, classNode, dbTree, candidates,
+                                effectiveScope, baseline, obsBaseline, false, false);
+                    }
+                }
+                if (lifted > 0) {
+                    System.out.println("  " + fastqKey + ": " + lifted + " of " + known
+                            + " assignments named a taxon the database's taxonomy does not hold;"
+                            + " the nearest ancestor it holds was taken.");
+                }
+                baseline.endConsulting(fastqKey);
+                obsBaseline.endConsulting(fastqKey);
+                warnIfUnresolved(fastqKey, tally);
+                result.put(fastqKey, tally);
+            }
+        } finally {
+            maker.dumpAll();
+        }
+        return result;
+    }
+
+    private void record(AccuracyTally tally, byte[] readDescriptor, int readDescriptorSize,
+                        SmallTaxTree.SmallTaxIdNode classNode, SmallTaxTree dbTree,
                         SpeciesCandidates candidates, SmallTaxTree scope, GenusOnlyBaseline baseline,
                         GenusOnlyBaseline obsBaseline, boolean collectBaseline, boolean groundTruthFree) {
         if (groundTruthFree) {
-            recordWithoutGroundTruth(tally, entry, candidates, obsBaseline, collectBaseline);
+            recordWithoutGroundTruth(tally, readDescriptor, readDescriptorSize, classNode, candidates,
+                    obsBaseline, collectBaseline);
             return;
         }
-        TaxTree.TaxIdNode trueNode = groundTruth.resolve(entry.readDescriptor, entry.readDescriptorSize);
+        TaxTree.TaxIdNode trueNode = groundTruth.resolve(readDescriptor, readDescriptorSize);
         if (trueNode == null) {
             tally.recordUnresolved();
             return;
@@ -251,7 +358,6 @@ public class AccuracyEvaluator {
         // taxonomy: a database contains synthetic nodes - the data nodes and, after a refinement,
         // the refined ones - whose tax ids do not exist in NCBI at all. Looking those up in the NCBI
         // tree yields nothing and would silently drop every read classified to one of them.
-        SmallTaxTree.SmallTaxIdNode classNode = entry.classNode;
         if (inScope(trueNode, scope)) {
             SmallTaxTree.SmallTaxIdNode trueInDb = inDbTree(trueNode, dbTree);
             Rank lcaRank = classNode == null || trueInDb == null
@@ -267,7 +373,7 @@ public class AccuracyEvaluator {
             boolean genusOnly = false;
             boolean obsGenusOnly = false;
             if (baseline != null) {
-                String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
+                String descriptor = new String(readDescriptor, 0, readDescriptorSize,
                         StandardCharsets.UTF_8);
                 if (collectBaseline) {
                     // R_g: correct down to the genus but no further, the refinement's only
@@ -314,13 +420,13 @@ public class AccuracyEvaluator {
      * @param obsBaseline     the observable genus-only subset, filled by the unrefined run
      * @param collectBaseline whether this run fills that subset or consults it
      */
-    private void recordWithoutGroundTruth(AccuracyTally tally, FastqKMerMatcher.MatcherReadEntry entry,
+    private void recordWithoutGroundTruth(AccuracyTally tally, byte[] readDescriptor, int readDescriptorSize,
+                                          SmallTaxTree.SmallTaxIdNode classNode,
                                           SpeciesCandidates candidates, GenusOnlyBaseline obsBaseline,
                                           boolean collectBaseline) {
-        SmallTaxTree.SmallTaxIdNode classNode = entry.classNode;
         double ungatedScore = classNode != null ? candidates.weightFor(classNode) : 0;
         boolean obsGenusOnly;
-        String descriptor = new String(entry.readDescriptor, 0, entry.readDescriptorSize,
+        String descriptor = new String(readDescriptor, 0, readDescriptorSize,
                 StandardCharsets.UTF_8);
         if (collectBaseline) {
             obsGenusOnly = isGenusOnlyNode(classNode);

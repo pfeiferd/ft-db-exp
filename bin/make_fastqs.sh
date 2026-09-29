@@ -32,6 +32,7 @@
 #   ERROR_NANOPORE_LONG=1 sh ./bin/make_fastqs.sh protozoa # ... at 3,926 bp, 200k reads
 #   ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral   # matched to the real human saliva runs, see below
 #   ERROR_MNGS=1 sh ./bin/make_fastqs.sh nocardia  # matched to the real BGISEQ mNGS runs, see below
+#   PERFECT_READ_LENGTH=125 ERROR_FREE=1 sh ./bin/make_fastqs.sh viral   # ... at InSilicoSeq's own length
 #
 # A single project follows the error-regime variables; `all' ignores them and generates the two
 # Illumina sets and the error-free one of every InSilicoSeq project, which is what the paper reports.
@@ -42,7 +43,9 @@
 # that. They remain available for a quick check of how the classification behaves at a high error
 # rate or a long read length, where training a NanoSim model would be disproportionate.
 #
-# ERROR_FREE uses InSilicoSeq's "perfect" mode, which fragments the genomes into reads of realistic
+# ERROR_FREE uses InSilicoSeq's "perfect" mode at 301 bp, the length of the "MiSeq" model, so that
+# the two differ in the sequencing error alone. See the comment at the call for why the length and
+# not only the error matters. ERROR_FREE fragments the genomes into reads of realistic
 # length but introduces no sequencing errors at all. The resulting figures are an upper bound: they
 # show what the refinement achieves when nothing but the taxonomy limits the classification, which
 # separates the effect of the refinement from the effect of read errors.
@@ -353,6 +356,14 @@ make_iss() {
     echo "=== ${db}: generating ${model_reads} ${model} reads ==="
     if [ "$model" = perfect ]; then
       # No error model at all: the reads differ from the reference only by where they were cut.
+      #
+      # The length is 301 bp, the length of "MiSeq", and not InSilicoSeq's own 125. At 125 the
+      # error-free set has the shortest reads of the four, and a shorter read carries fewer k-mers
+      # and resolves worse -- so it scored below a set *with* errors, for a reason that had nothing
+      # to do with errors. At one length the two differ in the error alone, which is what the
+      # error-free set is there to isolate. PERFECT_READ_LENGTH overrides it; the patch
+      # install_tools.sh applies is what lets the length be set at all.
+      ISS_PERFECT_READ_LENGTH=${PERFECT_READ_LENGTH:-301} \
       "$iss" generate --genomes "$genomes" --mode perfect --n_reads "$model_reads" \
         --cpus "$cpus" --compress --output "$prefix"
     elif [ "$model" = nanopore ] || [ "$model" = nanoporelong ] || [ "$model" = saliva ] \

@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|accuracy|perf|real|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|accuracy|perf|real|all]
 #
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
@@ -298,6 +298,13 @@ case "$what" in
                 ERROR_SALIVA=1
                 run_iss viral; run_iss strepto
                 ERROR_SALIVA=$_cl_saved ;;
+  # Kraken 2 and KrakenUniq on the same four simulated sets of `viral', which is the one database
+  # another tool can be given the same scope. Their per-read output lands in results/kraken, and the
+  # next `accuracy' run for `viral' picks it up by itself: RefinementAccuracyReport scores whatever
+  # it finds there on the very reads of the unrefined Genestrip run. So the order matters -- build
+  # and classify first, evaluate after.
+  kraken)       sh ./bin/kraken_build.sh all
+                sh ./bin/kraken_classify.sh all ;;
   # The same for `nocardia', whose real runs are BGISEQ-500 rather than saliva: one simulated set at
   # their length and error, so that the estimate columns of the real-read table have a factor.
   mngs)         _cl_saved=${ERROR_MNGS:-}
@@ -333,7 +340,7 @@ case "$what" in
                 run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne eightticks.txt ticks nanosim
                 run_real nocardia nocardia_mngs.txt mngs iss_mngs ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|accuracy|perf|real|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 
 echo

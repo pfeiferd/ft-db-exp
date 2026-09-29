@@ -6,6 +6,8 @@
 #   cgmemtime      measures wall time and peak RAM of the database generation
 #   InSilicoSeq    simulates the Illumina reads for the viral experiments
 #   NanoSim        simulates the Nanopore reads for the tick-borne experiments
+#   Kraken 2       the classifier the viral database is compared against
+#   KrakenUniq     the second one, as in the first study on Genestrip
 #
 # Nothing is needed here for the real sequencing runs: fetch_saliva.sh and ticks_real.txt both pull
 # gzipped fastq files straight over HTTPS with curl, which every machine already has. sra-toolkit
@@ -33,7 +35,7 @@ toolsdir="${basedir}/tools"
 bindir="${toolsdir}/bin"
 mkdir -p "$toolsdir" "$bindir"
 
-echo "############ 1/4  Distribution packages ############"
+echo "############ 1/6  Distribution packages ############"
 # minimap2 and LAST align reads during NanoSim's training, samtools and genometools handle the
 # sequences. python3-dev supplies the headers pybedtools compiles its C extension against, bedtools
 # the binary it drives. All of this is what the conda recipe would have pulled from bioconda.
@@ -46,7 +48,7 @@ echo "  samtools:    $(samtools --version 2>&1 | head -1)"
 echo "  lastal:      $(lastal --version 2>&1 | head -1)"
 echo "  genometools: $(gt --version 2>&1 | head -1)"
 
-echo "############ 2/4  cgmemtime ############"
+echo "############ 2/6  cgmemtime ############"
 if [ -x "${toolsdir}/cgmemtime/cgmemtime" ]; then
   echo "  already built"
 else
@@ -62,7 +64,7 @@ else
   echo "  built ${toolsdir}/cgmemtime/cgmemtime"
 fi
 
-echo "############ 3/4  InSilicoSeq ############"
+echo "############ 3/6  InSilicoSeq ############"
 issvenv="${toolsdir}/iss-venv"
 # A venv records absolute paths, so a moved or renamed one is broken even though its files look
 # fine. Test that iss actually runs rather than that the file exists.
@@ -122,7 +124,35 @@ open(path, 'w', encoding='utf-8').write(src)
 PATCH
 fi
 
-echo "############ 4/4  NanoSim ############"
+# The `perfect' model hardcodes a read length of 125 as well, and there its consequence is easy to
+# misread: the error-free set then has the shortest reads of the four, so it can score below "MiSeq"
+# at 301 bp even though it carries no errors at all. A longer read holds more k-mers and thus more
+# chances at a distinctive one, and that outweighs the errors. ISS_PERFECT_READ_LENGTH makes the
+# length configurable so that error-free and "MiSeq" can be compared at one and the same length,
+# leaving the error as the only difference between them. The insert size follows unless it is set
+# too: a fragment shorter than the read would truncate every pair.
+perfectmodel=$(ls -d "${issvenv}"/lib/python*/site-packages/iss/error_models/perfect.py 2>/dev/null | head -1)
+if [ -n "$perfectmodel" ] && ! grep -q "ISS_PERFECT_READ_LENGTH" "$perfectmodel"; then
+  echo "  patching InSilicoSeq: making the perfect model's read length configurable"
+  python3 - "$perfectmodel" <<'PATCH'
+import sys
+path = sys.argv[1]
+src = open(path, encoding='utf-8').read()
+src = src.replace(
+    "        self.read_length = 125",
+    '        self.read_length = int(os.environ.get("ISS_PERFECT_READ_LENGTH", "125"))', 1)
+src = src.replace(
+    "        self.insert_size = 200",
+    '        self.insert_size = int(os.environ.get("ISS_PERFECT_INSERT_SIZE",\n'
+    '                                              str(max(200, 2 * self.read_length))))', 1)
+if "import os" not in src:
+    src = src.replace("from iss.error_models import ErrorModel",
+                      "import os\n\nfrom iss.error_models import ErrorModel", 1)
+open(path, 'w', encoding='utf-8').write(src)
+PATCH
+fi
+
+echo "############ 4/6  NanoSim ############"
 nsvenv="${toolsdir}/nanosim-venv"
 nanosimdir="${toolsdir}/NanoSim"
 
@@ -226,6 +256,38 @@ if [ -n "${MINIMAP2_INDEX_SIZE:-}" ]; then
     echo "  patched read_analysis.py with -I ${MINIMAP2_INDEX_SIZE}"
   fi
 fi
+# Both Kraken tools are built from source into ./tools, each with the install script it ships. They
+# are needed only for the comparison of bin/kraken_build.sh and bin/kraken_classify.sh, and nothing
+# else in this project depends on them -- a machine that skips them can still run every experiment
+# the paper's tables rest on.
+echo "############ 5/6  Kraken 2 ############"
+k2dir="${toolsdir}/kraken2"
+if [ -x "${k2dir}/bin/kraken2" ]; then
+  echo "  SKIP  ${k2dir}/bin/kraken2 exists"
+else
+  tmp=$(mktemp -d)
+  curl -sSL "https://codeload.github.com/DerrickWood/kraken2/tar.gz/refs/heads/master" \
+    | tar -xz -C "$tmp" --strip-components=1
+  mkdir -p "${k2dir}/bin"
+  ( cd "$tmp" && ./install_kraken2.sh "${k2dir}/bin" >/dev/null )
+  rm -rf "$tmp"
+  echo "  built ${k2dir}/bin/kraken2"
+fi
+
+echo "############ 6/6  KrakenUniq ############"
+kudir="${toolsdir}/krakenuniq"
+if [ -x "${kudir}/bin/krakenuniq" ]; then
+  echo "  SKIP  ${kudir}/bin/krakenuniq exists"
+else
+  tmp=$(mktemp -d)
+  curl -sSL "https://codeload.github.com/fbreitwieser/krakenuniq/tar.gz/refs/heads/master" \
+    | tar -xz -C "$tmp" --strip-components=1
+  mkdir -p "${kudir}/bin"
+  ( cd "$tmp" && ./install_krakenuniq.sh -j "${kudir}/bin" >/dev/null )
+  rm -rf "$tmp"
+  echo "  built ${kudir}/bin/krakenuniq"
+fi
+
 echo "############ Smoke test ############"
 export PATH="${bindir}:${PATH}"
 for script in simulator read_analysis; do
@@ -239,5 +301,13 @@ for script in simulator read_analysis; do
   fi
 done
 echo "  OK  iss: $("${issvenv}/bin/iss" --version 2>&1 | head -1)"
+for _t in "${toolsdir}/kraken2/bin/kraken2:Kraken 2" "${toolsdir}/krakenuniq/bin/krakenuniq:KrakenUniq"; do
+  _bin=${_t%%:*}
+  if [ -x "$_bin" ]; then
+    echo "  OK  $(basename "$_bin"): $("$_bin" --version 2>&1 | head -1)"
+  else
+    echo "  ---  ${_t#*:} not installed; only the comparison of bin/kraken_*.sh needs it."
+  fi
+done
 echo
 echo "All tools installed below ${toolsdir}. Next: sh ./bin/make_fastqs.sh"

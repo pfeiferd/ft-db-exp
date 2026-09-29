@@ -50,6 +50,25 @@ cd "$scriptdir/.."
 what=${1:-}
 projects=${SA_PROJECTS:-viral tick-borne strepto}
 
+# The store switch lives in Genestrip, not here: `sortedArrayStore' is a GSConfigKey of its core
+# module, and this project resolves that module from the local Maven repository. An installed jar
+# without the key makes every twin fail on its first goal -- data/config.properties sets
+# strictConfigCheck=true, so an unknown key is an error rather than a warning -- and the fix is a
+# `mvn install' in the genestrip checkout. Saying so here beats reading it from a stack trace.
+check_store_switch() {
+  _cs_jar=$(ls "$HOME"/.m2/repository/org/genestrip/core/*/core-*.jar 2>/dev/null | grep -v sources | tail -1)
+  if [ -z "$_cs_jar" ]; then
+    echo "WARNING: no genestrip core jar in the local Maven repository - run 'mvn install' there." >&2
+    return 0
+  fi
+  if ! unzip -p "$_cs_jar" org/metagene/genestrip/GSConfigKey.class 2>/dev/null \
+       | strings | grep -q sortedArrayStore; then
+    echo "WARNING: ${_cs_jar} does not know the config key 'sortedArrayStore'." >&2
+    echo "         The twins would fail on their first goal. Run 'mvn install' in the genestrip" >&2
+    echo "         checkout first, so that this project resolves a core module that has it." >&2
+  fi
+}
+
 if [ -z "$what" ]; then
   echo "Usage: $0 [projects|build|perf|all]" >&2
   echo "  No default: 'all' builds three databases in both variants and measures them, which takes" >&2
@@ -62,6 +81,10 @@ twins=""
 for p in $projects; do
   twins="${twins} ${p}-sa"
 done
+
+case "$what" in
+  build|all) check_store_switch ;;
+esac
 
 case "$what" in
   projects|all)

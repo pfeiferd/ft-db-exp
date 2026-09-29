@@ -27,6 +27,12 @@ import java.util.Map;
  * refinement alone.
  */
 public class RefinementAccuracyReport {
+    /**
+     * The external classifiers whose per-read output is picked up from {@code results/kraken} if it
+     * is there. The names are the ones bin/kraken_classify.sh writes into the file names.
+     */
+    private static final String[] EXTERNAL_TOOLS = { "k2", "ku" };
+
     /** The database variants compared, in the order they appear in the report. */
     public enum Variant {
         /** The database as produced by the LCA update, i.e. before any refinement. */
@@ -139,8 +145,76 @@ public class RefinementAccuracyReport {
         writeSummary(resultsDir, db, reportKey, byVariant);
         writeQuality(resultsDir, db, reportKey, byVariant);
         writeSimdata(resultsDir, db, reportKey, byVariant);
+        writeExternal(db, fqMapFile, reportKey, scope, baseline, obsBaseline,
+                byVariant.get(Variant.UNREFINED));
         System.out.println("Wrote " + file);
         return file;
+    }
+
+    /**
+     * Scores whatever external classifier left its per-read output under {@code results/kraken} and
+     * writes it in the layout of this report's own CSVs, with the columns of the refined variant
+     * left empty: an external tool has no refined counterpart, and pretending otherwise would put a
+     * number where there is none.
+     * <p>
+     * Runs inside {@link #write} on purpose. The genus-only subsets live in memory and belong to the
+     * unrefined Genestrip run, so this is the one place where another classifier can be scored on
+     * exactly those reads.
+     *
+     * @param db          the name of the database project
+     * @param fqMapFile   the fastq mapping file the runs above used
+     * @param reportKey   the key the result files are named after
+     * @param scope       the scope passed to the runs above
+     * @param baseline    the genus-only subset of the unrefined run
+     * @param obsBaseline its observable counterpart
+     * @param unrefined   the tallies of the unrefined run, for the sanity check below
+     * @throws IOException if an output file cannot be read or a CSV cannot be written
+     */
+    private void writeExternal(String db, String fqMapFile, String reportKey, SmallTaxTree scope,
+                               GenusOnlyBaseline baseline, GenusOnlyBaseline obsBaseline,
+                               Map<String, AccuracyTally> unrefined) throws IOException {
+        File krakenDir = new File(resultsDir, "kraken");
+        if (!krakenDir.isDirectory()) {
+            return;
+        }
+        for (String tool : EXTERNAL_TOOLS) {
+            Map<String, File> outputs = new LinkedHashMap<String, File>();
+            for (String fastqKey : unrefined.keySet()) {
+                File out = new File(krakenDir, db + "_" + tool + "_" + fastqKey + ".tsv");
+                if (out.isFile()) {
+                    outputs.put(fastqKey, out);
+                }
+            }
+            if (outputs.isEmpty()) {
+                continue;
+            }
+            if (outputs.size() != unrefined.size()) {
+                // A partial set would be scored against baselines whose cursor expects every file in
+                // the order of the mapping file, and the subsets would silently belong to the wrong
+                // reads. Saying so beats writing a CSV nobody can trust.
+                throw new IOException("Only " + outputs.size() + " of " + unrefined.size()
+                        + " read sets have a " + tool + " output under " + krakenDir
+                        + ". Classify them all or none.");
+            }
+            System.out.println("Evaluating " + tool + " on " + fqMapFile);
+            baseline.rewind();
+            obsBaseline.rewind();
+            Map<String, AccuracyTally> tallies = evaluator.evaluateExternal(db, fqMapFile,
+                    Variant.UNREFINED.getLoadDbGoalKey(), scope, baseline, obsBaseline, outputs);
+            for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
+                AccuracyTally u = unrefined.get(e.getKey());
+                if (u != null && u.getGenusOnlyTotal() > 0 && e.getValue().getGenusOnlyTotal() == 0) {
+                    // Every read of the subset was looked up by its identifier and none was found:
+                    // the tool names its reads differently from the matcher, and every restricted
+                    // column would read as a clean zero.
+                    throw new IOException("None of the " + u.getGenusOnlyTotal() + " genus-only reads of "
+                            + e.getKey() + " was found in the " + tool + " output. The read identifiers"
+                            + " of the two do not match, so the restricted measures would be empty.");
+                }
+            }
+            writeQualityOfExternal(resultsDir, db, tool, reportKey, tallies);
+            writeSummaryOfExternal(resultsDir, db, tool, reportKey, tallies);
+        }
     }
 
     /**
@@ -284,6 +358,104 @@ public class RefinementAccuracyReport {
      * @param byVariant  the tallies of both variants, keyed by fastq key
      * @throws IOException if the file cannot be written
      */
+    /**
+     * Writes the quality CSV of an external classifier in the layout of {@link #writeQuality}, with
+     * every column of the refined variant empty. The database name carries the tool, so that a row
+     * of {@code cv_k2} cannot be mistaken for one of {@code cv}.
+     *
+     * @param resultsDir the directory the CSV goes into
+     * @param db         the name of the database project
+     * @param tool       the external tool, as in the output file names
+     * @param reportKey  the key the result files are named after
+     * @param tallies    the tool's tallies, keyed by fastq key
+     * @throws IOException if the CSV cannot be written
+     */
+    private static void writeQualityOfExternal(File resultsDir, String db, String tool, String reportKey,
+                                               Map<String, AccuracyTally> tallies) throws IOException {
+        File file = new File(resultsDir, db + "_" + tool + "_" + reportKey + "_quality.csv");
+        try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
+            ps.println("db;fastq key;read set"
+                    + ";prec genus u;prec genus f;recall genus u;recall genus f;f1 genus u;f1 genus f"
+                    + ";prec species u;prec species f;recall species u;recall species f;f1 species u;f1 species f"
+                    + ";prec cand u;prec cand f;recall cand u;recall cand f;f1 cand u;f1 cand f;");
+            for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
+                AccuracyTally t = e.getValue();
+                ps.print(db + "_" + tool);
+                ps.print(';');
+                ps.print(e.getKey());
+                ps.print(';');
+                ps.print(displayModel(e.getKey()));
+                ps.print(';');
+                for (Rank rank : new Rank[] { Rank.GENUS, Rank.SPECIES }) {
+                    ps.print(format(t.getPrecision(rank)));
+                    ps.print(";;");
+                    ps.print(format(t.getRecall(rank)));
+                    ps.print(";;");
+                    ps.print(format(t.getF1(rank)));
+                    ps.print(";;");
+                }
+                ps.print(format(t.getSpeciesCandidatePrecision()));
+                ps.print(";;");
+                ps.print(format(t.getSpeciesCandidateRecall()));
+                ps.print(";;");
+                ps.print(format(t.getSpeciesCandidateF1()));
+                ps.println(";;");
+            }
+        }
+        System.out.println("Wrote " + file);
+    }
+
+    /**
+     * Writes the summary CSV of an external classifier in the layout of {@link #writeSummary}, again
+     * with the refined columns empty. {@code rho} is the tool's own ratio of its gated to its
+     * ungated restricted precision, measured on the same reads as Genestrip's.
+     *
+     * @param resultsDir the directory the CSV goes into
+     * @param db         the name of the database project
+     * @param tool       the external tool, as in the output file names
+     * @param reportKey  the key the result files are named after
+     * @param tallies    the tool's tallies, keyed by fastq key
+     * @throws IOException if the CSV cannot be written
+     */
+    private static void writeSummaryOfExternal(File resultsDir, String db, String tool, String reportKey,
+                                               Map<String, AccuracyTally> tallies) throws IOException {
+        File file = new File(resultsDir, db + "_" + tool + "_" + reportKey + "_summary.csv");
+        try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
+            ps.println("db;fastq key;model;reads;classified;genus only;genus only share"
+                    + ";prec g u;prec g f"
+                    + ";obs genus only;prec g ungated u;prec g ungated f;rho u;rho f;");
+            for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
+                AccuracyTally t = e.getValue();
+                double p = t.getGenusOnlyPrecision();
+                double g = t.getObsGenusOnlyUngatedPrecision();
+                ps.print(db + "_" + tool);
+                ps.print(';');
+                ps.print(e.getKey());
+                ps.print(';');
+                ps.print(displayModel(e.getKey()));
+                ps.print(';');
+                ps.print(t.getTotal());
+                ps.print(';');
+                ps.print(t.getClassified());
+                ps.print(';');
+                ps.print(t.getGenusOnlyTotal());
+                ps.print(';');
+                ps.print(format(t.getClassified() == 0 ? Double.NaN
+                        : 100.0 * t.getGenusOnlyTotal() / t.getClassified()));
+                ps.print(';');
+                ps.print(format(p));
+                ps.print(";;");
+                ps.print(t.getObsGenusOnlyTotal());
+                ps.print(';');
+                ps.print(format(g));
+                ps.print(";;");
+                ps.print(format(g == 0 ? Double.NaN : p / g));
+                ps.println(";;");
+            }
+        }
+        System.out.println("Wrote " + file);
+    }
+
     private static void writeQuality(File resultsDir, String db, String reportKey,
                                      Map<Variant, Map<String, AccuracyTally>> byVariant) throws IOException {
         File file = new File(resultsDir, db + "_" + reportKey + "_quality.csv");

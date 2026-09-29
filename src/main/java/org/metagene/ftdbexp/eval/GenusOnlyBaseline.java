@@ -47,6 +47,16 @@ public class GenusOnlyBaseline {
     }
 
     /**
+     * Puts the cursor back to the first file, so that a further run can be scored on the same
+     * subsets. The subsets themselves are untouched; only the position in them is reset. This is
+     * what lets an external classifier be measured on the reads of the unrefined Genestrip run
+     * after the refined one has already walked them.
+     */
+    public void rewind() {
+        cursor = 0;
+    }
+
+    /**
      * Closes the subset of the file just finished.
      *
      * @param fastqKey the key of that file
