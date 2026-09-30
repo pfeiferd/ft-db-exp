@@ -115,6 +115,12 @@ with open(out, 'w', encoding='utf-8') as fh:
             n = sum(1 for r in info if (r.get('rank') or '').strip() in SPECIES_AND_BELOW)
             emit(fh, 'species', db, str(n))
             entries += 1
+            # The species rank alone, without the strains and subspecies the count above includes.
+            # This is the size of the candidate set a read left at the genus of a one-genus database
+            # still has open, so it is the reciprocal of that database's ungated precision there.
+            n = sum(1 for r in info if (r.get('rank') or '').strip() == 'species')
+            emit(fh, 'speciesrank', db, str(n))
+            entries += 1
         else:
             missing += 1
         # Only the genera and the root are emitted, and they are keyed by name. Taxon names are not

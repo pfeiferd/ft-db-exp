@@ -112,6 +112,39 @@ case "$what" in
   *) echo "Usage: $0 [projects|build|perf|all]" >&2; exit 1 ;;
 esac
 
+# The paper's appendix table wants the two stores side by side, so the refined column of both runs
+# is joined on (scenario, parameter). matchperf.csv holds the radix store, matchperf-sa.csv the
+# sorted array. A row is written only when both runs measured it.
+RESULTS_DIR=${RESULTS_DIR:-results}
+if [ -f "$RESULTS_DIR/matchperf.csv" ] && [ -f "$RESULTS_DIR/matchperf-sa.csv" ]; then
+  RESULTS_DIR="$RESULTS_DIR" python3 - <<'EOF'
+import csv, os
+res = os.environ.get('RESULTS_DIR', 'results')
+
+def refined(path):
+    out = {}
+    with open(os.path.join(res, path)) as fh:
+        for row in csv.reader(fh, delimiter=';'):
+            if len(row) < 4 or row[0] == 'scenario':
+                continue
+            out[(row[0], row[1])] = row[3]
+    return out
+
+radix = refined('matchperf.csv')
+sa = refined('matchperf-sa.csv')
+order = [k for k in sa if k in radix]
+out = os.path.join(res, 'storecompare.csv')
+with open(out, 'w') as fh:
+    fh.write('scenario;parameter;sorted array;radix store;\n')
+    for k in order:
+        fh.write('%s;%s;%s;%s;\n' % (k[0], k[1], sa[k], radix[k]))
+print('wrote %s with %d rows' % (out, len(order)))
+missing = [k for k in sa if k not in radix]
+if missing:
+    print('no radix counterpart for: %s' % ', '.join('%s %s' % k for k in missing))
+EOF
+fi
+
 echo
 echo "=== results ==="
 ls -la results/db_gen_perf-sa.csv results/db_disk_sizes-sa.csv results/matchperf-sa.csv 2>/dev/null \
