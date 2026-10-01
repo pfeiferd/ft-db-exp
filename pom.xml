@@ -11,6 +11,8 @@
 		<gs.project.goal>${goal}</gs.project.goal>
 		<gs.project.fqmap>${fqmap}</gs.project.fqmap>
 		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
+		<!-- The database file of the `storebench' run; empty takes the project's refined one. -->
+		<gs.store.db></gs.store.db>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
 		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;
@@ -267,6 +269,30 @@
 								<argument>${gs.project.fqmap}</argument>
 								<argument>${gs.project.reportkey}</argument>
 								<argument>${gs.project.simulator}</argument>
+							</arguments>
+						</configuration>
+					</execution>
+					<execution>
+						<!-- The k-mer store comparison of the paper's appendix: one database held in the radix
+						     store it was built into and in a sorted array copied from it, measured for memory
+						     and for lookup throughput. Both stores live in the same JVM, so the heap must take
+						     about 18 bytes per k-mer of the database plus its filters. -->
+						<id>storebench</id>
+						<goals>
+							<goal>exec</goal>
+						</goals>
+						<configuration>
+							<executable>java</executable>
+							<includeProjectDependencies>true</includeProjectDependencies>
+							<includePluginDependencies>true</includePluginDependencies>
+							<arguments>
+								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-classpath</argument>
+								<classpath />
+								<argument>org.metagene.ftdbexp.store.StoreBenchMain</argument>
+								<argument>${gs.project.name}</argument>
+								<argument>${gs.project.fqfile}</argument>
+								<argument>${gs.store.db}</argument>
 							</arguments>
 						</configuration>
 					</execution>
