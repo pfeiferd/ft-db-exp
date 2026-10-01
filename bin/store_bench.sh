@@ -10,6 +10,7 @@
 #   ALL=1 sh ./bin/store_bench.sh tick-borne           # every simulated tick file
 #   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input, resolved against data/fastq
 #   REAL=1 ALL=1 sh ./bin/store_bench.sh tick-borne    # the real tick runs instead
+#   REAL=1 ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne   # real runs, with and without it
 #   THREADS=-1 sh ./bin/store_bench.sh strepto         # one consumer per processor less one
 #   THREADS=2 sh ./bin/store_bench.sh strepto          # two consumers, three threads in all
 #
@@ -34,6 +35,11 @@
 # and the page cache, and it does so for either store alike: without it the store that is measured
 # first reads a cold file and compiles the matching loop, while the one measured second gets both for
 # free. WARMUP=0 turns that off and halves the time a run takes.
+#
+# FILTER takes `on' (the default), `off' or `both'. The Bloom filter in front of a store answers most
+# k-mers of a real read set, which then never reach the store, so a run with it on measures the
+# pipeline and one with it off measures the layout. `both' does the two in one go and so also says
+# what the filter itself is worth, at twice the time.
 #
 # Writes results/storebench_<project>.csv with one row per store and results/storebench_<project>.log.
 set -e
@@ -111,6 +117,10 @@ threads_opt=""
 if [ -n "${THREADS:-}" ]; then
   threads_opt="-Dgs.store.threads=${THREADS}"
 fi
+filter_opt=""
+if [ -n "${FILTER:-}" ]; then
+  filter_opt="-Dgs.store.filter=${FILTER}"
+fi
 warmup_opt=""
 if [ -n "${WARMUP:-}" ]; then
   case "$WARMUP" in
@@ -119,4 +129,4 @@ if [ -n "${WARMUP:-}" ]; then
   esac
 fi
 
-mvn exec:exec@storebench -Dname="$project" -Dfqfile="$input" -Dgs.store.db="$db" $xmx_opt $threads_opt $warmup_opt 2>&1 | tee "$log"
+mvn exec:exec@storebench -Dname="$project" -Dfqfile="$input" -Dgs.store.db="$db" $xmx_opt $threads_opt $warmup_opt $filter_opt 2>&1 | tee "$log"

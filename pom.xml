@@ -24,6 +24,10 @@
 		     store measured first reads a cold file and compiles the matching loop, and the one
 		     measured second gets both for free. It doubles the time a run takes. -->
 		<gs.store.warmup>true</gs.store.warmup>
+		<!-- The Bloom filter of the match during a `storebench' run: `on', `off' or `both'. It
+		     answers most k-mers of a real read set, which then never reach the store, so `off' is
+		     what measures the layout and `both' says what the filter itself is worth. -->
+		<gs.store.filter>on</gs.store.filter>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
 		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;
@@ -301,6 +305,7 @@
 								<argument>-Xmx${gs.xmx}</argument>
 								<argument>-Dftdbexp.storebench.threads=${gs.store.threads}</argument>
 								<argument>-Dftdbexp.storebench.warmup=${gs.store.warmup}</argument>
+								<argument>-Dftdbexp.storebench.filter=${gs.store.filter}</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.ftdbexp.store.StoreBenchMain</argument>

@@ -53,6 +53,8 @@ public class StoreBenchMain {
     private static final String THREADS_PROP = "ftdbexp.storebench.threads";
     /** System property for the discarded warm-up pass; {@code false} turns it off. */
     private static final String WARMUP_PROP = "ftdbexp.storebench.warmup";
+    /** System property for the Bloom filter of the match: {@code on}, {@code off} or {@code both}. */
+    private static final String FILTER_PROP = "ftdbexp.storebench.filter";
 
     /**
      * Runs the comparison.
@@ -107,6 +109,26 @@ public class StoreBenchMain {
         // store measured first reads a cold file and compiles the matching loop, and the one measured
         // second gets both for free.
         boolean warmup = !"false".equalsIgnoreCase(System.getProperty(WARMUP_PROP, "true"));
+        // The Bloom filter in front of a store answers most k-mers of a real read set, which never
+        // reach the store at all. Turning it off sends every k-mer into the store and so measures the
+        // layout rather than the filter; running both says what the filter itself is worth.
+        String filterMode = System.getProperty(FILTER_PROP, "on").toLowerCase(Locale.US);
+        boolean[] filterSettings;
+        if ("off".equals(filterMode)) {
+            filterSettings = new boolean[] { false };
+        } else if ("both".equals(filterMode)) {
+            filterSettings = new boolean[] { true, false };
+        } else if ("on".equals(filterMode)) {
+            filterSettings = new boolean[] { true };
+        } else {
+            throw new IllegalArgumentException("-D" + FILTER_PROP + " takes on, off or both, got " + filterMode + ".");
+        }
+        if (!useFilter) {
+            // A project that matches without the filter has nothing to switch; saying so beats a table
+            // with two identical columns.
+            System.out.println("The project matches without the Bloom filter, so only that is measured.");
+            filterSettings = new boolean[] { false };
+        }
 
         System.out.println("Genestrip k-mer store comparison");
         System.out.println("  project:  " + db);
@@ -154,13 +176,17 @@ public class StoreBenchMain {
             row.print();
             // Every file with every store, and the row holds the totals: the comparison is of the two
             // stores on one input set, so what counts is the time that set took, not a single file's.
-            for (File fastq : fastqs) {
-                classify(row, fastq, project, database, store, threads, warmup);
-            }
-            if (fastqs.size() > 1) {
-                System.out.println("    " + fastqs.size() + " files together: "
-                        + String.format(Locale.US, "%.2f", row.seconds) + " s, "
-                        + String.format(Locale.US, "%.0f", row.readsPerSecond()) + " reads / s");
+            for (boolean filterOn : filterSettings) {
+                store.setUseFilter(filterOn);
+                System.out.println("    Bloom filter " + (filterOn ? "on" : "off"));
+                for (File fastq : fastqs) {
+                    classify(row, fastq, project, database, store, threads, warmup, filterOn);
+                }
+                if (fastqs.size() > 1) {
+                    System.out.println("    " + fastqs.size() + " files together: "
+                            + String.format(Locale.US, "%.2f", row.seconds(filterOn)) + " s, "
+                            + String.format(Locale.US, "%.0f", row.readsPerSecond(filterOn)) + " reads / s");
+                }
             }
             rows.add(row);
         }
@@ -174,7 +200,7 @@ public class StoreBenchMain {
      * @param warmup whether to classify the file once before the measured pass and discard that
      */
     private static void classify(Row row, File fastq, GSProject project, Database database,
-            KMerStore<SmallTaxIdNode> store, int threads, boolean warmup) throws Exception {
+            KMerStore<SmallTaxIdNode> store, int threads, boolean warmup, boolean filterOn) throws Exception {
         if (warmup) {
             long discarded = runOnce(fastq, project, database, store, threads)[0];
             System.out.println("    " + fastq.getName() + " warm-up: "
@@ -183,9 +209,7 @@ public class StoreBenchMain {
         long[] measured = runOnce(fastq, project, database, store, threads);
         double seconds = measured[0] / 1000d;
         row.threads = threads;
-        row.seconds += seconds;
-        row.reads += measured[1];
-        row.kmers += measured[2];
+        row.add(filterOn, seconds, measured[1], measured[2]);
         System.out.println("    " + fastq.getName() + ": " + String.format(Locale.US, "%.2f", seconds)
                 + " s, " + String.format(Locale.US, "%.0f", measured[1] / seconds) + " reads / s");
     }
@@ -295,16 +319,29 @@ public class StoreBenchMain {
             // classification of a run pays the JIT warm-up and that should not fall on one store only.
             Row sortedArray = rowOf(rows, STORE_SORTED_ARRAY);
             Row radix = rowOf(rows, STORE_DB);
-            writer.println("project;parameter;sorted array;radix store;");
+            // The section tells the paper's table which rows belong together: what a store takes in
+            // memory, and what a lookup in it costs. A LaTeX rule cannot be emitted from inside a CSV
+            // row, so the table reads the file once per section instead.
+            writer.println("project;section;parameter;sorted array;radix store;");
             // The first three follow from the entry count and the bytes per entry, the rest is measured.
-            writer.println(line(db, "Arrays (MB)", toMB(sortedArray.arrays), toMB(radix.arrays), 0));
-            writer.println(line(db, "Bloom filter (MB)", toMB(sortedArray.filter), toMB(radix.filter), 0));
-            writer.println(line(db, "Store (MB)", toMB(sortedArray.arrays + sortedArray.filter),
+            writer.println(line(db, "memory", "Arrays (MB)", toMB(sortedArray.arrays), toMB(radix.arrays), 0));
+            writer.println(line(db, "memory", "Bloom filter (MB)", toMB(sortedArray.filter), toMB(radix.filter), 0));
+            writer.println(line(db, "memory", "Store (MB)", toMB(sortedArray.arrays + sortedArray.filter),
                     toMB(radix.arrays + radix.filter), 0));
-            writer.println(line(db, "Heap (MB)", toMB(sortedArray.heap), toMB(radix.heap), 0));
-            writer.println(line(db, "Wall time (s)", sortedArray.seconds, radix.seconds, 2));
-            writer.println(line(db, "Speed (reads / s)", sortedArray.readsPerSecond(),
-                    radix.readsPerSecond(), 0));
+            writer.println(line(db, "memory", "Heap (MB)", toMB(sortedArray.heap), toMB(radix.heap), 0));
+            // The pass with the filter first, since that is how a database is used; the one without it
+            // says what the two layouts do when every k-mer actually reaches the store.
+            if (sortedArray.measured(true) && radix.measured(true)) {
+                writer.println(line(db, "lookup", "Wall time (s)", sortedArray.seconds(true), radix.seconds(true), 2));
+                writer.println(line(db, "lookup", "Speed (reads / s)", sortedArray.readsPerSecond(true),
+                        radix.readsPerSecond(true), 0));
+            }
+            if (sortedArray.measured(false) && radix.measured(false)) {
+                writer.println(line(db, "lookup", "Wall time, no filter (s)", sortedArray.seconds(false),
+                        radix.seconds(false), 2));
+                writer.println(line(db, "lookup", "Speed, no filter (reads / s)", sortedArray.readsPerSecond(false),
+                        radix.readsPerSecond(false), 0));
+            }
         } finally {
             writer.close();
         }
@@ -322,10 +359,11 @@ public class StoreBenchMain {
         throw new IllegalStateException("No row for store '" + store + "'.");
     }
 
-    /** One CSV line: the figure, the sorted array's value and the radix store's. */
-    private static String line(String project, String parameter, double sortedArray, double radix, int decimals) {
+    /** One CSV line: the section, the figure, the sorted array's value and the radix store's. */
+    private static String line(String project, String section, String parameter, double sortedArray, double radix,
+            int decimals) {
         String format = "%." + decimals + "f";
-        return project + ';' + parameter + ';' + String.format(Locale.US, format, sortedArray) + ';'
+        return project + ';' + section + ';' + parameter + ';' + String.format(Locale.US, format, sortedArray) + ';'
                 + String.format(Locale.US, format, radix) + ';';
     }
 
@@ -341,9 +379,10 @@ public class StoreBenchMain {
         private final long filter;
         private final long heap;
         private int threads;
-        private double seconds;
-        private long reads;
-        private long kmers;
+        // Index 0 is the pass with the Bloom filter on, index 1 the one without it.
+        private final double[] secondsPerMode = new double[2];
+        private final long[] readsPerMode = new long[2];
+        private final long[] kmersPerMode = new long[2];
 
         private Row(String project, String store, KMerStore<SmallTaxIdNode> s, long heap) {
             this.project = project;
@@ -359,8 +398,24 @@ public class StoreBenchMain {
             this.heap = heap;
         }
 
-        private double readsPerSecond() {
-            return seconds > 0 ? reads / seconds : 0;
+        private void add(boolean filterOn, double seconds, long reads, long kmers) {
+            int i = filterOn ? 0 : 1;
+            secondsPerMode[i] += seconds;
+            readsPerMode[i] += reads;
+            kmersPerMode[i] += kmers;
+        }
+
+        private double seconds(boolean filterOn) {
+            return secondsPerMode[filterOn ? 0 : 1];
+        }
+
+        private boolean measured(boolean filterOn) {
+            return secondsPerMode[filterOn ? 0 : 1] > 0;
+        }
+
+        private double readsPerSecond(boolean filterOn) {
+            int i = filterOn ? 0 : 1;
+            return secondsPerMode[i] > 0 ? readsPerMode[i] / secondsPerMode[i] : 0;
         }
 
         private void print() {
