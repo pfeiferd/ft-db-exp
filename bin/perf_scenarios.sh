@@ -29,10 +29,24 @@
 # measurement of the default one. The scenario letters stay the same, so the two CSVs line up row by
 # row.
 #
+# GS_XMX caps the JVM heap of every measured run, e.g. GS_XMX=6G. It matters for the RAM column:
+# cgmemtime reports the high-water resident set, which for a 56G limit is the heap G1 decided to
+# commit and not what the run needs. The ftmatch log of scenario (a) shows 6208 MB committed against
+# 3491 MB used, so the column says more about the garbage collector than about the database. A cap
+# just above what a run needs makes the number mean the database again. It also costs: a tighter
+# heap collects more often, so wall time and throughput of such a run are not comparable with the
+# figures measured at the default.
+#
 # THE MEASUREMENT IS THE POINT, so this script refuses to guess. A run whose log is missing or
 # unparseable leaves its cell empty rather than being averaged over the runs that did work.
 #
 set -e
+
+# Passed on to every measured run; empty keeps the pom's gs.xmx.
+xmx_opt=""
+if [ -n "${GS_XMX:-}" ]; then
+  xmx_opt="-Dgs.xmx=${GS_XMX}"
+fi
 
 scriptdir=$(dirname "$0")
 cd "$scriptdir/.."
@@ -126,9 +140,9 @@ run_pair() {
     # Both ways, because (b) and (c) run over the same map and so write the same files: whatever (b)
     # leaves behind would make (c) a no-op, which is what the batch of 2026-09-19 recorded.
     clear_goal_outputs "$_rp_db" "$goal" "$_rp_map"
-    mvn exec:exec@match -Dname="$_rp_db" -Dgoal="$goal" -Dfqmap="$_rp_map" -Dgs.target=clean
+    mvn exec:exec@match -Dname="$_rp_db" -Dgoal="$goal" -Dfqmap="$_rp_map" -Dgs.target=clean $xmx_opt
     measure "${res_path}/perf_${_rp_key}_${goal}.log" \
-        mvn exec:exec@match -Dname="$_rp_db" -Dgoal="$goal" -Dfqmap="$_rp_map"
+        mvn exec:exec@match -Dname="$_rp_db" -Dgoal="$goal" -Dfqmap="$_rp_map" $xmx_opt
   done
 }
 
