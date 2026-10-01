@@ -6,10 +6,10 @@
 # needed.
 #
 # Usage:
-#   sh ./bin/store_bench.sh                            # viral, the smallest file of its scenario map
-#   sh ./bin/store_bench.sh strepto                    # the same reads against a denser database
+#   ALL=1 sh ./bin/store_bench.sh strepto              # every simulated saliva-like file
+#   ALL=1 sh ./bin/store_bench.sh tick-borne           # every simulated tick file
 #   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input, resolved against data/fastq
-#   ALL=1 sh ./bin/store_bench.sh strepto              # every file of the map, which takes hours
+#   REAL=1 ALL=1 sh ./bin/store_bench.sh tick-borne    # the real tick runs instead
 #   THREADS=-1 sh ./bin/store_bench.sh strepto         # one consumer per processor less one
 #   THREADS=2 sh ./bin/store_bench.sh strepto          # two consumers, three threads in all
 #
@@ -51,17 +51,29 @@ log="${res}/storebench_${project}.log"
 
 [ -f "$db" ] || { echo "No database at ${db}; build it or set DB=<file>." >&2; exit 1; }
 
-# Without an explicit input the files come from the map that perf_scenarios.sh uses for the same
-# database, so that the stores are compared on what the paper's scenarios are measured on. ALL=1
-# takes every file of that map; by default the smallest one is taken, which is enough for a
-# comparison and costs the least.
+# Without an explicit input the files come from the project's simulated read sets. Those are drawn
+# from the genomes the database was built from, so nearly every k-mer of a read is in the store and
+# the Bloom filter in front of it rejects almost nothing. That is what makes the comparison about the
+# two layouts: on real data most k-mers never reach a store at all, and then the layout barely shows.
+# REAL=1 takes the real read sets instead, MAP=<map> any other map. ALL=1 takes every file of the
+# map, which is what the appendix uses for the simulated sets; by default the smallest one is taken.
 if [ -z "$input" ]; then
-  case "$project" in
-    viral|strepto) map="${MAP:-saliva_real.txt}" ;;
-    tick-borne) map="${MAP:-eightticks.txt}" ;;
-    nocardia) map="${MAP:-nocardia_mngs.txt}" ;;
-    *) map="${MAP:-}" ;;
-  esac
+  if [ -n "${REAL:-}" ]; then
+    case "$project" in
+      viral|strepto) map="${MAP:-saliva_real.txt}" ;;
+      tick-borne) map="${MAP:-eightticks.txt}" ;;
+      nocardia) map="${MAP:-nocardia_mngs.txt}" ;;
+      *) map="${MAP:-}" ;;
+    esac
+  else
+    case "$project" in
+      strepto) map="${MAP:-strepto_sim_saliva.txt}" ;;
+      tick-borne) map="${MAP:-ticks_sim.txt}" ;;
+      viral) map="${MAP:-viral_sim.txt}" ;;
+      nocardia) map="${MAP:-nocardia_sim_mngs.txt}" ;;
+      *) map="${MAP:-}" ;;
+    esac
+  fi
   [ -n "$map" ] || { echo "No default map for ${project}; name a file or set MAP=<map>." >&2; exit 1; }
   [ -f "${data}/fastq/${map}" ] || { echo "No map at ${data}/fastq/${map}." >&2; exit 1; }
   files=""

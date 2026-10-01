@@ -246,10 +246,11 @@ case "$what" in
 esac
 
 # The k-mer store comparison of the paper's appendix, which is a measurement of the same kind and
-# belongs to the same table-filling run. `strepto' takes the saliva run of scenario (d) and
-# `tick-borne' every file of scenario (b), so the two stores are held against each other on exactly
-# the reads the scenarios use. `viral' is left out: it classifies two percent of the saliva reads, so
-# its lookups are too small a part of a run to say much, and scenario (a) shows that already.
+# belongs to the same table-filling run. It runs on the simulated read sets, whose reads come from the
+# genomes of the database itself, so nearly every k-mer reaches the store instead of being rejected by
+# the Bloom filter in front of it. On real data most k-mers are not in the database at all and the two
+# layouts then barely differ. `viral' is left out: scenario (a) already shows what its lookups are
+# worth, and `strepto' covers the same reads against a database that classifies far more of them.
 #
 # Skipped for a DB_SUFFIX run: the twins exist to measure one store at a time, while this compares
 # both in one JVM and needs no twin at all.
@@ -258,7 +259,7 @@ case "$what" in
     if [ -n "$db_suffix" ]; then
       echo "############ store comparison skipped for the ${db_suffix} twins ############"
     else
-      sh ./bin/store_bench.sh strepto
+      ALL=1 sh ./bin/store_bench.sh strepto
       ALL=1 sh ./bin/store_bench.sh tick-borne
     fi
     ;;
