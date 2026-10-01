@@ -13,6 +13,11 @@
 		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
 		<!-- The database file of the `storebench' run; empty takes the project's refined one. -->
 		<gs.store.db></gs.store.db>
+		<!-- Consumer threads of the `storebench' run. Few of them is what measures the store:
+		     with many, the single producer thread that reads, inflates and parses is the limit
+		     of the pipeline and a faster lookup hardly shows. -1 means one per processor less
+		     one, as the goals do it. -->
+		<gs.store.threads>-1</gs.store.threads>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
 		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;
@@ -288,6 +293,7 @@
 							<includePluginDependencies>true</includePluginDependencies>
 							<arguments>
 								<argument>-Xmx${gs.xmx}</argument>
+								<argument>-Dftdbexp.storebench.threads=${gs.store.threads}</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.ftdbexp.store.StoreBenchMain</argument>

@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 import org.metagene.genestrip.DefaultExecutionContext;
 import org.metagene.genestrip.ExecutionContext;
@@ -31,8 +32,8 @@ import org.metagene.genestrip.tax.SmallTaxTree.SmallTaxIdNode;
  * Reported per store, and written as a row of {@code results/storebench.csv}:
  * <ul>
  * <li>the entries and the capacity the store reserved for them,</li>
- * <li>what its arrays and its filter take by construction, eight bytes per k-mer for the radix store
- *     and ten for the sorted array, which needs a second array for the taxon index,</li>
+ * <li>what the store and its Bloom filter take by construction, eight bytes per k-mer for the radix
+ *     store and ten for the sorted array, which needs a second array for the taxon index,</li>
  * <li>the heap the store took when it was built, measured after a collection,</li>
  * <li>the wall time and the read throughput of classifying the file.</li>
  * </ul>
@@ -48,6 +49,8 @@ public class StoreBenchMain {
     private static final String STORE_DB = "db";
     /** The sorted array copied from it. */
     private static final String STORE_SORTED_ARRAY = "sortedarray";
+    /** System property for the number of consumer threads. */
+    private static final String THREADS_PROP = "ftdbexp.storebench.threads";
 
     /**
      * Runs the comparison.
@@ -88,14 +91,21 @@ public class StoreBenchMain {
 
         GSProject project = new GSProject(new GSCommon(BASE_DIR), db, true);
         project.initConfigParam(GSConfigKey.THREADS, -1);
-        int threads = Runtime.getRuntime().availableProcessors() - 1;
+        // One consumer thread per processor less one by default, as the goals do it. Fewer is what
+        // shows the store: with many consumers the single producer thread - reading, inflating and
+        // parsing - is the limit of the pipeline, and a faster lookup then barely moves the total.
+        int configured = Integer.getInteger(THREADS_PROP, -1);
+        int threads = configured < 0 ? Runtime.getRuntime().availableProcessors() - 1 : configured;
+        if (threads < 1) {
+            throw new IllegalArgumentException("At least one consumer thread is needed, got " + configured + ".");
+        }
         boolean useFilter = project.booleanConfigValue(GSConfigKey.USE_BLOOM_FILTER_FOR_MATCH);
 
         System.out.println("Genestrip k-mer store comparison");
         System.out.println("  project:  " + db);
         System.out.println("  database: " + dbFile);
         for (File fastq : fastqs) {
-            System.out.println("  input:    " + fastq + " (" + String.format("%.0f", toMB(fastq.length()))
+            System.out.println("  input:    " + fastq + " (" + String.format(Locale.US, "%.0f", toMB(fastq.length()))
                     + " MB compressed)");
         }
         System.out.println("  threads:  " + threads + " of " + Runtime.getRuntime().availableProcessors());
@@ -140,8 +150,8 @@ public class StoreBenchMain {
             }
             if (fastqs.size() > 1) {
                 System.out.println("    " + fastqs.size() + " files together: "
-                        + String.format("%.2f", row.seconds) + " s, "
-                        + String.format("%.0f", row.readsPerSecond()) + " reads / s");
+                        + String.format(Locale.US, "%.2f", row.seconds) + " s, "
+                        + String.format(Locale.US, "%.0f", row.readsPerSecond()) + " reads / s");
             }
             rows.add(row);
         }
@@ -167,8 +177,8 @@ public class StoreBenchMain {
             row.seconds += millis / 1000d;
             row.reads += stats.getReads();
             row.kmers += stats.getKMers();
-            System.out.println("    " + fastq.getName() + ": " + String.format("%.2f", millis / 1000d)
-                    + " s, " + String.format("%.0f", stats.getReads() / (millis / 1000d)) + " reads / s");
+            System.out.println("    " + fastq.getName() + ": " + String.format(Locale.US, "%.2f", millis / 1000d)
+                    + " s, " + String.format(Locale.US, "%.0f", stats.getReads() / (millis / 1000d)) + " reads / s");
         } finally {
             matcher.dump();
             bundle.dump();
@@ -246,16 +256,44 @@ public class StoreBenchMain {
         File out = new File(RESULTS_DIR, "storebench_" + db + ".csv");
         PrintWriter writer = new PrintWriter(out, "UTF-8");
         try {
-            writer.println("project;store;class;entries;capacity;bytes per entry;arrays MB;filter MB;"
-                    + "together MB;heap MB;threads;wall s;reads;reads / s;");
-            for (Row row : rows) {
-                writer.println(row.toCsv());
-            }
+            // One row per measured figure, with the sorted array first: it is what the radix store is
+            // held against, and the paper's table gives the radix column as a percentage of it. The
+            // measurement order is the other way round and stays that way, since the first
+            // classification of a run pays the JIT warm-up and that should not fall on one store only.
+            Row sortedArray = rowOf(rows, STORE_SORTED_ARRAY);
+            Row radix = rowOf(rows, STORE_DB);
+            writer.println("project;parameter;sorted array;radix store;");
+            // The first three follow from the entry count and the bytes per entry, the rest is measured.
+            writer.println(line(db, "Arrays (MB)", toMB(sortedArray.arrays), toMB(radix.arrays), 0));
+            writer.println(line(db, "Bloom filter (MB)", toMB(sortedArray.filter), toMB(radix.filter), 0));
+            writer.println(line(db, "Store (MB)", toMB(sortedArray.arrays + sortedArray.filter),
+                    toMB(radix.arrays + radix.filter), 0));
+            writer.println(line(db, "Heap (MB)", toMB(sortedArray.heap), toMB(radix.heap), 0));
+            writer.println(line(db, "Wall time (s)", sortedArray.seconds, radix.seconds, 2));
+            writer.println(line(db, "Speed (reads / s)", sortedArray.readsPerSecond(),
+                    radix.readsPerSecond(), 0));
         } finally {
             writer.close();
         }
         System.out.println();
         System.out.println("Wrote " + out);
+    }
+
+    /** Returns the row of the given store, which must be there. */
+    private static Row rowOf(List<Row> rows, String store) {
+        for (Row row : rows) {
+            if (store.equals(row.store)) {
+                return row;
+            }
+        }
+        throw new IllegalStateException("No row for store '" + store + "'.");
+    }
+
+    /** One CSV line: the figure, the sorted array's value and the radix store's. */
+    private static String line(String project, String parameter, double sortedArray, double radix, int decimals) {
+        String format = "%." + decimals + "f";
+        return project + ';' + parameter + ';' + String.format(Locale.US, format, sortedArray) + ';'
+                + String.format(Locale.US, format, radix) + ';';
     }
 
     /** One store's figures. */
@@ -295,18 +333,12 @@ public class StoreBenchMain {
         private void print() {
             System.out.println("Store '" + store + "': " + clazz + ", " + entries + " entries, capacity "
                     + capacity);
-            System.out.println("    " + perEntry + " bytes per entry: " + String.format("%.0f", toMB(arrays))
-                    + " MB of arrays, " + String.format("%.0f", toMB(filter)) + " MB of filter, "
-                    + String.format("%.0f", toMB(arrays + filter)) + " MB together");
-            System.out.println("    heap it took: " + String.format("%.0f", toMB(heap)) + " MB");
+            System.out.println("    " + perEntry + " bytes per entry: " + String.format(Locale.US, "%.0f", toMB(arrays))
+                    + " MB of store, " + String.format(Locale.US, "%.0f", toMB(filter))
+                    + " MB of Bloom filter, " + String.format(Locale.US, "%.0f", toMB(arrays + filter))
+                    + " MB together");
+            System.out.println("    heap it took: " + String.format(Locale.US, "%.0f", toMB(heap)) + " MB");
         }
 
-        private String toCsv() {
-            return project + ';' + store + ';' + clazz + ';' + entries + ';' + capacity + ';' + perEntry + ';'
-                    + String.format("%.0f", toMB(arrays)) + ';' + String.format("%.0f", toMB(filter)) + ';'
-                    + String.format("%.0f", toMB(arrays + filter)) + ';' + String.format("%.0f", toMB(heap))
-                    + ';' + threads + ';' + String.format("%.2f", seconds) + ';' + reads + ';'
-                    + String.format("%.0f", readsPerSecond()) + ';';
-        }
     }
 }

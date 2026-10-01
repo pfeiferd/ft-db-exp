@@ -10,6 +10,7 @@
 #   sh ./bin/store_bench.sh strepto                    # the same reads against a denser database
 #   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input, resolved against data/fastq
 #   ALL=1 sh ./bin/store_bench.sh strepto              # every file of the map, which takes hours
+#   THREADS=1 sh ./bin/store_bench.sh strepto          # one consumer, which is where the store shows
 #
 # DB picks the database file, by default the project's refined one. MAP overrides the fastq map the
 # input is taken from. GS_XMX caps the heap of the measured JVM; both stores are held at once,
@@ -20,6 +21,12 @@
 # `strepto' says more about the lookups than `viral' does: on the saliva runs it classifies seven
 # to ten percent of the reads where `viral' classifies two, so more of the time is spent in the
 # store. The memory figures do not care which database is measured.
+#
+# THREADS sets the consumer threads, by default one per processor less one. That default measures
+# the pipeline and not the store: reading, inflating and parsing all happen on one producer thread,
+# which with many consumers is the limit of the whole run, so a faster lookup hardly shows. THREADS=1
+# or 2 puts the limit back on the lookups. It also makes the run several times longer, so take a
+# smaller input with it.
 #
 # Writes results/storebench_<project>.csv with one row per store and results/storebench_<project>.log.
 set -e
@@ -81,5 +88,9 @@ xmx_opt=""
 if [ -n "${GS_XMX:-}" ]; then
   xmx_opt="-Dgs.xmx=${GS_XMX}"
 fi
+threads_opt=""
+if [ -n "${THREADS:-}" ]; then
+  threads_opt="-Dgs.store.threads=${THREADS}"
+fi
 
-mvn exec:exec@storebench -Dname="$project" -Dfqfile="$input" -Dgs.store.db="$db" $xmx_opt 2>&1 | tee "$log"
+mvn exec:exec@storebench -Dname="$project" -Dfqfile="$input" -Dgs.store.db="$db" $xmx_opt $threads_opt 2>&1 | tee "$log"
