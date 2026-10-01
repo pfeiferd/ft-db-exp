@@ -51,6 +51,8 @@ public class StoreBenchMain {
     private static final String STORE_SORTED_ARRAY = "sortedarray";
     /** System property for the number of consumer threads. */
     private static final String THREADS_PROP = "ftdbexp.storebench.threads";
+    /** System property for the discarded warm-up pass; {@code false} turns it off. */
+    private static final String WARMUP_PROP = "ftdbexp.storebench.warmup";
 
     /**
      * Runs the comparison.
@@ -100,6 +102,11 @@ public class StoreBenchMain {
             throw new IllegalArgumentException("At least one consumer thread is needed, got " + configured + ".");
         }
         boolean useFilter = project.booleanConfigValue(GSConfigKey.USE_BLOOM_FILTER_FOR_MATCH);
+        // Each file is classified twice per store and only the second pass is measured. The first one
+        // warms the JIT and the page cache, and it does so for either store alike: without it the
+        // store measured first reads a cold file and compiles the matching loop, and the one measured
+        // second gets both for free.
+        boolean warmup = !"false".equalsIgnoreCase(System.getProperty(WARMUP_PROP, "true"));
 
         System.out.println("Genestrip k-mer store comparison");
         System.out.println("  project:  " + db);
@@ -108,7 +115,9 @@ public class StoreBenchMain {
             System.out.println("  input:    " + fastq + " (" + String.format(Locale.US, "%.0f", toMB(fastq.length()))
                     + " MB compressed)");
         }
-        System.out.println("  threads:  " + threads + " of " + Runtime.getRuntime().availableProcessors());
+        System.out.println("  threads:  " + threads + " consumer and one producer, of "
+                + Runtime.getRuntime().availableProcessors() + " processors");
+        System.out.println("  warm-up:  " + (warmup ? "one discarded pass per file and store" : "none"));
         System.out.println();
 
         long heapBeforeLoad = usedHeapAfterGc();
@@ -146,7 +155,7 @@ public class StoreBenchMain {
             // Every file with every store, and the row holds the totals: the comparison is of the two
             // stores on one input set, so what counts is the time that set took, not a single file's.
             for (File fastq : fastqs) {
-                classify(row, fastq, project, database, store, threads);
+                classify(row, fastq, project, database, store, threads, warmup);
             }
             if (fastqs.size() > 1) {
                 System.out.println("    " + fastqs.size() + " files together: "
@@ -160,10 +169,39 @@ public class StoreBenchMain {
     }
 
     /**
-     * Classifies the file with the given store and records the timing in the row.
+     * Classifies the file with the given store and records the timing of the measured pass in the row.
+     *
+     * @param warmup whether to classify the file once before the measured pass and discard that
      */
     private static void classify(Row row, File fastq, GSProject project, Database database,
+            KMerStore<SmallTaxIdNode> store, int threads, boolean warmup) throws Exception {
+        if (warmup) {
+            long discarded = runOnce(fastq, project, database, store, threads)[0];
+            System.out.println("    " + fastq.getName() + " warm-up: "
+                    + String.format(Locale.US, "%.2f", discarded / 1000d) + " s");
+        }
+        long[] measured = runOnce(fastq, project, database, store, threads);
+        double seconds = measured[0] / 1000d;
+        row.threads = threads;
+        row.seconds += seconds;
+        row.reads += measured[1];
+        row.kmers += measured[2];
+        System.out.println("    " + fastq.getName() + ": " + String.format(Locale.US, "%.2f", seconds)
+                + " s, " + String.format(Locale.US, "%.0f", measured[1] / seconds) + " reads / s");
+    }
+
+    /**
+     * Classifies the file once.
+     *
+     * @return the milliseconds it took, the reads and the k-mers it saw
+     */
+    private static long[] runOnce(File fastq, GSProject project, Database database,
             KMerStore<SmallTaxIdNode> store, int threads) throws Exception {
+        // The marks of a previous pass would make the next one count fewer distinct k-mers, and they
+        // live in the store, which both passes share.
+        if (store.isMarkVisited()) {
+            store.clearVisitedMarks();
+        }
         SmallTaxTree taxTree = database.getTaxTree();
         ExecutionContext bundle = new DefaultExecutionContext(null, threads,
                 project.longConfigValue(GSConfigKey.LOG_PROGRESS_UPDATE_CYCLE));
@@ -173,12 +211,7 @@ public class StoreBenchMain {
             MatchingResult result = matcher.runMatcher(streamOf(fastq), null, null);
             long millis = System.currentTimeMillis() - start;
             CountsPerTaxid stats = result.getGlobalStats();
-            row.threads = threads;
-            row.seconds += millis / 1000d;
-            row.reads += stats.getReads();
-            row.kmers += stats.getKMers();
-            System.out.println("    " + fastq.getName() + ": " + String.format(Locale.US, "%.2f", millis / 1000d)
-                    + " s, " + String.format(Locale.US, "%.0f", stats.getReads() / (millis / 1000d)) + " reads / s");
+            return new long[] { millis, stats.getReads(), stats.getKMers() };
         } finally {
             matcher.dump();
             bundle.dump();

@@ -19,6 +19,11 @@
 		     hardly shows, while one consumer puts the limit on the lookups, which is what the
 		     appendix compares. -1 means one per processor less one, as the goals do it. -->
 		<gs.store.threads>1</gs.store.threads>
+		<!-- Whether each file is classified once per store before the measured pass, with that pass
+		     discarded. It warms the JIT and the page cache for either store alike; without it the
+		     store measured first reads a cold file and compiles the matching loop, and the one
+		     measured second gets both for free. It doubles the time a run takes. -->
+		<gs.store.warmup>true</gs.store.warmup>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
 		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;
@@ -295,6 +300,7 @@
 							<arguments>
 								<argument>-Xmx${gs.xmx}</argument>
 								<argument>-Dftdbexp.storebench.threads=${gs.store.threads}</argument>
+								<argument>-Dftdbexp.storebench.warmup=${gs.store.warmup}</argument>
 								<argument>-classpath</argument>
 								<classpath />
 								<argument>org.metagene.ftdbexp.store.StoreBenchMain</argument>

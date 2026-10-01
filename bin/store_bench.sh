@@ -30,6 +30,11 @@
 # lookups. It also makes a run several times longer than the pipeline default would, which is the
 # price of measuring the store rather than the reader.
 #
+# Each file is classified twice per store and only the second pass counts. The first warms the JIT
+# and the page cache, and it does so for either store alike: without it the store that is measured
+# first reads a cold file and compiles the matching loop, while the one measured second gets both for
+# free. WARMUP=0 turns that off and halves the time a run takes.
+#
 # Writes results/storebench_<project>.csv with one row per store and results/storebench_<project>.log.
 set -e
 
@@ -94,5 +99,12 @@ threads_opt=""
 if [ -n "${THREADS:-}" ]; then
   threads_opt="-Dgs.store.threads=${THREADS}"
 fi
+warmup_opt=""
+if [ -n "${WARMUP:-}" ]; then
+  case "$WARMUP" in
+    0|no|false) warmup_opt="-Dgs.store.warmup=false" ;;
+    *) warmup_opt="-Dgs.store.warmup=true" ;;
+  esac
+fi
 
-mvn exec:exec@storebench -Dname="$project" -Dfqfile="$input" -Dgs.store.db="$db" $xmx_opt $threads_opt 2>&1 | tee "$log"
+mvn exec:exec@storebench -Dname="$project" -Dfqfile="$input" -Dgs.store.db="$db" $xmx_opt $threads_opt $warmup_opt 2>&1 | tee "$log"
