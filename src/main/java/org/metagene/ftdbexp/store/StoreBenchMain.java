@@ -119,13 +119,14 @@ public class StoreBenchMain {
                 long entries = loaded.getEntries();
                 System.out.println("Copying " + entries + " entries into a sorted array ...");
                 store = KMerSortedArray.copyOf(loaded,
-                        project.doubleConfigValue(GSConfigKey.FILL_BLOOM_FILTER_FPP),
-                        project.doubleConfigValue(GSConfigKey.OPT_BLOOM_FILTER_FPP),
-                        project.booleanConfigValue(GSConfigKey.XOR_BLOOM_HASH));
+                        project.doubleConfigValue(GSConfigKey.OPT_BLOOM_FILTER_FPP));
                 // The copy shares nothing with the source, so this delta is the copy alone.
                 heap = usedHeapAfterGc() - before;
-                System.out.println("Copied: " + store.getEntries() + " entries, "
-                        + (entries - store.getEntries()) + " dropped by the fill filter.");
+                if (store.getEntries() != entries) {
+                    throw new IllegalStateException("The copy holds " + store.getEntries()
+                            + " entries against the source's " + entries + ".");
+                }
+                System.out.println("Copied: " + store.getEntries() + " entries.");
             } else {
                 store = loaded;
                 heap = loadHeap;

@@ -276,7 +276,8 @@
 						<!-- The k-mer store comparison of the paper's appendix: one database held in the radix
 						     store it was built into and in a sorted array copied from it, measured for memory
 						     and for lookup throughput. Both stores live in the same JVM, so the heap must take
-						     about 18 bytes per k-mer of the database plus its filters. -->
+						     about 18 bytes per k-mer of the database plus one filter per store, i.e. some 10G
+						     for `viral' and 14G for `strepto'. -->
 						<id>storebench</id>
 						<goals>
 							<goal>exec</goal>

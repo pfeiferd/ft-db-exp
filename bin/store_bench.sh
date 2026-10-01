@@ -12,9 +12,10 @@
 #   ALL=1 sh ./bin/store_bench.sh strepto              # every file of the map, which takes hours
 #
 # DB picks the database file, by default the project's refined one. MAP overrides the fastq map the
-# input is taken from. GS_XMX caps the heap of the measured JVM; both stores are held at once, so
-# it needs about 18 bytes per k-mer of the database plus its filters, e.g. 12G for `viral' and 16G
-# for `strepto'.
+# input is taken from. GS_XMX caps the heap of the measured JVM; both stores are held at once,
+# with one filter each, so it needs about 18 bytes per k-mer of the database plus some 2.5 bytes
+# for the two filters. That is 10G for `viral' with its 386 million k-mers and 14G for `strepto'
+# with 555 million; the default of 56G from the pom is plenty where the machine has it.
 #
 # `strepto' says more about the lookups than `viral' does: on the saliva runs it classifies seven
 # to ten percent of the reads where `viral' classifies two, so more of the time is spent in the
