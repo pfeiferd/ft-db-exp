@@ -13,12 +13,12 @@
 		<gs.project.fqfile>${fqfile}</gs.project.fqfile>
 		<!-- The database file of the `storebench' run; empty takes the project's refined one. -->
 		<gs.store.db></gs.store.db>
-		<!-- Consumer threads of the `storebench' run, two by default and not one per processor:
-		     reading, inflating and parsing a fastq file all happen on one producer thread, so with
-		     many consumers that thread is the limit of the run and a faster lookup hardly shows.
-		     Two puts the limit back on the lookups, which is what the appendix compares. -1 means
-		     one per processor less one, as the goals do it. -->
-		<gs.store.threads>2</gs.store.threads>
+		<!-- CONSUMER threads of the `storebench' run; the producer that reads, inflates and parses
+		     a fastq file always comes on top. One by default, so that a run has two threads in all:
+		     with one consumer per processor the producer is the limit of the run and a faster lookup
+		     hardly shows, while one consumer puts the limit on the lookups, which is what the
+		     appendix compares. -1 means one per processor less one, as the goals do it. -->
+		<gs.store.threads>1</gs.store.threads>
 		<gs.project.reportkey>${reportkey}</gs.project.reportkey>
 		<gs.project.simulator>${simulator}</gs.project.simulator>
 		<!-- Report key of the simulated run whose rho_{d,s} calibrates a `specificity' run;

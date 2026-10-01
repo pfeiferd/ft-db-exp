@@ -11,6 +11,7 @@
 #   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input, resolved against data/fastq
 #   ALL=1 sh ./bin/store_bench.sh strepto              # every file of the map, which takes hours
 #   THREADS=-1 sh ./bin/store_bench.sh strepto         # one consumer per processor less one
+#   THREADS=2 sh ./bin/store_bench.sh strepto          # two consumers, three threads in all
 #
 # DB picks the database file, by default the project's refined one. MAP overrides the fastq map the
 # input is taken from. GS_XMX caps the heap of the measured JVM; both stores are held at once,
@@ -22,11 +23,12 @@
 # to ten percent of the reads where `viral' classifies two, so more of the time is spent in the
 # store. The memory figures do not care which database is measured.
 #
-# THREADS sets the consumer threads and is two by default, which is what the paper's appendix uses
-# throughout. Reading, inflating and parsing a fastq file all happen on one producer thread, so with
-# one consumer per processor that thread is the limit of the run and a faster lookup hardly shows.
-# Two puts the limit back on the lookups. It also makes a run several times longer than the pipeline
-# default would, which is the price of measuring the store rather than the reader.
+# THREADS sets the CONSUMER threads and is one by default, so that a run has two threads in all:
+# the producer that reads, inflates and parses the file, and one consumer that looks the k-mers up.
+# That is what the paper's appendix uses throughout. With one consumer per processor the producer is
+# the limit of the run and a faster lookup hardly shows, while one consumer puts the limit on the
+# lookups. It also makes a run several times longer than the pipeline default would, which is the
+# price of measuring the store rather than the reader.
 #
 # Writes results/storebench_<project>.csv with one row per store and results/storebench_<project>.log.
 set -e

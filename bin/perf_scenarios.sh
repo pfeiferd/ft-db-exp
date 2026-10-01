@@ -18,6 +18,7 @@
 #   sh ./bin/perf_scenarios.sh              # run all four, then write the CSV
 #   sh ./bin/perf_scenarios.sh a            # one scenario
 #   sh ./bin/perf_scenarios.sh csv          # only re-derive the CSV from existing logs
+#   sh ./bin/perf_scenarios.sh store        # only the k-mer store comparison of the appendix
 #
 # Writes results/perf_<scenario>_<key>_<goal>.log per measured run and results/matchperf.csv, which
 # Table "matchperf" of the paper reads.
@@ -240,8 +241,27 @@ case "$what" in
   d|all) run_per_file "strepto${db_suffix}" "${SALIVA_MAP:-saliva_real.txt}" "d${key_suffix}" ;;
 esac
 case "$what" in
-  a|b|c|d|all|csv) ;;
-  *) echo "Usage: $0 [a|b|c|d|all|csv]" >&2; exit 1 ;;
+  a|b|c|d|store|all|csv) ;;
+  *) echo "Usage: $0 [a|b|c|d|store|all|csv]" >&2; exit 1 ;;
+esac
+
+# The k-mer store comparison of the paper's appendix, which is a measurement of the same kind and
+# belongs to the same table-filling run. `strepto' takes the saliva run of scenario (d) and
+# `tick-borne' every file of scenario (b), so the two stores are held against each other on exactly
+# the reads the scenarios use. `viral' is left out: it classifies two percent of the saliva reads, so
+# its lookups are too small a part of a run to say much, and scenario (a) shows that already.
+#
+# Skipped for a DB_SUFFIX run: the twins exist to measure one store at a time, while this compares
+# both in one JVM and needs no twin at all.
+case "$what" in
+  store|all)
+    if [ -n "$db_suffix" ]; then
+      echo "############ store comparison skipped for the ${db_suffix} twins ############"
+    else
+      sh ./bin/store_bench.sh strepto
+      ALL=1 sh ./bin/store_bench.sh tick-borne
+    fi
+    ;;
 esac
 
 # --- deriving the table --------------------------------------------------------------------------
