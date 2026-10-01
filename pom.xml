@@ -291,8 +291,8 @@
 								<classpath />
 								<argument>org.metagene.ftdbexp.store.StoreBenchMain</argument>
 								<argument>${gs.project.name}</argument>
-								<argument>${gs.project.fqfile}</argument>
 								<argument>${gs.store.db}</argument>
+								<argument>${gs.project.fqfile}</argument>
 							</arguments>
 						</configuration>
 					</execution>

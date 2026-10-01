@@ -6,15 +6,21 @@
 # needed.
 #
 # Usage:
-#   sh ./bin/store_bench.sh                            # viral, the smallest fastq of the project
-#   sh ./bin/store_bench.sh tick-borne                 # another project
-#   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input
+#   sh ./bin/store_bench.sh                            # viral, the smallest file of its scenario map
+#   sh ./bin/store_bench.sh strepto                    # the same reads against a denser database
+#   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input, resolved against data/fastq
+#   ALL=1 sh ./bin/store_bench.sh strepto              # every file of the map, which takes hours
 #
-# DB picks the database file, by default the project's refined one. GS_XMX caps the heap of the
-# measured JVM; both stores are held at once, so it needs about 18 bytes per k-mer of the database
-# plus its filters, e.g. 12G for `viral'.
+# DB picks the database file, by default the project's refined one. MAP overrides the fastq map the
+# input is taken from. GS_XMX caps the heap of the measured JVM; both stores are held at once, so
+# it needs about 18 bytes per k-mer of the database plus its filters, e.g. 12G for `viral' and 16G
+# for `strepto'.
 #
-# Writes results/storebench.csv with one row per store and results/storebench_<project>.log.
+# `strepto' says more about the lookups than `viral' does: on the saliva runs it classifies seven
+# to ten percent of the reads where `viral' classifies two, so more of the time is spent in the
+# store. The memory figures do not care which database is measured.
+#
+# Writes results/storebench_<project>.csv with one row per store and results/storebench_<project>.log.
 set -e
 
 scriptdir=$(dirname "$0")
@@ -30,20 +36,39 @@ log="${res}/storebench_${project}.log"
 
 [ -f "$db" ] || { echo "No database at ${db}; build it or set DB=<file>." >&2; exit 1; }
 
+# Without an explicit input the files come from the map that perf_scenarios.sh uses for the same
+# database, so that the stores are compared on what the paper's scenarios are measured on. ALL=1
+# takes every file of that map; by default the smallest one is taken, which is enough for a
+# comparison and costs the least.
 if [ -z "$input" ]; then
-  # The smallest file the project offers, so that a first run is the cheapest one. The project's own
-  # fastq folder first, then the shared one, which is where the downloads land.
-  input=$(ls -S "${data}/projects/${project}/fastq"/*.fastq.gz 2>/dev/null | tail -1)
-  if [ -z "$input" ]; then
-    input=$(ls -S "${data}/fastq"/*.fastq.gz 2>/dev/null | tail -1)
+  case "$project" in
+    viral|strepto) map="${MAP:-saliva_real.txt}" ;;
+    tick-borne) map="${MAP:-eightticks.txt}" ;;
+    nocardia) map="${MAP:-nocardia_mngs.txt}" ;;
+    *) map="${MAP:-}" ;;
+  esac
+  [ -n "$map" ] || { echo "No default map for ${project}; name a file or set MAP=<map>." >&2; exit 1; }
+  [ -f "${data}/fastq/${map}" ] || { echo "No map at ${data}/fastq/${map}." >&2; exit 1; }
+  files=""
+  for name in $(awk '!/^#/ && NF >= 2 {print $2}' "${data}/fastq/${map}"); do
+    file="${data}/fastq/${name}"
+    [ -f "$file" ] || continue
+    files="${files}${files:+ }${file}"
+  done
+  [ -n "$files" ] || { echo "None of the files of ${map} is on disk." >&2; exit 1; }
+  if [ -n "${ALL:-}" ]; then
+    input=$(echo "$files" | tr ' ' ',')
+  else
+    # shellcheck disable=SC2086
+    input=$(ls -S $files | tail -1)
   fi
-  [ -n "$input" ] || { echo "No fastq.gz for ${project}; name one explicitly." >&2; exit 1; }
+else
+  case "$input" in
+    /*) ;;
+    *) input="${data}/fastq/${input}" ;;
+  esac
+  [ -f "$input" ] || { echo "No input at ${input}." >&2; exit 1; }
 fi
-case "$input" in
-  /*) ;;
-  *) input="${data}/projects/${project}/fastq/${input}" ;;
-esac
-[ -f "$input" ] || { echo "No input at ${input}." >&2; exit 1; }
 
 mkdir -p "$res"
 echo "############ store comparison: ${project} ############"

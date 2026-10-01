@@ -52,24 +52,35 @@ public class StoreBenchMain {
     /**
      * Runs the comparison.
      *
-     * @param args the database project name, the fastq file and, optionally, the database file; the
-     *             database defaults to the project's refined one
-     * @throws Exception if the database cannot be read or the fastq file cannot be classified
+     * @param args the database project name, the database file or an empty string for the project's
+     *             refined one, and the fastq files to classify as one comma separated argument
+     * @throws Exception if the database cannot be read or a fastq file cannot be classified
      */
     public static void main(String[] args) throws Exception {
-        if (args.length < 2) {
-            System.err.println("Usage: StoreBenchMain <db> <fastq file> [<database file>]");
+        if (args.length < 3) {
+            System.err.println("Usage: StoreBenchMain <db> <database file> <fastq file>[,<fastq file>...]");
             System.err.println("  <db>             name of the database project under data/projects");
-            System.err.println("  <fastq file>     the file to classify, absolute or under the project's fastq dir");
-            System.err.println("  <database file>  defaults to data/projects/<db>/db/<db>_ftdb.zip");
+            System.err.println("  <database file>  empty for data/projects/<db>/db/<db>_ftdb.zip");
+            System.err.println("  <fastq file>     the files to classify, absolute or under data/fastq,");
+            System.err.println("                   comma separated; each is classified with either store");
             System.exit(1);
         }
         String db = args[0];
-        File fastq = resolveFastq(db, args[1]);
-        File dbFile = args.length > 2 && !args[2].isEmpty() ? new File(args[2])
-                : new File(BASE_DIR, "projects/" + db + "/db/" + db + "_ftdb.zip");
-        if (!fastq.exists()) {
-            throw new IllegalArgumentException("No fastq file at " + fastq);
+        File dbFile = args[1].isEmpty() ? new File(BASE_DIR, "projects/" + db + "/db/" + db + "_ftdb.zip")
+                : new File(args[1]);
+        List<File> fastqs = new ArrayList<File>();
+        for (String name : args[2].split(",")) {
+            if (name.trim().isEmpty()) {
+                continue;
+            }
+            File fastq = resolveFastq(db, name.trim());
+            if (!fastq.exists()) {
+                throw new IllegalArgumentException("No fastq file at " + fastq);
+            }
+            fastqs.add(fastq);
+        }
+        if (fastqs.isEmpty()) {
+            throw new IllegalArgumentException("No fastq file named.");
         }
         if (!dbFile.exists()) {
             throw new IllegalArgumentException("No database at " + dbFile);
@@ -83,7 +94,10 @@ public class StoreBenchMain {
         System.out.println("Genestrip k-mer store comparison");
         System.out.println("  project:  " + db);
         System.out.println("  database: " + dbFile);
-        System.out.println("  input:    " + fastq + " (" + toMB(fastq.length()) + " MB compressed)");
+        for (File fastq : fastqs) {
+            System.out.println("  input:    " + fastq + " (" + String.format("%.0f", toMB(fastq.length()))
+                    + " MB compressed)");
+        }
         System.out.println("  threads:  " + threads + " of " + Runtime.getRuntime().availableProcessors());
         System.out.println();
 
@@ -118,11 +132,20 @@ public class StoreBenchMain {
             }
             Row row = new Row(db, kind, store, heap);
             row.print();
-            classify(row, fastq, project, database, store, threads);
+            // Every file with every store, and the row holds the totals: the comparison is of the two
+            // stores on one input set, so what counts is the time that set took, not a single file's.
+            for (File fastq : fastqs) {
+                classify(row, fastq, project, database, store, threads);
+            }
+            if (fastqs.size() > 1) {
+                System.out.println("    " + fastqs.size() + " files together: "
+                        + String.format("%.2f", row.seconds) + " s, "
+                        + String.format("%.0f", row.readsPerSecond()) + " reads / s");
+            }
             rows.add(row);
         }
 
-        write(rows);
+        write(rows, db);
     }
 
     /**
@@ -140,11 +163,11 @@ public class StoreBenchMain {
             long millis = System.currentTimeMillis() - start;
             CountsPerTaxid stats = result.getGlobalStats();
             row.threads = threads;
-            row.seconds = millis / 1000d;
-            row.reads = stats.getReads();
-            row.kmers = stats.getKMers();
-            System.out.println("    classified in " + String.format("%.2f", row.seconds) + " s, "
-                    + String.format("%.0f", row.readsPerSecond()) + " reads / s");
+            row.seconds += millis / 1000d;
+            row.reads += stats.getReads();
+            row.kmers += stats.getKMers();
+            System.out.println("    " + fastq.getName() + ": " + String.format("%.2f", millis / 1000d)
+                    + " s, " + String.format("%.0f", stats.getReads() / (millis / 1000d)) + " reads / s");
         } finally {
             matcher.dump();
             bundle.dump();
@@ -210,12 +233,16 @@ public class StoreBenchMain {
         return bytes / 1000d / 1000d;
     }
 
-    /** Writes one row per store, which is what the paper's appendix reads. */
-    private static void write(List<Row> rows) throws Exception {
+    /**
+     * Writes one row per store, which is what the paper's appendix reads. The file is named after the
+     * database, so that a run against another one does not overwrite it and the appendix can hold the
+     * two side by side.
+     */
+    private static void write(List<Row> rows, String db) throws Exception {
         if (!RESULTS_DIR.exists() && !RESULTS_DIR.mkdirs()) {
             throw new IllegalStateException("Could not create " + RESULTS_DIR);
         }
-        File out = new File(RESULTS_DIR, "storebench.csv");
+        File out = new File(RESULTS_DIR, "storebench_" + db + ".csv");
         PrintWriter writer = new PrintWriter(out, "UTF-8");
         try {
             writer.println("project;store;class;entries;capacity;bytes per entry;arrays MB;filter MB;"
