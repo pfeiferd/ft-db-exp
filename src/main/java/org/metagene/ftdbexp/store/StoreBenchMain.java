@@ -11,6 +11,7 @@ import org.metagene.genestrip.ExecutionContext;
 import org.metagene.genestrip.GSCommon;
 import org.metagene.genestrip.GSConfigKey;
 import org.metagene.genestrip.GSProject;
+import org.metagene.genestrip.finertree.FTProject;
 import org.metagene.genestrip.io.StreamingFileResource;
 import org.metagene.genestrip.io.StreamingResourceListStream;
 import org.metagene.genestrip.io.StreamingResourceStream;
@@ -93,7 +94,11 @@ public class StoreBenchMain {
             throw new IllegalArgumentException("No database at " + dbFile);
         }
 
-        GSProject project = new GSProject(new GSCommon(BASE_DIR), db, true);
+        // An FTProject and not a GSProject: the latter knows nothing of the `ft.' namespace and
+        // reports every ft key of a project's config.properties as unknown, which the nocardia and
+        // strepto projects do set (ft.ftIndexBloomFilterFpp).
+        FTProject project = new FTProject(new GSCommon(BASE_DIR), db, null, null, null, null, null, null, null, null,
+                null, false);
         project.initConfigParam(GSConfigKey.THREADS, -1);
         // One consumer thread per processor less one by default, as the goals do it. Fewer is what
         // shows the store: with many consumers the single producer thread - reading, inflating and
