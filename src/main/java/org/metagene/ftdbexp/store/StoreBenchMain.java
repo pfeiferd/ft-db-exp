@@ -334,18 +334,19 @@ public class StoreBenchMain {
             writer.println(line(db, "memory", "Store (MB)", toMB(sortedArray.arrays + sortedArray.filter),
                     toMB(radix.arrays + radix.filter), 0));
             writer.println(line(db, "memory", "Heap (MB)", toMB(sortedArray.heap), toMB(radix.heap), 0));
-            // The pass with the filter first, since that is how a database is used; the one without it
-            // says what the two layouts do when every k-mer actually reaches the store.
-            if (sortedArray.measured(true) && radix.measured(true)) {
-                writer.println(line(db, "lookup", "Wall time (s)", sortedArray.seconds(true), radix.seconds(true), 2));
-                writer.println(line(db, "lookup", "Speed (reads / s)", sortedArray.readsPerSecond(true),
-                        radix.readsPerSecond(true), 0));
-            }
+            // The pass without the filter first, since that is the one about the two layouts: every
+            // k-mer reaches the store there. The pass with it is how a database is used, and the two
+            // together say what the filter itself is worth.
             if (sortedArray.measured(false) && radix.measured(false)) {
-                writer.println(line(db, "lookup", "Wall time, no filter (s)", sortedArray.seconds(false),
+                writer.println(line(db, "nofilter", "Wall time (s)", sortedArray.seconds(false),
                         radix.seconds(false), 2));
-                writer.println(line(db, "lookup", "Speed, no filter (reads / s)", sortedArray.readsPerSecond(false),
+                writer.println(line(db, "nofilter", "Speed (reads / s)", sortedArray.readsPerSecond(false),
                         radix.readsPerSecond(false), 0));
+            }
+            if (sortedArray.measured(true) && radix.measured(true)) {
+                writer.println(line(db, "filter", "Wall time (s)", sortedArray.seconds(true), radix.seconds(true), 2));
+                writer.println(line(db, "filter", "Speed (reads / s)", sortedArray.readsPerSecond(true),
+                        radix.readsPerSecond(true), 0));
             }
         } finally {
             writer.close();
