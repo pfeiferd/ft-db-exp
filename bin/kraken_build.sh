@@ -19,6 +19,15 @@
 # dustmasker over the library and drop low-complexity stretches that Genestrip keeps, which would
 # make the comparison one of masking policies rather than of classification.
 #
+# THE K-MER LENGTHS DIFFER, AND ON PURPOSE. Genestrip works at k = 31 and KrakenUniq is built with
+# `--kmer-len 31', while Kraken 2 keeps its own defaults: k = 35 over minimizers of 31 with 7 spaced
+# positions. Those are the settings of the public standard indexes, whose page states that it uses
+# "the defaults for k-mer length, minimizer length, and minimizer spacing", and the study the tick
+# data comes from classified against one of them. Building Kraken 2 to k = 31 would compare a tool
+# nobody runs, and building it to hold every 31-mer would take its minimizers away, which are the
+# reason to have it in the comparison at all. What is aligned instead is the classification
+# threshold, in bin/kraken_classify.sh: the number of k-mers a read must hit to be classified.
+#
 # Usage:
 #   sh ./bin/kraken_build.sh           # both databases
 #   sh ./bin/kraken_build.sh k2        # only Kraken 2

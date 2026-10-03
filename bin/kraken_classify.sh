@@ -12,6 +12,12 @@
 # one is read. The mapping files of the simulated sets list both under one key, so the accuracy run
 # scores Genestrip over both, and a comparison has to cover the same reads.
 #
+# Kraken 2 is called with `--minimum-hit-groups 1' and `--confidence 0'. Its own default asks for two
+# hit groups, while Genestrip classifies a read from a single k-mer (`minKMersForClass' defaults to
+# 1) and KrakenUniq does the same, so the default would compare two different thresholds rather than
+# two classifiers. The minimizers stay as they are: a k-mer length of 35 over minimizers of 31 is
+# what Kraken 2 is, and building it to hold every 31-mer would measure a tool nobody uses.
+#
 # What comes out is one tab-separated file per tool and read set under results/kraken, in each tool's
 # own output format. Both start their lines with C or U, the read name and the assigned tax id, which
 # is all the scoring needs.
@@ -84,6 +90,7 @@ run_tool() {
       _rt_part="${_rt_out}.part${_rt_mate}"
       case "$_rt_tool" in
         k2) "${_rt_bin}/kraken2" --threads "$threads" --db "$_rt_db" --gzip-compressed \
+                --confidence 0 --minimum-hit-groups 1 \
                 --output "$_rt_part" --report "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
         ku) "${_rt_bin}/krakenuniq" --threads "$threads" --db "$_rt_db" --gzip-compressed \
                 --output "$_rt_part" --report-file "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
