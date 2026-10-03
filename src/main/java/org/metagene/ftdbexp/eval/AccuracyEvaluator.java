@@ -303,7 +303,12 @@ public class AccuracyEvaluator {
                         if (cells.length < 3) {
                             continue;
                         }
-                        byte[] descriptor = cells[1].getBytes(StandardCharsets.UTF_8);
+                        // The matcher keeps the '@' of a fastq header in the read descriptor
+                        // (AbstractFastqReader sets readDescriptor[0] = '@'), and the baseline is keyed
+                        // by that string. Kraken reports the name without it, so it is put back here;
+                        // without it not a single read of a subset would be found.
+                        String name = cells[1].startsWith("@") ? cells[1] : "@" + cells[1];
+                        byte[] descriptor = name.getBytes(StandardCharsets.UTF_8);
                         SmallTaxTree.SmallTaxIdNode classNode = null;
                         if ("C".equals(cells[0])) {
                             classNode = dbTree.getNodeByTaxId(cells[2]);

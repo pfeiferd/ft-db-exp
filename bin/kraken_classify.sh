@@ -8,9 +8,9 @@
 # ground truth in the read name, `>ACCESSION|kraken:taxid|TAXID_...', which is what makes a per-read
 # comparison possible at all -- the same names Genestrip is scored against.
 #
-# Only the first mate of each pair is classified, as everywhere else in this project: Genestrip has
-# no notion of a pair and scores every record on its own, so reading the second mate would double
-# the reads without adding an independent observation.
+# Both mates of a set are classified, unlike the real read sets of this project where only the first
+# one is read. The mapping files of the simulated sets list both under one key, so the accuracy run
+# scores Genestrip over both, and a comparison has to cover the same reads.
 #
 # What comes out is one tab-separated file per tool and read set under results/kraken, in each tool's
 # own output format. Both start their lines with C or U, the read name and the assigned tax id, which
@@ -46,9 +46,14 @@ kubin="${basedir}/tools/krakenuniq/bin"
 
 mkdir -p "$outdir"
 
-# The fastq file of a read set key, as make_fastqs.sh named it.
-fastq_of() {
-  echo "${fastqdir}/${project}_${1}_reads_R1.fastq.gz"
+# The fastq files of a read set key, as make_fastqs.sh named them, in the order the mapping file of
+# the accuracy run lists them. Both mates belong to a set: that run reads both under one key, so a
+# comparison on the same reads has to classify both as well.
+fastqs_of() {
+  for _fo_mate in R1 R2; do
+    _fo_file="${fastqdir}/${project}_${1}_reads_${_fo_mate}.fastq.gz"
+    [ -s "$_fo_file" ] && echo "$_fo_file"
+  done
 }
 
 run_tool() {
@@ -58,10 +63,10 @@ run_tool() {
     return 1
   fi
   for key in $sets; do
-    _rt_fq=$(fastq_of "$key")
+    _rt_fqs=$(fastqs_of "$key")
     _rt_out="${outdir}/${project}_${_rt_tool}_${key}.tsv"
-    if [ ! -s "$_rt_fq" ]; then
-      echo "  SKIP ${key} -- ${_rt_fq} is not on disk" >&2
+    if [ -z "$_rt_fqs" ]; then
+      echo "  SKIP ${key} -- no ${project}_${key}_reads_R*.fastq.gz on disk" >&2
       continue
     fi
     if [ -s "$_rt_out" ]; then
@@ -69,12 +74,24 @@ run_tool() {
       continue
     fi
     echo "=== ${_rt_tool}: ${key} ==="
-    case "$_rt_tool" in
-      k2) "${_rt_bin}/kraken2" --threads "$threads" --db "$_rt_db" --gzip-compressed \
-              --output "$_rt_out" --report "${_rt_out%.tsv}.report" "$_rt_fq" ;;
-      ku) "${_rt_bin}/krakenuniq" --threads "$threads" --db "$_rt_db" --gzip-compressed \
-              --output "$_rt_out" --report-file "${_rt_out%.tsv}.report" "$_rt_fq" ;;
-    esac
+    # One pass per mate, concatenated in that order. The tools would take several inputs at once, but
+    # then the reads of the mates are interleaved in the output, and the subsets of the Genestrip run
+    # are consulted in the order the reads arrive.
+    : > "$_rt_out"
+    _rt_mate=0
+    for _rt_fq in $_rt_fqs; do
+      _rt_mate=$((_rt_mate + 1))
+      _rt_part="${_rt_out}.part${_rt_mate}"
+      case "$_rt_tool" in
+        k2) "${_rt_bin}/kraken2" --threads "$threads" --db "$_rt_db" --gzip-compressed \
+                --output "$_rt_part" --report "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
+        ku) "${_rt_bin}/krakenuniq" --threads "$threads" --db "$_rt_db" --gzip-compressed \
+                --output "$_rt_part" --report-file "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
+      esac
+      cat "$_rt_part" >> "$_rt_out"
+      rm -f "$_rt_part"
+    done
+    echo "  $(wc -l < "$_rt_out") reads from ${_rt_mate} mate(s)"
   done
 }
 
