@@ -279,10 +279,16 @@ kudir="${toolsdir}/krakenuniq"
 if [ -x "${kudir}/bin/krakenuniq" ]; then
   echo "  SKIP  ${kudir}/bin/krakenuniq exists"
 else
-  tmp=$(mktemp -d)
+  # The sources stay: `install_krakenuniq.sh -j' builds Jellyfish beside them, in
+  # <sources>/jellyfish-install, and krakenuniq-build needs that binary at every build. A temporary
+  # directory removed after the install would take it along, and the build would then stop with
+  # "JELLYFISH_BIN is not set".
+  src="${kudir}/src"
+  rm -rf "$src"
+  mkdir -p "$src" "${kudir}/bin"
+  tmp="$src"
   curl -sSL "https://codeload.github.com/fbreitwieser/krakenuniq/tar.gz/refs/heads/master" \
     | tar -xz -C "$tmp" --strip-components=1
-  mkdir -p "${kudir}/bin"
   # Three fixes the sources need before they compile, the same ones install_ku.sh of the Genestrip
   # distribution applies. Without them the build stops with errors about uint32_t and about a file
   # that is not C++ at all.
@@ -303,8 +309,10 @@ else
   $SED -i '1i\#include <stdint.h>' "$tmp/src/uid_mapping.hpp"
   $SED -i '12i\#include <stdint.h>' "$tmp/src/report-cols.hpp"
   ( cd "$tmp" && ./install_krakenuniq.sh -j "${kudir}/bin" >/dev/null )
-  rm -rf "$tmp"
-  echo "  built ${kudir}/bin/krakenuniq"
+  jelly=$(find "$kudir" -type f -name jellyfish -perm -u+x 2>/dev/null | head -1)
+  [ -n "$jelly" ] || { echo "  FAIL  Jellyfish was not built under ${kudir}" >&2; exit 1; }
+  "$jelly" --version >/dev/null 2>&1 || { echo "  FAIL  ${jelly} does not run" >&2; exit 1; }
+  echo "  built ${kudir}/bin/krakenuniq and ${jelly}"
 fi
 
 echo "############ Smoke test ############"

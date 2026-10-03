@@ -90,6 +90,17 @@ case "$what" in
   ku|all)
     echo "############ KrakenUniq: ${kudb} ############"
     [ -x "${kubin}/krakenuniq-build" ] || { echo "KrakenUniq is missing - run ./bin/install_tools.sh first." >&2; exit 1; }
+    # krakenuniq-build counts distinct k-mers with Jellyfish and takes its path from the environment.
+    # It is installed beside the KrakenUniq sources, so it is looked up there unless already set.
+    if [ -z "${JELLYFISH_BIN:-}" ]; then
+      JELLYFISH_BIN=$(find "${basedir}/tools/krakenuniq" -type f -name jellyfish -perm -u+x 2>/dev/null | head -1)
+      export JELLYFISH_BIN
+    fi
+    [ -n "${JELLYFISH_BIN:-}" ] && [ -x "$JELLYFISH_BIN" ] || {
+      echo "No Jellyfish under ${basedir}/tools/krakenuniq; krakenuniq-build needs it in JELLYFISH_BIN." >&2
+      echo "Re-run ./bin/install_tools.sh, which now keeps the sources and the jellyfish-install beside them." >&2
+      exit 1; }
+    echo "  Jellyfish: ${JELLYFISH_BIN}"
     if [ -f "${kudb}/database.kdb" ]; then
       echo "SKIP  ${kudb} exists"
     else
