@@ -253,25 +253,28 @@ public class AccuracyEvaluator {
      * Should a tax id nevertheless be missing -- a taxonomy newer than the database is the way that
      * happens -- the nearest ancestor that is present is taken and the case is counted and reported.
      * <p>
-     * The baselines are consulted, never collected: the genus-only subsets belong to the unrefined
-     * Genestrip run, and scoring another classifier on a subset of its own would compare two
-     * different sets of reads.
+     * The genus-only subsets are the classifier's <em>own</em>: they are collected from its output
+     * by the same two rules the Genestrip runs use, {@link #isGenusOnlyRank} for $R_g$ and
+     * {@link #isGenusOnlyNode} for its observable counterpart. That is what the columns of the
+     * paper's table say they are, namely the reads this classifier itself left no further than a
+     * genus, and it is the only reading under which a row can be compared with a Genestrip row at
+     * another $k$. Until 2026-10-03 the subsets of the unrefined Genestrip run were consulted here
+     * instead, which answered a different question -- how far another tool gets on the reads
+     * <em>Genestrip</em> could not resolve -- and printed Genestrip's subset size on the other
+     * tool's row.
      *
      * @param db            the name of the database project
      * @param fqMapFile     the fastq mapping file the Genestrip runs used, so that the files come in
-     *                      the same order as the baselines expect
+     *                      the order the output files are keyed by
      * @param loadDbGoalKey the goal loading the database whose taxonomy supplies the candidate counts
      * @param scope         restricts the reads counting towards recall, or {@code null} for the
      *                      database's own taxonomy
-     * @param baseline      the genus-only subset of the unrefined run, consulted per read
-     * @param obsBaseline   its observable counterpart
      * @param outputs       the classifier's output file per fastq key
      * @return the tallies keyed by fastq key, in the order of the mapping file
      * @throws IOException if the database, the mapping file or an output file cannot be read
      */
     public Map<String, AccuracyTally> evaluateExternal(String db, String fqMapFile, GoalKey loadDbGoalKey,
-                                                       SmallTaxTree scope, GenusOnlyBaseline baseline,
-                                                       GenusOnlyBaseline obsBaseline,
+                                                       SmallTaxTree scope,
                                                        Map<String, File> outputs) throws IOException {
         if (groundTruth == null) {
             groundTruth = simulator.groundTruth(taxTree, extractedTaxIds);
@@ -279,6 +282,11 @@ public class AccuracyEvaluator {
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
         Map<String, AccuracyTally> result = new LinkedHashMap<String, AccuracyTally>();
+        // The classifier's own subsets, collected here rather than taken from elsewhere. They are
+        // never consulted afterwards -- an external tool has no refined second pass -- so they exist
+        // only because record() keeps the subset membership and the collecting in one place.
+        GenusOnlyBaseline baseline = new GenusOnlyBaseline();
+        GenusOnlyBaseline obsBaseline = new GenusOnlyBaseline();
         try {
             @SuppressWarnings("unchecked")
             ObjectGoal<Database, FTProject> dbGoal =
@@ -326,7 +334,7 @@ public class AccuracyEvaluator {
                             }
                         }
                         record(tally, descriptor, descriptor.length, classNode, dbTree, candidates,
-                                effectiveScope, baseline, obsBaseline, false, false);
+                                effectiveScope, baseline, obsBaseline, true, false);
                     }
                 }
                 if (lifted > 0) {
@@ -334,8 +342,9 @@ public class AccuracyEvaluator {
                             + " assignments named a taxon the database's taxonomy does not hold;"
                             + " the nearest ancestor it holds was taken.");
                 }
-                baseline.endConsulting(fastqKey);
-                obsBaseline.endConsulting(fastqKey);
+                baseline.endCollecting(fastqKey);
+                obsBaseline.endCollecting(fastqKey);
+                failIfGroundTruthLost(fastqKey, tally);
                 warnIfUnresolved(fastqKey, tally);
                 result.put(fastqKey, tally);
             }
@@ -402,12 +411,43 @@ public class AccuracyEvaluator {
                     obsGenusOnly = obsBaseline.contains(descriptor);
                 }
             }
-            // The subset is fixed by the unrefined run; on the refined pass the flag is looked up
-            // rather than recomputed, so both variants are scored on identical reads.
+            // Within a Genestrip run the subset is fixed by the unrefined pass and the refined one
+            // looks the flag up rather than recomputing it, so both variants are scored on identical
+            // reads. An external classifier has no second pass and collects its own subset instead.
             tally.record(classNode != null, lcaRank, score, ungatedScore, genusOnly, obsGenusOnly);
         } else if (classNode != null && inScope(taxTree.getNodeByTaxId(classNode.getTaxId()), scope)) {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();
+        }
+    }
+
+    /**
+     * Fails when hardly any read of an external classifier's output could be matched to its ground
+     * truth, which means the tool names its reads differently from the matcher.
+     * <p>
+     * This replaces a check that used to sit in the report: while the genus-only subsets of the
+     * unrefined Genestrip run were consulted here, a name mismatch surfaced as a subset that no read
+     * fell into, and an empty subset was what the report tested for. Since the subsets are now
+     * collected from the classifier's own output, they fill regardless of the names, and the
+     * mismatch would instead show as every read having no resolvable ground truth -- a warning only,
+     * and on a run of hours nobody reads warnings in time. The failure it would otherwise produce is
+     * a CSV of clean zeros, which was exactly the shape the missing {@code '@'} of the Kraken read
+     * names produced on 2026-09-28.
+     * <p>
+     * Half is the threshold rather than all of them: a simulated set has a resolvable truth for
+     * every read, so anything near half is a broken join and not a property of the data.
+     *
+     * @param key   the fastq key just finished
+     * @param tally its counts
+     * @throws IOException if more than half of the reads have no resolvable ground truth
+     */
+    private static void failIfGroundTruthLost(String key, AccuracyTally tally) throws IOException {
+        long unresolved = tally.getUnresolved();
+        long considered = tally.getTotal() + unresolved;
+        if (considered > 0 && unresolved * 2 > considered) {
+            throw new IOException(unresolved + " of " + considered + " reads of " + key
+                    + " have no resolvable ground truth. The read identifiers of the classifier's"
+                    + " output and of the simulation do not match, so every measure would be empty.");
         }
     }
 

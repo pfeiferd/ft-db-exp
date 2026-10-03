@@ -16,6 +16,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * specific enough to name the species. Relating the gain to this subset states what the refinement
  * achieves where it can achieve anything at all.
  * <p>
+ * An external classifier uses the same class for its own subset, collected from its own output and
+ * never consulted afterwards, since it has no refined second pass to score.
+ * <p>
  * The subset is kept per fastq file. Read identifiers are only unique within a file: a simulator
  * numbers the reads of each genome from zero, so the same identifier may well occur in two
  * different fastq files of the same collection. Both evaluation runs walk the same mapping file, so

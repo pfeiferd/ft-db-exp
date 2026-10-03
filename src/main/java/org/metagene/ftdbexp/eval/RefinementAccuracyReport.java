@@ -145,8 +145,7 @@ public class RefinementAccuracyReport {
         writeSummary(resultsDir, db, reportKey, byVariant);
         writeQuality(resultsDir, db, reportKey, byVariant);
         writeSimdata(resultsDir, db, reportKey, byVariant);
-        writeExternal(db, fqMapFile, reportKey, scope, baseline, obsBaseline,
-                byVariant.get(Variant.UNREFINED));
+        writeExternal(db, fqMapFile, reportKey, scope, byVariant.get(Variant.UNREFINED));
         System.out.println("Wrote " + file);
         return file;
     }
@@ -157,21 +156,20 @@ public class RefinementAccuracyReport {
      * left empty: an external tool has no refined counterpart, and pretending otherwise would put a
      * number where there is none.
      * <p>
-     * Runs inside {@link #write} on purpose. The genus-only subsets live in memory and belong to the
-     * unrefined Genestrip run, so this is the one place where another classifier can be scored on
-     * exactly those reads.
+     * Runs inside {@link #write} because the fastq keys of the runs above are what the output files
+     * are looked up by. Each classifier is scored on its own genus-only subset, collected from its
+     * own output by {@link AccuracyEvaluator#evaluateExternal}, which is what the columns of the
+     * paper's table state. Until 2026-10-03 the subsets of the unrefined Genestrip run were handed
+     * down here instead.
      *
-     * @param db          the name of the database project
-     * @param fqMapFile   the fastq mapping file the runs above used
-     * @param reportKey   the key the result files are named after
-     * @param scope       the scope passed to the runs above
-     * @param baseline    the genus-only subset of the unrefined run
-     * @param obsBaseline its observable counterpart
-     * @param unrefined   the tallies of the unrefined run, for the sanity check below
+     * @param db        the name of the database project
+     * @param fqMapFile the fastq mapping file the runs above used
+     * @param reportKey the key the result files are named after
+     * @param scope     the scope passed to the runs above
+     * @param unrefined the tallies of the unrefined run, whose fastq keys name the output files
      * @throws IOException if an output file cannot be read or a CSV cannot be written
      */
     private void writeExternal(String db, String fqMapFile, String reportKey, SmallTaxTree scope,
-                               GenusOnlyBaseline baseline, GenusOnlyBaseline obsBaseline,
                                Map<String, AccuracyTally> unrefined) throws IOException {
         File krakenDir = new File(resultsDir, "kraken");
         if (!krakenDir.isDirectory()) {
@@ -189,29 +187,20 @@ public class RefinementAccuracyReport {
                 continue;
             }
             if (outputs.size() != unrefined.size()) {
-                // A partial set would be scored against baselines whose cursor expects every file in
-                // the order of the mapping file, and the subsets would silently belong to the wrong
-                // reads. Saying so beats writing a CSV nobody can trust.
+                // A partial set would write a CSV with rows missing where the paper's table expects
+                // one per read set, and the rows that are there would be read as the whole run.
+                // Saying so beats writing a CSV nobody can trust.
                 throw new IOException("Only " + outputs.size() + " of " + unrefined.size()
                         + " read sets have a " + tool + " output under " + krakenDir
                         + ". Classify them all or none.");
             }
             System.out.println("Evaluating " + tool + " on " + fqMapFile);
-            baseline.rewind();
-            obsBaseline.rewind();
+            // No rewind and no baseline handed over: evaluateExternal collects the classifier's own
+            // subsets. A read-name mismatch between the tool's output and the simulation is caught
+            // there too, by AccuracyEvaluator.failIfGroundTruthLost -- it used to be caught here, by
+            // a subset that no read of the output fell into.
             Map<String, AccuracyTally> tallies = evaluator.evaluateExternal(db, fqMapFile,
-                    Variant.UNREFINED.getLoadDbGoalKey(), scope, baseline, obsBaseline, outputs);
-            for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
-                AccuracyTally u = unrefined.get(e.getKey());
-                if (u != null && u.getGenusOnlyTotal() > 0 && e.getValue().getGenusOnlyTotal() == 0) {
-                    // Every read of the subset was looked up by its identifier and none was found:
-                    // the tool names its reads differently from the matcher, and every restricted
-                    // column would read as a clean zero.
-                    throw new IOException("None of the " + u.getGenusOnlyTotal() + " genus-only reads of "
-                            + e.getKey() + " was found in the " + tool + " output. The read identifiers"
-                            + " of the two do not match, so the restricted measures would be empty.");
-                }
-            }
+                    Variant.UNREFINED.getLoadDbGoalKey(), scope, outputs);
             writeQualityOfExternal(resultsDir, db, tool, reportKey, tallies);
             writeSummaryOfExternal(resultsDir, db, tool, reportKey, tallies);
         }
