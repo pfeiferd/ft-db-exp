@@ -261,8 +261,8 @@ case "$what" in
     if [ -n "$db_suffix" ]; then
       echo "############ store comparison skipped for the ${db_suffix} twins ############"
     else
-      REAL=1 FILTER=both sh ./bin/store_bench.sh strepto
-      REAL=1 ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne
+      FILTER=both sh ./bin/store_bench.sh strepto
+      ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne
     fi
     ;;
 esac

@@ -1,6 +1,9 @@
 package org.metagene.ftdbexp.store;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
 import java.io.PrintWriter;
 import java.util.ArrayList;
 import java.util.List;
@@ -316,6 +319,10 @@ public class StoreBenchMain {
             throw new IllegalStateException("Could not create " + RESULTS_DIR);
         }
         File out = new File(RESULTS_DIR, "storebench_" + db + ".csv");
+        // A run that measures only one of the two filter settings keeps the rows of the other one, so
+        // that re-measuring half of the table does not empty the other half. Carried-over rows are
+        // named on the console: they are older than the ones beside them.
+        List<String> carried = carriedRows(out, rows);
         PrintWriter writer = new PrintWriter(out, "UTF-8");
         try {
             // One row per measured figure, with the sorted array first: it is what the radix store is
@@ -338,21 +345,63 @@ public class StoreBenchMain {
             // k-mer reaches the store there. The pass with it is how a database is used, and the two
             // together say what the filter itself is worth.
             if (sortedArray.measured(false) && radix.measured(false)) {
-                writer.println(line(db, "nofilter", "Wall time (s)", sortedArray.seconds(false),
-                        radix.seconds(false), 2));
+                // Minutes, as the performance tables of the paper give them.
+                writer.println(line(db, "nofilter", "Wall time (min)", sortedArray.seconds(false) / 60,
+                        radix.seconds(false) / 60, 2));
                 writer.println(line(db, "nofilter", "Speed (reads / s)", sortedArray.readsPerSecond(false),
                         radix.readsPerSecond(false), 0));
             }
             if (sortedArray.measured(true) && radix.measured(true)) {
-                writer.println(line(db, "filter", "Wall time (s)", sortedArray.seconds(true), radix.seconds(true), 2));
+                writer.println(line(db, "filter", "Wall time (min)", sortedArray.seconds(true) / 60,
+                        radix.seconds(true) / 60, 2));
                 writer.println(line(db, "filter", "Speed (reads / s)", sortedArray.readsPerSecond(true),
                         radix.readsPerSecond(true), 0));
+            }
+            for (String row : carried) {
+                writer.println(row);
             }
         } finally {
             writer.close();
         }
         System.out.println();
         System.out.println("Wrote " + out);
+    }
+
+    /**
+     * Returns the rows of the given file that this run did not measure, so that they survive it. The
+     * memory rows are always measured, so only the two lookup sections can be carried over.
+     *
+     * @param out the file about to be written
+     * @param rows the rows this run measured
+     * @return the lines to append, empty if there is nothing to carry
+     * @throws Exception if the file cannot be read
+     */
+    private static List<String> carriedRows(File out, List<Row> rows) throws Exception {
+        List<String> carried = new ArrayList<String>();
+        if (!out.exists()) {
+            return carried;
+        }
+        boolean withFilter = rowOf(rows, STORE_DB).measured(true);
+        boolean withoutFilter = rowOf(rows, STORE_DB).measured(false);
+        if (withFilter && withoutFilter) {
+            return carried;
+        }
+        String keep = withFilter ? "nofilter" : "filter";
+        BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(out), "UTF-8"));
+        try {
+            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                String[] columns = line.split(";");
+                if (columns.length > 1 && keep.equals(columns[1])) {
+                    carried.add(line);
+                }
+            }
+        } finally {
+            reader.close();
+        }
+        if (!carried.isEmpty()) {
+            System.out.println("Kept " + carried.size() + " '" + keep + "' rows of the previous run.");
+        }
+        return carried;
     }
 
     /** Returns the row of the given store, which must be there. */

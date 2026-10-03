@@ -6,11 +6,11 @@
 # needed.
 #
 # Usage:
-#   ALL=1 sh ./bin/store_bench.sh strepto              # every simulated saliva-like file
-#   ALL=1 sh ./bin/store_bench.sh tick-borne           # every simulated tick file
-#   sh ./bin/store_bench.sh viral <file.fastq.gz>      # an explicit input, resolved against data/fastq
-#   REAL=1 ALL=1 sh ./bin/store_bench.sh tick-borne    # the real tick runs instead
-#   REAL=1 ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne   # real runs, with and without it
+#   FILTER=both sh ./bin/store_bench.sh strepto        # the smallest saliva run, with and without
+#   FILTER=on sh ./bin/store_bench.sh strepto          # only the pass with the filter; the rows of
+#                                                      # the other pass are kept from the last run
+#   ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne   # all eight tick runs
+#   SIM=1 ALL=1 sh ./bin/store_bench.sh strepto        # the simulated sets instead
 #   THREADS=-1 sh ./bin/store_bench.sh strepto         # one consumer per processor less one
 #   THREADS=2 sh ./bin/store_bench.sh strepto          # two consumers, three threads in all
 #
@@ -57,26 +57,25 @@ log="${res}/storebench_${project}.log"
 
 [ -f "$db" ] || { echo "No database at ${db}; build it or set DB=<file>." >&2; exit 1; }
 
-# Without an explicit input the files come from the project's simulated read sets. Those are drawn
-# from the genomes the database was built from, so nearly every k-mer of a read is in the store and
-# the Bloom filter in front of it rejects almost nothing. That is what makes the comparison about the
-# two layouts: on real data most k-mers never reach a store at all, and then the layout barely shows.
-# REAL=1 takes the real read sets instead, MAP=<map> any other map. ALL=1 takes every file of the
-# map, which is what the appendix uses for the simulated sets; by default the smallest one is taken.
+# Without an explicit input the files come from the project's real read sets, which is what the
+# appendix measures. SIM=1 takes the simulated ones instead, whose reads are drawn from the genomes
+# the database was built from, and MAP=<map> any other map. ALL=1 takes every file of the map; by
+# default the smallest one is taken, so `strepto' runs on one saliva file and `tick-borne' needs
+# ALL=1 for all eight ticks.
 if [ -z "$input" ]; then
-  if [ -n "${REAL:-}" ]; then
-    case "$project" in
-      viral|strepto) map="${MAP:-saliva_real.txt}" ;;
-      tick-borne) map="${MAP:-eightticks.txt}" ;;
-      nocardia) map="${MAP:-nocardia_mngs.txt}" ;;
-      *) map="${MAP:-}" ;;
-    esac
-  else
+  if [ -n "${SIM:-}" ]; then
     case "$project" in
       strepto) map="${MAP:-strepto_sim_saliva.txt}" ;;
       tick-borne) map="${MAP:-ticks_sim.txt}" ;;
       viral) map="${MAP:-viral_sim.txt}" ;;
       nocardia) map="${MAP:-nocardia_sim_mngs.txt}" ;;
+      *) map="${MAP:-}" ;;
+    esac
+  else
+    case "$project" in
+      viral|strepto) map="${MAP:-saliva_real.txt}" ;;
+      tick-borne) map="${MAP:-eightticks.txt}" ;;
+      nocardia) map="${MAP:-nocardia_mngs.txt}" ;;
       *) map="${MAP:-}" ;;
     esac
   fi
