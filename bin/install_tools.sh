@@ -283,6 +283,25 @@ else
   curl -sSL "https://codeload.github.com/fbreitwieser/krakenuniq/tar.gz/refs/heads/master" \
     | tar -xz -C "$tmp" --strip-components=1
   mkdir -p "${kudir}/bin"
+  # Three fixes the sources need before they compile, the same ones install_ku.sh of the Genestrip
+  # distribution applies. Without them the build stops with errors about uint32_t and about a file
+  # that is not C++ at all.
+  #
+  # src/gzstream/version is a plain text file carrying a version number, which the build hands to the
+  # compiler because of its name.
+  rm -f "$tmp/src/gzstream/version"
+  # uid_mapping.hpp and report-cols.hpp use uint32_t without including <stdint.h>, which older
+  # compilers tolerated and current ones do not.
+  #
+  # GNU sed is needed for the -i syntax used here; on macOS that is gsed from `brew install gnu-sed',
+  # on Linux plain sed already is GNU sed.
+  if command -v gsed >/dev/null 2>&1; then
+    SED=gsed
+  else
+    SED=sed
+  fi
+  $SED -i '1i\#include <stdint.h>' "$tmp/src/uid_mapping.hpp"
+  $SED -i '12i\#include <stdint.h>' "$tmp/src/report-cols.hpp"
   ( cd "$tmp" && ./install_krakenuniq.sh -j "${kudir}/bin" >/dev/null )
   rm -rf "$tmp"
   echo "  built ${kudir}/bin/krakenuniq"
