@@ -288,6 +288,26 @@ fi
 skip=""
 
 ########################################################################################
+step "the k = 24 control of cv" || skip=1
+if [ -z "${skip:-}" ]; then
+  # A second, complete evaluation strand for `cv' alone: the same genomes and taxonomy built at
+  # k = 24 instead of 31, scored on the same four read sets. k is the one knob that moves the share
+  # of k-mers stored above the data taxa, which is the mass a refinement can push down, so the twin
+  # says how much of the gain is a property of the database rather than of the method. It is also
+  # where Kraken 2 sits: its default spaced seed has weight 24.
+  #
+  # After the classification steps, because the saliva-matched read set it is scored on is written
+  # by step 7 and the maps are linked from it. Before the performance scenarios, which delete and
+  # re-time the `match' results of `viral' and have nothing to do with the twin.
+  #
+  # Its figures go to CSV files of their own -- db_gen_perf-k24.csv, db_disk_sizes-k24.csv,
+  # viral-k24_* -- so nothing of the main run is overwritten, and the twin is skipped by every
+  # table unless the paper asks for it by name.
+  run sh ./bin/k24_exps.sh all
+fi
+skip=""
+
+########################################################################################
 step "classification performance: the four scenarios" || skip=1
 if [ -z "${skip:-}" ]; then
   # Table "matchperf" of the paper reads results/matchperf.csv, and nothing else writes it: the

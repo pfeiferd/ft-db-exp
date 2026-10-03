@@ -393,6 +393,46 @@ first's files -- and the `clean` that precedes each measured run deletes them ou
 These ride on the performance measurement, so **no cgmemtime means no per-taxon results**: `run_perf`
 returns early without it and the match goals never run.
 
+### The k = 24 control of cv
+
+A second, complete evaluation strand for `cv` alone, on the same genomes, the same taxonomy and the
+same four read sets, built at *k* = 24 instead of Genestrip's default of 31:
+
+```sh
+sh ./bin/k24_exps.sh all          # the twin, its database, and the four read sets against it
+sh ./bin/k24_exps.sh projects     # only the twin project, seconds
+sh ./bin/k24_exps.sh build        # only the database and the reports over it
+sh ./bin/k24_exps.sh accuracy     # only the classification
+```
+
+It is step 11 of `run_all_exps.sh`, so a full run produces it without being asked.
+
+Why *k* = 24. Kraken 2 classifies with a spaced seed of weight 24 — 31 minimizer positions of which
+7 are masked — whereas Genestrip matches exact 31-mers. The weight of a seed is the number of
+positions that must agree, and under independently placed substitutions it is the whole story: a
+spaced seed of weight 24 and a contiguous 24-mer match with the same probability, both against a
+read carrying errors and against a related species. A Genestrip database at *k* = 24 therefore sits
+where Kraken 2 sits on that trade-off.
+
+It also isolates one factor behind the refinement's gain. *k* is the only knob that moves the share
+of *k*-mers stored above the data taxa — the mass a refinement can push down — without touching the
+genomes, the read sets, the measures or the code. The strand reports exactly the quantities the main
+run reports, under the project name `viral-k24`: the share above the data taxa and the two subtree
+precisions from `viral-k24_dbquality.csv` and `viral-k24_ftquality.csv`, and the per-read precisions
+from `viral-k24_iss_accuracy.csv`, `viral-k24_iss_perfect_accuracy.csv` and
+`viral-k24_iss_saliva_accuracy.csv`.
+
+`bin/k24_projects.sh` writes the twin: symlinks to the original's `taxids.txt`, `additional.txt` and
+`categories.txt`, a `config.properties` generated from the original's with `kMerSize=24` appended,
+and the fastq maps linked under the twin's own name. The last of these is what makes the two rows
+comparable — the twin is scored on the very read files `viral` was scored on, not on a second
+simulation of them. `K=27 sh ./bin/k24_exps.sh all` builds `viral-k27` the same way.
+
+Its figures go into CSV files of their own. `CSV_SUFFIX=-k24` keeps the generation timings and disk
+sizes in `db_gen_perf-k24.csv` and `db_disk_sizes-k24.csv` rather than overwriting the main run's,
+and every other file carries the project name. The twin costs about one to two hours and some 8 GB
+of disk beside the original, and it simulates no reads, so nothing here needs InSilicoSeq.
+
 ## 6. Machine description
 
 The paper states what hardware the experiments ran on, mirroring the corresponding paragraph of the
@@ -471,6 +511,7 @@ while the CSVs beside them are new, which is exactly the mismatch that script ex
 | `match_<logkey>.log`, `ftmatch_<logkey>.log` | `run_classification_exps.sh` | 5 |
 | `<goal>_<logkey>_<key>.csv` | `run_classification_exps.sh` | 5 |
 | `perf_<scenario>_<key>_<goal>.log`, `matchperf.csv` | `perf_scenarios.sh` | 5 |
+| `viral-k24_*`, `db_gen_perf-k24.csv`, `db_disk_sizes-k24.csv` | `k24_exps.sh` | 5 |
 | `dbstats.tex` | `paper_stats.sh` | below |
 | `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | 6 |
 

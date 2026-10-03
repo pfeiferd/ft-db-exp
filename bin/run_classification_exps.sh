@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|accuracy|perf|real|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|k24|accuracy|perf|real|all]
 #
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
@@ -305,6 +305,20 @@ case "$what" in
   # and classify first, evaluate after.
   kraken)       sh ./bin/kraken_build.sh all
                 sh ./bin/kraken_classify.sh all ;;
+  # The k = 24 twin of `cv', on the same four read sets and with the same measures. It is a control
+  # for what governs the refinement's gain: a shorter k-mer is shared by more species, so more of
+  # the database's k-mers end up above the data taxa, which is the mass a refinement can move. The
+  # twin is created by bin/k24_projects.sh, which also links the read maps under its name, so the
+  # reads here are the very files `viral' was scored on. ERROR_SALIVA is set and restored around the
+  # saliva-matched set for the reason given above.
+  k24)          _cl_db=${K24_DB:-viral-k24}
+                _cl_saved=${ERROR_SALIVA:-}
+                ERROR_SALIVA=""
+                run_iss_all_regimes "$_cl_db"
+                ERROR_SALIVA=1
+                run_iss "$_cl_db"
+                ERROR_SALIVA=$_cl_saved
+                run_perf "$_cl_db" "${_cl_db}_sim.txt" ;;
   # The same for `nocardia', whose real runs are BGISEQ-500 rather than saliva: one simulated set at
   # their length and error, so that the estimate columns of the real-read table have a factor.
   mngs)         _cl_saved=${ERROR_MNGS:-}
@@ -340,7 +354,7 @@ case "$what" in
                 run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne eightticks.txt ticks nanosim
                 run_real nocardia nocardia_mngs.txt mngs iss_mngs ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|accuracy|perf|real|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|k24|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 
 echo

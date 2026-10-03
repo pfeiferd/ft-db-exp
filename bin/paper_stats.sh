@@ -58,7 +58,12 @@ SPECIES_AND_BELOW = {'species', 'subspecies', 'strain', 'isolate', 'serotype', '
                      'genotype', 'biotype', 'morph', 'forma', 'forma specialis', 'varietas',
                      'subvariety', 'pathogroup'}
 
-DBS = ['viral', 'tick-borne', 'strepto', 'nocardia', 'protozoa', 'vineyard', 'parasites', 'orthopox']
+# `viral-k24' is the k = 24 twin of `viral' that bin/k24_exps.sh builds: the same genomes and
+# taxonomy at a shorter k-mer length. It is listed here so that its share above the data taxa
+# and its two subtree precisions can be read from the same macros as every other database's.
+# A twin that was never built has no dbinfo.csv and is skipped, as any absent database is.
+DBS = ['viral', 'tick-borne', 'strepto', 'nocardia', 'protozoa', 'vineyard', 'parasites', 'orthopox',
+       'viral-k24']
 
 def subtree_data_kmers(info):
     """For every node of a dbinfo file, the k-mers stored at data taxa in its subtree.
