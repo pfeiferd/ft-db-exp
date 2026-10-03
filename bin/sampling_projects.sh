@@ -32,6 +32,11 @@
 #   S   one k-mer in how many to enter, default 4. It names the twin as well, so S=5 writes
 #       `viral-s5'. Genestrip's kMerSampling takes 1 or more; 1 would make the twin a copy of the
 #       original.
+#   K   a k-mer length to set along with the sampling, unset by default, which leaves Genestrip's
+#       own 31. K=24 writes `viral-k24-s4' and sets both keys, so that the two ways of making the
+#       database smaller can be measured together: the seed weight of bin/k24_exps.sh and the
+#       sampling of this one. The twin is built from the original either way, never from the
+#       `-k24' twin, so one project holds one complete configuration.
 #
 set -e
 
@@ -50,6 +55,21 @@ if [ "$s" -lt 2 ]; then
   exit 1
 fi
 
+# The k-mer length, and the part of the twin's name that says so. Empty leaves the default of 31 and
+# the name without a `-k' part, which is what the reported `viral-s4' is.
+k=${K:-}
+ksuffix=""
+if [ -n "$k" ]; then
+  case "$k" in
+    ''|*[!0-9]*) echo "K must be a number, not '${k}'." >&2; exit 1 ;;
+  esac
+  if [ "$k" -lt 15 ] || [ "$k" -gt 31 ]; then
+    echo "K must be between 15 and 31 - Genestrip's kMerSize takes no other value." >&2
+    exit 1
+  fi
+  ksuffix="-k${k}"
+fi
+
 if [ $# -gt 0 ]; then
   projects="$*"
 else
@@ -58,7 +78,7 @@ fi
 
 for p in $projects; do
   src="${projdir}/${p}"
-  dst="${projdir}/${p}-s${s}"
+  dst="${projdir}/${p}${ksuffix}-s${s}"
   if [ ! -d "$src" ]; then
     echo "No such project: ${src}" >&2
     exit 1
@@ -77,23 +97,30 @@ for p in $projects; do
     echo "#"
     echo "# The twin of \`${p}' that enters one k-mer in ${s} instead of every one of them, so that a"
     echo "# database of roughly the size Kraken 2 builds from the same genomes can be measured on the"
-    echo "# same read sets. Everything below is the original project's configuration; the last line is"
-    echo "# what makes the difference."
+    if [ -n "$k" ]; then
+      echo "# same read sets, and that matches Kraken 2's seed weight as well by shortening the k-mer"
+      echo "# to ${k}. Everything below is the original project's configuration; the last two lines are"
+      echo "# what makes the difference."
+    else
+      echo "# same read sets. Everything below is the original project's configuration; the last line is"
+      echo "# what makes the difference."
+    fi
     echo "#"
     if [ -f "${src}/config.properties" ]; then
       cat "${src}/config.properties"
       echo
     fi
+    [ -n "$k" ] && echo "kMerSize=${k}"
     echo "kMerSampling=${s}"
   } > "${dst}/config.properties"
 
   for suffix in _sim.txt _sim_perfect.txt _sim_saliva.txt; do
     if [ -f "${fqdir}/${p}${suffix}" ]; then
-      ln -sfn "${p}${suffix}" "${fqdir}/${p}-s${s}${suffix}"
+      ln -sfn "${p}${suffix}" "${fqdir}/${p}${ksuffix}-s${s}${suffix}"
     else
       echo "  note: ${fqdir}/${p}${suffix} is not there yet - no map linked for it." >&2
     fi
   done
 
-  echo "OK    ${dst} (kMerSampling=${s}, $(ls -1 "$dst" | wc -l | tr -d ' ') entries)"
+  echo "OK    ${dst} (${k:+kMerSize=${k}, }kMerSampling=${s}, $(ls -1 "$dst" | wc -l | tr -d ' ') entries)"
 done
