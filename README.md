@@ -463,6 +463,19 @@ factor, and that is the number this strand produces.
 `CSV_SUFFIX=-s4` keeps its timings and disk sizes in `db_gen_perf-s4.csv` and
 `db_disk_sizes-s4.csv`. `S=5 sh ./bin/sampling_exps.sh all` builds `viral-s5` instead.
 
+`K` sets a *k*-mer length along with the sampling, so
+
+```sh
+K=24 sh ./bin/sampling_exps.sh all     # viral-k24-s4
+```
+
+builds the twin that is smaller both ways at once. The two halvings act on different terms: the seed
+weight on how many *k*-mers are distinct, the sampling on how many of them are entered. Only the
+combination reaches Kraken 2's size — on `cv` 671 MiB against roughly 702 — and it is the only one of
+the three whose seed weight and whose entry count are both comparable with Kraken 2's. The twin is
+always built from the original project, never from the `-k24` twin, so one project folder holds one
+complete configuration.
+
 ## 6. Machine description
 
 The paper states what hardware the experiments ran on, mirroring the corresponding paragraph of the
@@ -543,6 +556,7 @@ while the CSVs beside them are new, which is exactly the mismatch that script ex
 | `perf_<scenario>_<key>_<goal>.log`, `matchperf.csv` | `perf_scenarios.sh` | 5 |
 | `viral-k24_*`, `db_gen_perf-k24.csv`, `db_disk_sizes-k24.csv` | `k24_exps.sh` | 5 |
 | `viral-s4_*`, `db_gen_perf-s4.csv`, `db_disk_sizes-s4.csv` | `sampling_exps.sh` | 5 |
+| `viral-k24-s4_*`, `db_gen_perf-k24-s4.csv`, `db_disk_sizes-k24-s4.csv` | `K=24 sampling_exps.sh` | 5 |
 | `dbstats.tex` | `paper_stats.sh` | below |
 | `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | 6 |
 

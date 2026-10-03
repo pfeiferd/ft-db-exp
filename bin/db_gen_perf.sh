@@ -50,6 +50,7 @@ label_of() {
         viral)      echo "cv" ;;
         viral-k24)  echo "cv_k24" ;;
         viral-s4)   echo "cv_s4" ;;
+        viral-k24-s4) echo "cv_k24_s4" ;;
         tick-borne) echo "tb" ;;
         *)          echo "$1" ;;
     esac

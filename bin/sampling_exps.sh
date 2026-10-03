@@ -38,6 +38,9 @@
 #   SAMPLING_PROJECT  the project to make the twin of, default `viral'. Only `cv' is reported.
 #   S                 one k-mer in how many to enter, default 4. It names the twin as well, so S=5
 #                     builds and evaluates `viral-s5' throughout.
+#   K                 a k-mer length to set along with the sampling, unset by default. K=24 builds
+#                     and evaluates `viral-k24-s4', which makes the database smaller both ways at
+#                     once -- Kraken 2's seed weight and a comparable entry count.
 #
 set -e
 
@@ -48,7 +51,11 @@ basedir=$(pwd)
 what=${1:-}
 src=${SAMPLING_PROJECT:-viral}
 s=${S:-4}
-twin="${src}-s${s}"
+k=${K:-}
+# The twin's name and the CSV suffix carry every key that differs from the original, so two
+# configurations can never write into one another's results.
+suffix="${k:+-k${k}}-s${s}"
+twin="${src}${suffix}"
 
 if [ -z "$what" ]; then
   echo "Usage: $0 [projects|build|accuracy|all]" >&2
@@ -59,15 +66,15 @@ fi
 
 case "$what" in
   projects|all)
-    echo "############ 1/3: the one-in-${s} twin of ${src} ############"
-    S="$s" sh ./bin/sampling_projects.sh "$src"
+    echo "############ 1/3: the one-in-${s}${k:+, k = ${k}} twin of ${src} ############"
+    K="$k" S="$s" sh ./bin/sampling_projects.sh "$src"
     ;;
 esac
 
 case "$what" in
   build|all)
     echo "############ 2/3: building and timing ${twin} ############"
-    CSV_SUFFIX="-s${s}" sh ./bin/run_exps.sh "$twin"
+    CSV_SUFFIX="$suffix" sh ./bin/run_exps.sh "$twin"
 
     # The twin's own accession-to-taxon table, for the reason bin/k24_exps.sh gives: the accuracy
     # runs resolve their ground truth against it, and ExtractedTaxIds.load returns an empty map for
@@ -105,7 +112,7 @@ esac
 echo
 echo "=== results ==="
 ls -la "results/${twin}_dbinfo.csv" "results/${twin}_dbquality.csv" "results/${twin}_ftquality.csv" \
-       "results/db_gen_perf-s${s}.csv" "results/db_disk_sizes-s${s}.csv" \
+       "results/db_gen_perf${suffix}.csv" "results/db_disk_sizes${suffix}.csv" \
        "results/${twin}_iss_accuracy.csv" "results/${twin}_iss_perfect_accuracy.csv" \
        "results/${twin}_iss_saliva_accuracy.csv" 2>/dev/null \
   || echo "not every file is there yet - see the steps above"
