@@ -15,7 +15,7 @@
 #                and `ftmatch' rather than derived from the quality runs -- see run_perf() below.
 #
 # Usage:
-#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|k24|accuracy|perf|real|all]
+#   sh ./bin/run_classification_exps.sh [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|twin|accuracy|perf|real|all]
 #
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral    # the saliva-matched read set
 #
@@ -305,13 +305,14 @@ case "$what" in
   # and classify first, evaluate after.
   kraken)       sh ./bin/kraken_build.sh all
                 sh ./bin/kraken_classify.sh all ;;
-  # The k = 24 twin of `cv', on the same four read sets and with the same measures. It is a control
-  # for what governs the refinement's gain: a shorter k-mer is shared by more species, so more of
-  # the database's k-mers end up above the data taxa, which is the mass a refinement can move. The
-  # twin is created by bin/k24_projects.sh, which also links the read maps under its name, so the
-  # reads here are the very files `viral' was scored on. ERROR_SALIVA is set and restored around the
-  # saliva-matched set for the reason given above.
-  k24)          _cl_db=${K24_DB:-viral-k24}
+  # A twin of `cv', on the same four read sets and with the same measures. Two of them exist and
+  # both come through here, named by TWIN_DB: `viral-k24' from bin/k24_exps.sh, which shortens the
+  # k-mer to Kraken 2's seed weight, and `viral-s4' from bin/sampling_exps.sh, which enters one
+  # k-mer in four so that the database comes out the size Kraken 2's is. Each twin is created by its
+  # own projects script, which also links the read maps under the twin's name, so the reads here are
+  # the very files `viral' was scored on. ERROR_SALIVA is set and restored around the saliva-matched
+  # set for the reason given above. `k24' is kept as the name this target had until 2026-10-03.
+  twin|k24)     _cl_db=${TWIN_DB:-${K24_DB:-viral-k24}}
                 _cl_saved=${ERROR_SALIVA:-}
                 ERROR_SALIVA=""
                 run_iss_all_regimes "$_cl_db"
@@ -354,7 +355,7 @@ case "$what" in
                 run_real strepto "${SALIVA_MAP:-saliva_real.txt}" saliva iss_saliva
                 run_real tick-borne eightticks.txt ticks nanosim
                 run_real nocardia nocardia_mngs.txt mngs iss_mngs ;;
-  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|k24|accuracy|perf|real|all]" >&2; exit 1 ;;
+  *)          echo "Usage: $0 [viral|protozoa|strepto|nocardia|tick-borne|saliva|mngs|kraken|twin|accuracy|perf|real|all]" >&2; exit 1 ;;
 esac
 
 echo

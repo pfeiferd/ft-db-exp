@@ -429,8 +429,13 @@ public class RefinementAccuracyReport {
                 ps.print(';');
                 ps.print(t.getGenusOnlyTotal());
                 ps.print(';');
-                ps.print(format(t.getClassified() == 0 ? Double.NaN
-                        : 100.0 * t.getGenusOnlyTotal() / t.getClassified()));
+                // Over every read of the set, as writeSummary does it above and as the paper's
+                // column "Share of |R|" says. It was over the classified reads here until
+                // 2026-10-03, which went unnoticed while these rows carried the counts of the
+                // unrefined Genestrip run: the denominators differed but the printed share was
+                // simply a different number in a column nobody could compare.
+                ps.print(format(t.getTotal() == 0 ? Double.NaN
+                        : 100.0 * t.getGenusOnlyTotal() / t.getTotal()));
                 ps.print(';');
                 ps.print(format(p));
                 ps.print(";;");

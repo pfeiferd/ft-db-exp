@@ -103,7 +103,7 @@ esac
 case "$what" in
   accuracy|all)
     echo "############ 3/3: the four read sets against ${twin} ############"
-    K24_DB="$twin" sh ./bin/run_classification_exps.sh k24
+    TWIN_DB="$twin" sh ./bin/run_classification_exps.sh twin
     ;;
 esac
 

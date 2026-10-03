@@ -433,6 +433,36 @@ sizes in `db_gen_perf-k24.csv` and `db_disk_sizes-k24.csv` rather than overwriti
 and every other file carries the project name. The twin costs about one to two hours and some 8 GB
 of disk beside the original, and it simulates no reads, so nothing here needs InSilicoSeq.
 
+### The sampled control of cv
+
+The second twin of `cv`, and the second half of the same question. `cv_k24` above isolates the seed
+weight; this one isolates the store:
+
+```sh
+sh ./bin/sampling_exps.sh all          # the twin, its database, and the four read sets against it
+sh ./bin/sampling_exps.sh projects     # only the twin project, seconds
+```
+
+It runs in step 11 of `run_all_exps.sh` beside the *k* = 24 twin.
+
+Kraken 2 keeps a 4-byte cell per minimizer — 17 bits of truncated MurmurHash3 and 15 bits of taxon
+index, nothing of the *k*-mer itself — and enters only the minimizers, which at its defaults *k* = 35
+and ℓ = 31 is a window of five and so a density of 2/(5+1) = 1/3. Genestrip enters every *k*-mer in a
+64-bit word that holds it exactly, plus a Bloom filter of 10 bits per entry in front. Measured on
+`cv` that is 9.25 bytes per entry in memory against 5.71, a factor no sampling rate can change, so a
+Genestrip database of Kraken 2's size needs a rate of about four. `kMerSampling=4` is what the twin
+`viral-s4` sets.
+
+What it costs is paid on the reads. The sampling selects by the *k*-mer and not by its position
+(`KMerSampling.java` uses a multiplicative threshold, `kmer * 0x9E3779B97F4A7C15` unsigned against
+`(2^64-1)/n`), which is what keeps the tax ids right: a *k*-mer is entered in every genome it occurs
+in or in none of them. A read therefore keeps about one *k*-mer in four at random positions. On clean
+reads that is harmless; on error-rich ones the surviving error-free *k*-mers are thinned by the same
+factor, and that is the number this strand produces.
+
+`CSV_SUFFIX=-s4` keeps its timings and disk sizes in `db_gen_perf-s4.csv` and
+`db_disk_sizes-s4.csv`. `S=5 sh ./bin/sampling_exps.sh all` builds `viral-s5` instead.
+
 ## 6. Machine description
 
 The paper states what hardware the experiments ran on, mirroring the corresponding paragraph of the
@@ -512,6 +542,7 @@ while the CSVs beside them are new, which is exactly the mismatch that script ex
 | `<goal>_<logkey>_<key>.csv` | `run_classification_exps.sh` | 5 |
 | `perf_<scenario>_<key>_<goal>.log`, `matchperf.csv` | `perf_scenarios.sh` | 5 |
 | `viral-k24_*`, `db_gen_perf-k24.csv`, `db_disk_sizes-k24.csv` | `k24_exps.sh` | 5 |
+| `viral-s4_*`, `db_gen_perf-s4.csv`, `db_disk_sizes-s4.csv` | `sampling_exps.sh` | 5 |
 | `dbstats.tex` | `paper_stats.sh` | below |
 | `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | 6 |
 

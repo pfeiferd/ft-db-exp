@@ -49,6 +49,7 @@ label_of() {
     case "$1" in
         viral)      echo "cv" ;;
         viral-k24)  echo "cv_k24" ;;
+        viral-s4)   echo "cv_s4" ;;
         tick-borne) echo "tb" ;;
         *)          echo "$1" ;;
     esac

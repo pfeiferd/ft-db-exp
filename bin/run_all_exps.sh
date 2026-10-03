@@ -288,7 +288,7 @@ fi
 skip=""
 
 ########################################################################################
-step "the k = 24 control of cv" || skip=1
+step "the two controls of cv: k = 24 and one k-mer in four" || skip=1
 if [ -z "${skip:-}" ]; then
   # A second, complete evaluation strand for `cv' alone: the same genomes and taxonomy built at
   # k = 24 instead of 31, scored on the same four read sets. k is the one knob that moves the share
@@ -300,10 +300,15 @@ if [ -z "${skip:-}" ]; then
   # by step 7 and the maps are linked from it. Before the performance scenarios, which delete and
   # re-time the `match' results of `viral' and have nothing to do with the twin.
   #
-  # Its figures go to CSV files of their own -- db_gen_perf-k24.csv, db_disk_sizes-k24.csv,
-  # viral-k24_* -- so nothing of the main run is overwritten, and the twin is skipped by every
-  # table unless the paper asks for it by name.
+  # The second twin enters only one k-mer in four. That is the other half of why Kraken 2's
+  # database is smaller: not the seed weight but the store, 9.25 bytes per entry against 5.71, and
+  # a rate of about four is what closes the gap. It says what the rate costs on the reads.
+  #
+  # Both sets of figures go to CSV files of their own -- db_gen_perf-k24.csv, db_disk_sizes-s4.csv,
+  # viral-k24_*, viral-s4_* -- so nothing of the main run is overwritten, and a twin is skipped by
+  # every table unless the paper asks for it by name.
   run sh ./bin/k24_exps.sh all
+  run sh ./bin/sampling_exps.sh all
 fi
 skip=""
 
