@@ -243,28 +243,22 @@ public class AccuracyEvaluator {
      * Scores the output of an external classifier on the very reads a Genestrip run left at a genus,
      * without using any ground truth.
      * <p>
-     * This is the counterpart of {@link #evaluateExternal} for a real sample. There the subset is the
-     * classifier's own, because the table's columns are per classifier; here the subset is handed in,
-     * because the question is a different one: of the reads the unrefined database could not resolve,
-     * where does another tool put those same reads. A subset of its own would answer that for other
-     * reads.
+     * This is the counterpart of {@link #evaluateExternal} for a real sample, where no ground truth
+     * exists. The subset is the classifier's own, exactly as it is there: the column of the paper's
+     * table states what a classifier itself leaves at a genus, and only under that reading can a row
+     * be compared with a Genestrip row at all.
      *
      * @param db            the name of the database project
      * @param fqMapFile     the fastq mapping file the Genestrip runs used, so that the files come in
      *                      the order the baseline recorded them in
      * @param loadDbGoalKey the goal loading the database whose taxonomy supplies the candidate counts
      * @param outputs       the classifier's output file per fastq key
-     * @param obsBaseline   the observable genus-only subset of the unrefined run, consulted per read
      * @return the tallies keyed by fastq key, in the order of the mapping file
      * @throws IOException if the database, the mapping file or an output file cannot be read
      */
     public Map<String, AccuracyTally> evaluateExternalWithoutGroundTruth(String db, String fqMapFile,
-            GoalKey loadDbGoalKey, Map<String, File> outputs, GenusOnlyBaseline obsBaseline)
-            throws IOException {
-        if (obsBaseline == null) {
-            throw new IllegalArgumentException("A subset to score against is required here.");
-        }
-        return externalPass(db, fqMapFile, loadDbGoalKey, null, outputs, obsBaseline);
+            GoalKey loadDbGoalKey, Map<String, File> outputs) throws IOException {
+        return externalPass(db, fqMapFile, loadDbGoalKey, null, outputs, true);
     }
 
     /**
@@ -304,17 +298,17 @@ public class AccuracyEvaluator {
     public Map<String, AccuracyTally> evaluateExternal(String db, String fqMapFile, GoalKey loadDbGoalKey,
                                                        SmallTaxTree scope,
                                                        Map<String, File> outputs) throws IOException {
-        return externalPass(db, fqMapFile, loadDbGoalKey, scope, outputs, null);
+        return externalPass(db, fqMapFile, loadDbGoalKey, scope, outputs, false);
     }
 
     private Map<String, AccuracyTally> externalPass(String db, String fqMapFile, GoalKey loadDbGoalKey,
                                                     SmallTaxTree scope, Map<String, File> outputs,
-                                                    GenusOnlyBaseline sharedObsBaseline) throws IOException {
-        // A shared baseline switches both halves of the method at once: the subset is then the one
-        // the caller collected rather than one of this tool's own, and the scoring is the
-        // ground-truth-free one, since a shared subset is only ever asked for on reads that have
-        // no ground truth. The two public entry points below are the two combinations that occur.
-        boolean groundTruthFree = sharedObsBaseline != null;
+                                                    boolean groundTruthFree) throws IOException {
+        // The subsets are always the classifier's own, on simulated and on real reads alike. Until
+        // 2026-10-07 the real-read path scored a tool on the subset of the unrefined Genestrip run,
+        // so that both were measured on one and the same reads. That answered a different question
+        // and it printed Genestrip's subset size on the other tool's row, which is the defect the
+        // simulated path had had before. One rule for both now.
         if (!groundTruthFree && groundTruth == null) {
             groundTruth = simulator.groundTruth(taxTree, extractedTaxIds);
         }
@@ -326,7 +320,7 @@ public class AccuracyEvaluator {
         // refined second pass -- so they exist only because record() keeps the subset membership and
         // the collecting in one place.
         GenusOnlyBaseline baseline = groundTruthFree ? null : new GenusOnlyBaseline();
-        GenusOnlyBaseline obsBaseline = groundTruthFree ? sharedObsBaseline : new GenusOnlyBaseline();
+        GenusOnlyBaseline obsBaseline = new GenusOnlyBaseline();
         try {
             @SuppressWarnings("unchecked")
             ObjectGoal<Database, FTProject> dbGoal =
@@ -374,8 +368,7 @@ public class AccuracyEvaluator {
                             }
                         }
                         record(tally, descriptor, descriptor.length, classNode, dbTree, candidates,
-                                effectiveScope, baseline, obsBaseline, !groundTruthFree,
-                                groundTruthFree);
+                                effectiveScope, baseline, obsBaseline, true, groundTruthFree);
                     }
                 }
                 if (lifted > 0) {
@@ -383,12 +376,9 @@ public class AccuracyEvaluator {
                             + " assignments named a taxon the database's taxonomy does not hold;"
                             + " the nearest ancestor it holds was taken.");
                 }
-                if (groundTruthFree) {
-                    // The caller's subset is walked, not filled, so the cursor advances instead.
-                    obsBaseline.endConsulting(fastqKey);
-                } else {
+                obsBaseline.endCollecting(fastqKey);
+                if (!groundTruthFree) {
                     baseline.endCollecting(fastqKey);
-                    obsBaseline.endCollecting(fastqKey);
                     failIfGroundTruthLost(fastqKey, tally);
                     warnIfUnresolved(fastqKey, tally);
                 }

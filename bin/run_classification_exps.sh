@@ -301,15 +301,15 @@ case "$what" in
   # Kraken 2 and KrakenUniq on the same four simulated sets of `viral', which is the one database
   # another tool can be given the same scope. Their per-read output lands in results/kraken, and the
   # next `accuracy' run for `viral' picks it up by itself: RefinementAccuracyReport scores whatever
-  # it finds there on the very reads of the unrefined Genestrip run. So the order matters -- build
+  # it finds there, each tool on the reads it itself left at a genus. So the order matters -- build
   # and classify first, evaluate after.
   kraken)       sh ./bin/kraken_build.sh all
                 sh ./bin/kraken_classify.sh all
                 # The real saliva runs as well, which SpecificityReport picks up on the next `real'
-                # part exactly as RefinementAccuracyReport picks up the simulated ones. The subset
-                # scored there is the one the unrefined `cv' run left at a genus and not one of the
-                # tool's own: the question on real reads is where another tool places those very
-                # reads. So the order matters here too -- classify first, evaluate after.
+                # part exactly as RefinementAccuracyReport picks up the simulated ones, and with the
+                # same rule: each tool is scored on the reads it itself left at a genus. So the order
+                # matters here too -- classify first, evaluate after. To redo those rows alone after
+                # the TSVs are in place, there is -Dgs.externalonly=true on the `specificity' run.
                 env FQMAP="${SALIVA_MAP:-saliva_real.txt}" sh ./bin/kraken_classify.sh all ;;
   # A twin of `cv', on the same four read sets and with the same measures. Two of them exist and
   # both come through here, named by TWIN_DB: `viral-k24' from bin/k24_exps.sh, which shortens the

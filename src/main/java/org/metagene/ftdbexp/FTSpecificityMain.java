@@ -12,7 +12,9 @@ import java.io.File;
  * <pre>
  *   mvn exec:exec@specificity -Dname=viral -Dfqmap=saliva_real.txt -Dreportkey=saliva
  * </pre>
- * and writes {@code results/<db>_<report key>_specificity.csv}.
+ * and writes {@code results/<db>_<report key>_specificity.csv}. With
+ * {@code -Dgs.externalonly=true} it rewrites the rows of the external classifiers alone, taking the
+ * read counts from the CSV of a previous full run.
  * <p>
  * Unlike {@link FTExpMain} this reports no precision and no recall. Neither is defined without the
  * species a read stems from. What it does report is how far each database variant narrows the
@@ -47,7 +49,14 @@ public class FTSpecificityMain {
         String reportKey = args.length > 2 && !args[2].isEmpty() ? args[2] : stripExtension(fqMapFile);
 
         String calibrationKey = args.length > 3 && !args[3].isEmpty() ? args[3] : null;
-        new SpecificityReport(BASE_DIR, RESULTS_DIR, db).write(db, fqMapFile, reportKey, calibrationKey);
+        SpecificityReport report = new SpecificityReport(BASE_DIR, RESULTS_DIR, db);
+        // The external rows need no Genestrip classification, so they can be redone on their own
+        // once the full report has run. See SpecificityReport.writeExternalOnly.
+        if (Boolean.getBoolean("gs.externalonly")) {
+            report.writeExternalOnly(db, fqMapFile, reportKey, calibrationKey);
+        } else {
+            report.write(db, fqMapFile, reportKey, calibrationKey);
+        }
     }
 
     /**

@@ -91,7 +91,7 @@ public class SpecificityReport {
             ps.println("fastq key;sample;reads;classified unrefined;classified refined"
                     + ";obs genus only;obs genus only share"
                     + ";ungated precision unrefined;ungated precision refined"
-                    + ";rho u;rho f;est prec g u;est prec g f;obs genus only reported;");
+                    + ";rho u;rho f;est prec g u;est prec g f;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
                 AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
@@ -101,10 +101,68 @@ public class SpecificityReport {
                 writeRow(ps, fastqKey, u, f, calibration);
             }
         }
-        writeExternal(db, fqMapFile, reportKey, calibrationKey, obsBaseline,
-                byVariant.get(Variant.UNREFINED));
+        Map<String, Long> reads = new LinkedHashMap<String, Long>();
+        for (Map.Entry<String, AccuracyTally> e : byVariant.get(Variant.UNREFINED).entrySet()) {
+            reads.put(e.getKey(), e.getValue().getTotal());
+        }
+        writeExternal(db, fqMapFile, reportKey, calibrationKey, reads);
         System.out.println("Wrote " + file);
         return file;
+    }
+
+    /**
+     * Rewrites the external classifiers' rows alone, taking the read counts from the CSV a previous
+     * full run left behind.
+     * <p>
+     * Nothing an external row holds comes from a Genestrip classification. The subset is the one the
+     * tool itself left at a genus, the precision over it is scored against this database's taxonomy,
+     * and the only cell the Genestrip run contributes is the sample's read count, which the CSV of
+     * that run already carries. Re-running the two full passes over billions of reads to recompute a
+     * few hundred rows is therefore avoidable, and on the real saliva runs it is a matter of hours.
+     * <p>
+     * The Genestrip rows of {@code <db>_<report key>_specificity.csv} are left untouched; only the
+     * per-tool files beside it are written again.
+     *
+     * @param db             the name of the database project
+     * @param fqMapFile      the fastq mapping file the original run used
+     * @param reportKey      the key the result files are named after
+     * @param calibrationKey the report key of the simulated run supplying rho, may be {@code null}
+     * @throws IOException if the previous CSV is missing or unreadable, or a CSV cannot be written
+     */
+    public void writeExternalOnly(String db, String fqMapFile, String reportKey, String calibrationKey)
+            throws IOException {
+        File previous = new File(resultsDir, db + "_" + reportKey + "_specificity.csv");
+        if (!previous.isFile()) {
+            throw new IOException("No " + previous + " to take the read counts from."
+                    + " Run the full report once before asking for the external rows alone.");
+        }
+        Map<String, Long> reads = new LinkedHashMap<String, Long>();
+        try (BufferedReader in = new BufferedReader(new InputStreamReader(
+                new FileInputStream(previous), StandardCharsets.UTF_8))) {
+            String header = in.readLine();
+            if (header == null) {
+                throw new IOException(previous + " is empty.");
+            }
+            String[] names = header.split(";", -1);
+            int keyAt = indexOf(names, "fastq key");
+            int readsAt = indexOf(names, "reads");
+            if (keyAt < 0 || readsAt < 0) {
+                throw new IOException("No 'fastq key'/'reads' columns in " + previous + ".");
+            }
+            String line;
+            while ((line = in.readLine()) != null) {
+                String[] cells = line.split(";", -1);
+                if (cells.length <= Math.max(keyAt, readsAt) || cells[readsAt].trim().isEmpty()) {
+                    continue;
+                }
+                reads.put(cells[keyAt].trim(), Long.valueOf(cells[readsAt].trim()));
+            }
+        }
+        if (reads.isEmpty()) {
+            throw new IOException("No rows with a read count in " + previous + ".");
+        }
+        System.out.println("Taking the read counts of " + reads.size() + " samples from " + previous);
+        writeExternal(db, fqMapFile, reportKey, calibrationKey, reads);
     }
 
     /**
@@ -168,7 +226,6 @@ public class SpecificityReport {
         ps.print(';');
         ps.print(rho == null || Double.isNaN(rho[1]) || f == null ? ""
                 : format(rho[1] * pf));
-        ps.print(';');
         ps.println(';');
     }
 
@@ -176,13 +233,9 @@ public class SpecificityReport {
      * Scores whatever external classifier left per-read output for these samples under
      * {@code results/kraken} and writes it in the layout of this report's own CSV.
      * <p>
-     * The subset is the one the unrefined Genestrip run collected, and that is the point of this
-     * pass. The question it answers is where another tool places the very reads the unrefined
-     * database could not resolve, so both must be scored on one and the same set of reads. This is
-     * the opposite choice from {@link RefinementAccuracyReport}, whose external rows carry subsets
-     * of their own, and the two differ because the questions differ: there the column states what a
-     * classifier leaves at a genus, here it states how far another tool gets on a fixed set of hard
-     * reads.
+     * The subset is the classifier's own, as it is everywhere else: the reads it itself left at a
+     * genus. A row then says of a tool what the Genestrip rows say of Genestrip, which is the only
+     * reading under which the rows of one table may be compared at all.
      * <p>
      * The calibration is the tool's own, read from {@code <db>_<tool>_<calibration key>_summary.csv}.
      * Its {@code rho f} is empty, since an external tool has no refined variant, and the refined
@@ -192,20 +245,18 @@ public class SpecificityReport {
      * @param fqMapFile      the fastq mapping file the runs above used
      * @param reportKey      the key the result file is named after
      * @param calibrationKey the report key of the simulated run supplying rho, may be {@code null}
-     * @param obsBaseline    the observable genus-only subset of the unrefined run
-     * @param unrefined      the tallies of the unrefined run, whose keys name the output files
+     * @param reads          the read count per sample, whose keys name the output files
      * @throws IOException if an output file cannot be read or a CSV cannot be written
      */
     private void writeExternal(String db, String fqMapFile, String reportKey, String calibrationKey,
-                               GenusOnlyBaseline obsBaseline, Map<String, AccuracyTally> unrefined)
-            throws IOException {
+                               Map<String, Long> reads) throws IOException {
         File krakenDir = new File(resultsDir, "kraken");
         if (!krakenDir.isDirectory()) {
             return;
         }
         for (String tool : RefinementAccuracyReport.EXTERNAL_TOOLS) {
             Map<String, File> outputs = new LinkedHashMap<String, File>();
-            for (String fastqKey : unrefined.keySet()) {
+            for (String fastqKey : reads.keySet()) {
                 File out = new File(krakenDir, db + "_" + tool + "_" + fastqKey + ".tsv");
                 if (out.isFile()) {
                     outputs.put(fastqKey, out);
@@ -214,15 +265,14 @@ public class SpecificityReport {
             if (outputs.isEmpty()) {
                 continue;
             }
-            if (outputs.size() != unrefined.size()) {
-                throw new IOException("Only " + outputs.size() + " of " + unrefined.size()
+            if (outputs.size() != reads.size()) {
+                throw new IOException("Only " + outputs.size() + " of " + reads.size()
                         + " samples have a " + tool + " output under " + krakenDir
                         + ". Classify them all or none.");
             }
             System.out.println("Evaluating " + tool + " on " + fqMapFile);
-            obsBaseline.rewind();
             Map<String, AccuracyTally> tallies = evaluator.evaluateExternalWithoutGroundTruth(
-                    db, fqMapFile, Variant.UNREFINED.getLoadDbGoalKey(), outputs, obsBaseline);
+                    db, fqMapFile, Variant.UNREFINED.getLoadDbGoalKey(), outputs);
             Map<String, double[]> calibration = readCalibration(db + "_" + tool, calibrationKey);
             File file = new File(resultsDir, db + "_" + tool + "_" + reportKey + "_specificity.csv");
             try (PrintStream ps = new PrintStream(new FileOutputStream(file), false,
@@ -230,10 +280,10 @@ public class SpecificityReport {
                 ps.println("fastq key;sample;reads;classified unrefined;classified refined"
                         + ";obs genus only;obs genus only share"
                         + ";ungated precision unrefined;ungated precision refined"
-                        + ";rho u;rho f;est prec g u;est prec g f;obs genus only reported;");
+                        + ";rho u;rho f;est prec g u;est prec g f;");
                 for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
-                    writeExternalRow(ps, e.getKey(), e.getValue(), unrefined.get(e.getKey()),
-                            calibration, tool);
+                    writeExternalRow(ps, e.getKey(), e.getValue(), reads.get(e.getKey()),
+                            calibration);
                 }
             }
             System.out.println("Wrote " + file);
@@ -243,7 +293,7 @@ public class SpecificityReport {
     /**
      * Writes one row for an external classifier, in the columns of this report's own CSV.
      * <p>
-     * Three cells cannot be taken from the classifier's tally, because its input is filtered to the
+     * Two cells cannot be taken from the classifier's tally, because its input is filtered to the
      * reads it classified. {@code bin/kraken_classify.sh} drops the unclassified lines as the tool
      * produces them, which is what keeps the per-read output of a real run from reaching hundreds of
      * gigabytes, and the tally therefore counts the classified reads and nothing else.
@@ -251,33 +301,22 @@ public class SpecificityReport {
      * <li>{@code reads} comes from the Genestrip run, which saw every read of the sample.</li>
      * <li>{@code classified} is the tally's total, which under the filter <em>is</em> the number of
      * reads the tool classified.</li>
-     * <li>The ungated precision divides the sum of scores by the size of the subset the unrefined
-     * Genestrip run collected, not by the part of it the tool reported. A read of the subset the
-     * tool left unclassified never reaches the tally, and averaging over what the tally saw would be
-     * an average over the reads the tool happened to resolve.</li>
      * </ul>
-     * The refined cells stay empty, since an external tool has no refined variant, and so does the
-     * share of the subset in the classified reads, which would mix one tool's subset with another's
-     * denominator. {@code obs genus only reported} says how many of the subset the tool did report.
+     * The subset and the precision over it need no such repair. A read the tool left unclassified is
+     * not one it left at a genus, so it does not belong in the subset either, and the filter removes
+     * exactly the reads the subset would have excluded anyway. The refined cells stay empty, since
+     * an external tool has no refined variant.
      *
      * @param ps          the stream to write to
      * @param fastqKey    the key of the sample
      * @param t           the tally of the external classifier
-     * @param ref         the tally of the unrefined Genestrip run on the same sample
+     * @param reads       the sample's read count, from the Genestrip run, or {@code null}
      * @param calibration the tool's own rho values, keyed by fastq key
-     * @param tool        the tool's name, for the report on the terminal
      */
     private static void writeExternalRow(PrintStream ps, String fastqKey, AccuracyTally t,
-                                         AccuracyTally ref, Map<String, double[]> calibration,
-                                         String tool) {
-        long reported = t.getObsGenusOnlyTotal();
-        long subset = ref == null ? reported : ref.getObsGenusOnlyTotal();
-        double sum = reported == 0 ? 0 : t.getObsGenusOnlyUngatedPrecision() * reported;
-        double pu = subset == 0 ? Double.NaN : sum / subset;
-        if (reported < subset) {
-            System.out.printf("  %s/%s: reported %,d of the %,d reads of the subset;"
-                    + " the rest counts as zero.%n", tool, fastqKey, reported, subset);
-        }
+                                         Long reads, Map<String, double[]> calibration) {
+        long subset = t.getObsGenusOnlyTotal();
+        double pu = t.getObsGenusOnlyUngatedPrecision();
         double[] rho = calibration.get(fastqKey);
         if (rho == null && calibration.size() == 1) {
             rho = calibration.values().iterator().next();
@@ -286,21 +325,21 @@ public class SpecificityReport {
         ps.print(';');
         ps.print(SampleNames.display(fastqKey, false));
         ps.print(';');
-        ps.print(ref == null ? "" : String.valueOf(ref.getTotal()));
+        ps.print(reads == null ? "" : String.valueOf(reads));
         ps.print(';');
         ps.print(t.getTotal());
         ps.print(";;");
         ps.print(subset);
-        ps.print(";;");
+        ps.print(';');
+        ps.print(format(t.getTotal() == 0 ? Double.NaN : 100.0 * subset / t.getTotal()));
+        ps.print(';');
         ps.print(format(pu));
         ps.print(';');
         ps.print(';');
         ps.print(rho == null ? "" : format(rho[0]));
         ps.print(";;");
         ps.print(rho == null ? "" : format(rho[0] * pu));
-        ps.print(";;");
-        ps.print(reported);
-        ps.println(';');
+        ps.println(";;");
     }
 
     /**

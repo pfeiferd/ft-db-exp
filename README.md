@@ -313,9 +313,15 @@ the estimated gain.
 ### The Kraken tools on the real saliva runs
 
 The real runs have no ground truth, so a comparison with another tool cannot ask whose
-classification is right. It can ask something else: of the reads the unrefined `cv` database left at
-a genus, where does another tool place those very reads. That is what this adds to Table 9 of the
-paper.
+classification is right. It can ask something else: of the reads a tool itself leaves at a genus,
+how far does it narrow the species down. That is what this adds to Table 9 of the paper, and it is
+the same reading the simulated table uses.
+
+The subset is the tool's own, exactly as it is for a Genestrip row. Until 2026-10-07 the real-read
+path scored a tool on the subset of the unrefined `cv` run instead, so that both were measured on
+one and the same reads. That answered a different question and it printed Genestrip's subset size on
+the other tool's row, which is the defect the simulated path had had before it. One rule for both
+now.
 
 ```sh
 sh ./bin/run_classification_exps.sh kraken     # builds, then classifies simulated AND real
