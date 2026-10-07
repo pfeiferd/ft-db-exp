@@ -304,7 +304,13 @@ case "$what" in
   # it finds there on the very reads of the unrefined Genestrip run. So the order matters -- build
   # and classify first, evaluate after.
   kraken)       sh ./bin/kraken_build.sh all
-                sh ./bin/kraken_classify.sh all ;;
+                sh ./bin/kraken_classify.sh all
+                # The real saliva runs as well, which SpecificityReport picks up on the next `real'
+                # part exactly as RefinementAccuracyReport picks up the simulated ones. The subset
+                # scored there is the one the unrefined `cv' run left at a genus and not one of the
+                # tool's own: the question on real reads is where another tool places those very
+                # reads. So the order matters here too -- classify first, evaluate after.
+                env FQMAP="${SALIVA_MAP:-saliva_real.txt}" sh ./bin/kraken_classify.sh all ;;
   # A twin of `cv', on the same four read sets and with the same measures. Two of them exist and
   # both come through here, named by TWIN_DB: `viral-k24' from bin/k24_exps.sh, which shortens the
   # k-mer to Kraken 2's seed weight, and `viral-s4' from bin/sampling_exps.sh, which enters one

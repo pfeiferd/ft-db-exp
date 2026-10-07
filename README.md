@@ -310,6 +310,38 @@ becomes an *estimate* of it only through those factors, which is what the two `e
 are: each carries one level from what can be observed to what it stands for, and their difference is
 the estimated gain.
 
+### The Kraken tools on the real saliva runs
+
+The real runs have no ground truth, so a comparison with another tool cannot ask whose
+classification is right. It can ask something else: of the reads the unrefined `cv` database left at
+a genus, where does another tool place those very reads. That is what this adds to Table 9 of the
+paper.
+
+```sh
+sh ./bin/run_classification_exps.sh kraken     # builds, then classifies simulated AND real
+sh ./bin/run_classification_exps.sh real       # evaluates, picking the TSVs up by itself
+```
+
+The classification step is `bin/kraken_classify.sh` with a fastq map, which switches it from the
+four simulated sets to the runs a map names:
+
+```sh
+FQMAP=saliva_real.txt sh ./bin/kraken_classify.sh all
+```
+
+Keys and files then come from the map, in its order, so a run that is paired but has only its first
+mate listed is read exactly as the Genestrip run reads it.
+
+`SpecificityReport` scores whatever it finds under `results/kraken` for the samples of the run and
+writes `<db>_<tool>_<key>_specificity.csv` beside its own. **The subset there is Genestrip's, not the
+tool's** — that is the whole point, since both have to be scored on one and the same set of reads.
+This is the opposite of the simulated case in `RefinementAccuracyReport`, where each tool collects
+its own genus-only subset because the columns of Tables 7 and 8 are per tool. The two differ because
+the questions differ, and both classes say so in their Javadoc.
+
+The calibration is the tool's own, from `<db>_<tool>_iss_saliva_summary.csv`. Its `rho f` is empty,
+so the refined estimate stays empty as well, as do the refined columns of the row.
+
 ## 5. Classification quality experiments
 
 ```sh

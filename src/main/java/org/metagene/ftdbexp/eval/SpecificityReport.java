@@ -98,56 +98,144 @@ public class SpecificityReport {
                 if (u == null || f == null) {
                     continue;
                 }
-                double pu = u.getObsGenusOnlyUngatedPrecision();
-                double pf = f.getObsGenusOnlyUngatedPrecision();
-                ps.print(fastqKey);
-                ps.print(';');
-                ps.print(SampleNames.display(fastqKey, false));
-                ps.print(';');
-                ps.print(u.getTotal());
-                ps.print(';');
-                ps.print(u.getClassified());
-                ps.print(';');
-                ps.print(f.getClassified());
-                ps.print(';');
-                // The observable subset, never R_g: without sigma(r) there is no telling whether
-                // the genus a read was left at was the right one, so getGenusOnlyTotal() stays zero
-                // on this path by construction.
-                ps.print(u.getObsGenusOnlyTotal());
-                ps.print(';');
-                ps.print(format(u.getClassified() == 0 ? Double.NaN
-                        : 100.0 * u.getObsGenusOnlyTotal() / u.getClassified()));
-                ps.print(';');
-                ps.print(format(pu));
-                ps.print(';');
-                ps.print(format(pf));
-                ps.print(';');
-                // Two ways a calibration applies. Per sample, when the simulated run was trained
-                // on the very sample being scored -- the ticks, where both are keyed tickN. Or
-                // wholesale, when the calibration run models the sample's parameters rather than
-                // one sample: the saliva-like read set is a single row standing for all three
-                // saliva runs, whose keys are SRA accessions and match nothing. A calibration of
-                // exactly one row is therefore taken to apply to every sample; more than one row
-                // means the rows are per sample and only a key match will do.
-                double[] rho = calibration.get(fastqKey);
-                if (rho == null && calibration.size() == 1) {
-                    rho = calibration.values().iterator().next();
-                }
-                ps.print(rho == null ? "" : format(rho[0]));
-                ps.print(';');
-                ps.print(rho == null ? "" : format(rho[1]));
-                ps.print(';');
-                // The estimated gated precision before and after, each level carrying its own
-                // factor. Their difference is the estimated precision gain; it gets no column, for
-                // the same reason the measured gains get none.
-                ps.print(rho == null ? "" : format(rho[0] * pu));
-                ps.print(';');
-                ps.print(rho == null ? "" : format(rho[1] * pf));
-                ps.println(';');
+                writeRow(ps, fastqKey, u, f, calibration);
             }
         }
+        writeExternal(db, fqMapFile, reportKey, calibrationKey, obsBaseline,
+                byVariant.get(Variant.UNREFINED));
         System.out.println("Wrote " + file);
         return file;
+    }
+
+    /**
+     * Writes one row of a specificity CSV.
+     * <p>
+     * {@code f} is {@code null} for an external classifier, which has no refined variant: the
+     * refined cells and the refined estimate then stay empty rather than carrying a number that
+     * does not exist.
+     *
+     * @param ps          the stream to write to
+     * @param fastqKey    the key of the sample
+     * @param u           the tally of the unrefined run
+     * @param f           the tally of the refined run, or {@code null} if there is none
+     * @param calibration the rho values, keyed by fastq key
+     */
+    private static void writeRow(PrintStream ps, String fastqKey, AccuracyTally u, AccuracyTally f,
+                                 Map<String, double[]> calibration) {
+        double pu = u.getObsGenusOnlyUngatedPrecision();
+        double pf = f == null ? Double.NaN : f.getObsGenusOnlyUngatedPrecision();
+        ps.print(fastqKey);
+        ps.print(';');
+        ps.print(SampleNames.display(fastqKey, false));
+        ps.print(';');
+        ps.print(u.getTotal());
+        ps.print(';');
+        ps.print(u.getClassified());
+        ps.print(';');
+        ps.print(f == null ? "" : String.valueOf(f.getClassified()));
+        ps.print(';');
+        // The observable subset, never R_g: without sigma(r) there is no telling whether
+        // the genus a read was left at was the right one, so getGenusOnlyTotal() stays zero
+        // on this path by construction.
+        ps.print(u.getObsGenusOnlyTotal());
+        ps.print(';');
+        ps.print(format(u.getClassified() == 0 ? Double.NaN
+                : 100.0 * u.getObsGenusOnlyTotal() / u.getClassified()));
+        ps.print(';');
+        ps.print(format(pu));
+        ps.print(';');
+        ps.print(f == null ? "" : format(pf));
+        ps.print(';');
+        // Two ways a calibration applies. Per sample, when the simulated run was trained
+        // on the very sample being scored -- the ticks, where both are keyed tickN. Or
+        // wholesale, when the calibration run models the sample's parameters rather than
+        // one sample: the saliva-like read set is a single row standing for all three
+        // saliva runs, whose keys are SRA accessions and match nothing. A calibration of
+        // exactly one row is therefore taken to apply to every sample; more than one row
+        // means the rows are per sample and only a key match will do.
+        double[] rho = calibration.get(fastqKey);
+        if (rho == null && calibration.size() == 1) {
+            rho = calibration.values().iterator().next();
+        }
+        ps.print(rho == null ? "" : format(rho[0]));
+        ps.print(';');
+        ps.print(rho == null || Double.isNaN(rho[1]) ? "" : format(rho[1]));
+        ps.print(';');
+        // The estimated gated precision before and after, each level carrying its own
+        // factor. Their difference is the estimated precision gain; it gets no column, for
+        // the same reason the measured gains get none.
+        ps.print(rho == null ? "" : format(rho[0] * pu));
+        ps.print(';');
+        ps.print(rho == null || Double.isNaN(rho[1]) || f == null ? ""
+                : format(rho[1] * pf));
+        ps.println(';');
+    }
+
+    /**
+     * Scores whatever external classifier left per-read output for these samples under
+     * {@code results/kraken} and writes it in the layout of this report's own CSV.
+     * <p>
+     * The subset is the one the unrefined Genestrip run collected, and that is the point of this
+     * pass. The question it answers is where another tool places the very reads the unrefined
+     * database could not resolve, so both must be scored on one and the same set of reads. This is
+     * the opposite choice from {@link RefinementAccuracyReport}, whose external rows carry subsets
+     * of their own, and the two differ because the questions differ: there the column states what a
+     * classifier leaves at a genus, here it states how far another tool gets on a fixed set of hard
+     * reads.
+     * <p>
+     * The calibration is the tool's own, read from {@code <db>_<tool>_<calibration key>_summary.csv}.
+     * Its {@code rho f} is empty, since an external tool has no refined variant, and the refined
+     * estimate therefore stays empty as well.
+     *
+     * @param db             the name of the database project
+     * @param fqMapFile      the fastq mapping file the runs above used
+     * @param reportKey      the key the result file is named after
+     * @param calibrationKey the report key of the simulated run supplying rho, may be {@code null}
+     * @param obsBaseline    the observable genus-only subset of the unrefined run
+     * @param unrefined      the tallies of the unrefined run, whose keys name the output files
+     * @throws IOException if an output file cannot be read or a CSV cannot be written
+     */
+    private void writeExternal(String db, String fqMapFile, String reportKey, String calibrationKey,
+                               GenusOnlyBaseline obsBaseline, Map<String, AccuracyTally> unrefined)
+            throws IOException {
+        File krakenDir = new File(resultsDir, "kraken");
+        if (!krakenDir.isDirectory()) {
+            return;
+        }
+        for (String tool : RefinementAccuracyReport.EXTERNAL_TOOLS) {
+            Map<String, File> outputs = new LinkedHashMap<String, File>();
+            for (String fastqKey : unrefined.keySet()) {
+                File out = new File(krakenDir, db + "_" + tool + "_" + fastqKey + ".tsv");
+                if (out.isFile()) {
+                    outputs.put(fastqKey, out);
+                }
+            }
+            if (outputs.isEmpty()) {
+                continue;
+            }
+            if (outputs.size() != unrefined.size()) {
+                throw new IOException("Only " + outputs.size() + " of " + unrefined.size()
+                        + " samples have a " + tool + " output under " + krakenDir
+                        + ". Classify them all or none.");
+            }
+            System.out.println("Evaluating " + tool + " on " + fqMapFile);
+            obsBaseline.rewind();
+            Map<String, AccuracyTally> tallies = evaluator.evaluateExternalWithoutGroundTruth(
+                    db, fqMapFile, Variant.UNREFINED.getLoadDbGoalKey(), outputs, obsBaseline);
+            Map<String, double[]> calibration = readCalibration(db + "_" + tool, calibrationKey);
+            File file = new File(resultsDir, db + "_" + tool + "_" + reportKey + "_specificity.csv");
+            try (PrintStream ps = new PrintStream(new FileOutputStream(file), false,
+                    StandardCharsets.UTF_8.name())) {
+                ps.println("fastq key;sample;reads;classified unrefined;classified refined"
+                        + ";obs genus only;obs genus only share"
+                        + ";ungated precision unrefined;ungated precision refined"
+                        + ";rho u;rho f;est prec g u;est prec g f;");
+                for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
+                    writeRow(ps, e.getKey(), e.getValue(), null, calibration);
+                }
+            }
+            System.out.println("Wrote " + file);
+        }
     }
 
     /**
@@ -185,22 +273,25 @@ public class SpecificityReport {
             int keyAt = indexOf(names, "fastq key");
             int rhoUAt = indexOf(names, "rho u");
             int rhoFAt = indexOf(names, "rho f");
-            if (keyAt < 0 || rhoUAt < 0 || rhoFAt < 0) {
-                System.out.println("No 'fastq key'/'rho u'/'rho f' columns in " + summary
+            if (keyAt < 0 || rhoUAt < 0) {
+                System.out.println("No 'fastq key'/'rho u' columns in " + summary
                         + " - estimate columns stay empty.");
                 return byKey;
             }
             String line;
             while ((line = in.readLine()) != null) {
                 String[] cells = line.split(";", -1);
-                if (cells.length <= Math.max(keyAt, Math.max(rhoUAt, rhoFAt))
-                        || cells[rhoUAt].trim().isEmpty() || cells[rhoFAt].trim().isEmpty()) {
+                if (cells.length <= Math.max(keyAt, rhoUAt) || cells[rhoUAt].trim().isEmpty()) {
                     continue;
                 }
+                // rho f may be absent: the summary of an external classifier has no refined
+                // variant to form it from. NaN carries that through to the row writer, which
+                // leaves the refined cells empty rather than printing a number.
+                String rhoF = rhoFAt >= 0 && cells.length > rhoFAt ? cells[rhoFAt].trim() : "";
                 try {
                     byKey.put(cells[keyAt].trim(), new double[]{
                             Double.parseDouble(cells[rhoUAt].trim()),
-                            Double.parseDouble(cells[rhoFAt].trim())});
+                            rhoF.isEmpty() ? Double.NaN : Double.parseDouble(rhoF)});
                 } catch (NumberFormatException e) {
                     // A row whose rho is undefined carries no calibration; skip it rather than fail.
                 }

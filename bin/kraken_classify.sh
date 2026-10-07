@@ -31,6 +31,7 @@
 #   KRAKEN_PROJECT   the Genestrip project whose databases and read sets are used, default `viral'
 #   THREADS          classification threads, default the number of CPUs
 #   READ_SETS        the read set keys to classify, default the four of the paper
+#   FQMAP            a fastq map under data/fastq, which switches to the real runs it names
 #
 set -e
 
@@ -41,7 +42,22 @@ basedir=$(pwd)
 what=${1:-all}
 project=${KRAKEN_PROJECT:-viral}
 threads=${THREADS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
-sets=${READ_SETS:-iss_perfect iss_miseq iss_hiseq iss_saliva}
+# A fastq mapping file turns this script to real runs instead of the simulated sets: the keys and
+# the files then come from the map, exactly as they do for the Genestrip run being compared with.
+# Unset by default, which keeps the four simulated sets of the paper.
+#
+#   FQMAP=saliva_real.txt sh ./bin/kraken_classify.sh all
+#
+fqmap=${FQMAP:-}
+if [ -n "$fqmap" ] && [ ! -f "data/fastq/${fqmap}" ]; then
+  echo "No such fastq map: data/fastq/${fqmap}" >&2
+  exit 1
+fi
+if [ -n "$fqmap" ]; then
+  sets=${READ_SETS:-$(awk '!/^#/ && NF >= 2 { if (!seen[$1]++) printf "%s ", $1 }' "data/fastq/${fqmap}")}
+else
+  sets=${READ_SETS:-iss_perfect iss_miseq iss_hiseq iss_saliva}
+fi
 
 fastqdir="${basedir}/data/fastq"
 outdir="${basedir}/results/kraken"
@@ -56,6 +72,16 @@ mkdir -p "$outdir"
 # the accuracy run lists them. Both mates belong to a set: that run reads both under one key, so a
 # comparison on the same reads has to classify both as well.
 fastqs_of() {
+  if [ -n "$fqmap" ]; then
+    # Straight out of the map, in its order. A real run may be paired and have only its first mate
+    # listed, as the saliva runs are, and the comparison must then read the same one file the
+    # Genestrip run reads.
+    awk -v k="$1" '!/^#/ && NF >= 2 && $1 == k { print $2 }' "${fastqdir}/../fastq/${fqmap}" \
+        | while read -r _fo_name; do
+            [ -s "${fastqdir}/${_fo_name}" ] && echo "${fastqdir}/${_fo_name}"
+          done
+    return 0
+  fi
   for _fo_mate in R1 R2; do
     _fo_file="${fastqdir}/${project}_${1}_reads_${_fo_mate}.fastq.gz"
     [ -s "$_fo_file" ] && echo "$_fo_file"
@@ -72,7 +98,7 @@ run_tool() {
     _rt_fqs=$(fastqs_of "$key")
     _rt_out="${outdir}/${project}_${_rt_tool}_${key}.tsv"
     if [ -z "$_rt_fqs" ]; then
-      echo "  SKIP ${key} -- no ${project}_${key}_reads_R*.fastq.gz on disk" >&2
+      echo "  SKIP ${key} -- no fastq on disk for it" >&2
       continue
     fi
     if [ -s "$_rt_out" ]; then

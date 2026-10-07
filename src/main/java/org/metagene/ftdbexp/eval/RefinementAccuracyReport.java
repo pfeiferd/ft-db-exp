@@ -31,7 +31,7 @@ public class RefinementAccuracyReport {
      * The external classifiers whose per-read output is picked up from {@code results/kraken} if it
      * is there. The names are the ones bin/kraken_classify.sh writes into the file names.
      */
-    private static final String[] EXTERNAL_TOOLS = { "k2", "ku" };
+    static final String[] EXTERNAL_TOOLS = { "k2", "ku" };
 
     /** The database variants compared, in the order they appear in the report. */
     public enum Variant {
