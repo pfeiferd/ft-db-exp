@@ -113,16 +113,31 @@ run_tool() {
     _rt_mate=0
     for _rt_fq in $_rt_fqs; do
       _rt_mate=$((_rt_mate + 1))
-      _rt_part="${_rt_out}.part${_rt_mate}"
+      # The tool writes into a FIFO and a filter reads it, so the per-read output never lands on
+      # disk in full. Of a real saliva run only some two per cent of the reads are classified at
+      # all, and the five runs together hold 4.1 billion -- at the 134 bytes per read the simulated
+      # files measure, the unfiltered output would be 552 GB per tool. Keeping the classified lines
+      # and three fields of them brings that to a few gigabytes.
+      #
+      # The test is on the taxon of the line and not on its C/U status, which is the same thing in
+      # both output formats and reads more directly. KrakenUniq would also do it itself with
+      # `--only-classified-output'; Kraken 2 accepts that option and then ignores it -- its script
+      # parses it in kraken2:68 and never puts it among the flags it passes on -- so one filter for
+      # both beats a flag that silently works for one of them.
+      _rt_pipe="${_rt_out}.fifo"
+      rm -f "$_rt_pipe"
+      mkfifo "$_rt_pipe"
+      awk -F'\t' '$3 != 0 { print $1 "\t" $2 "\t" $3 }' < "$_rt_pipe" >> "$_rt_out" &
+      _rt_filter=$!
       case "$_rt_tool" in
         k2) "${_rt_bin}/kraken2" --threads "$threads" --db "$_rt_db" --gzip-compressed \
                 --confidence 0 --minimum-hit-groups 1 \
-                --output "$_rt_part" --report "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
+                --output "$_rt_pipe" --report "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
         ku) "${_rt_bin}/krakenuniq" --threads "$threads" --db "$_rt_db" --gzip-compressed \
-                --output "$_rt_part" --report-file "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
+                --output "$_rt_pipe" --report-file "${_rt_out%.tsv}_R${_rt_mate}.report" "$_rt_fq" ;;
       esac
-      cat "$_rt_part" >> "$_rt_out"
-      rm -f "$_rt_part"
+      wait "$_rt_filter"
+      rm -f "$_rt_pipe"
     done
     echo "  $(wc -l < "$_rt_out") reads from ${_rt_mate} mate(s)"
   done

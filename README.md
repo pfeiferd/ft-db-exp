@@ -332,6 +332,21 @@ FQMAP=saliva_real.txt sh ./bin/kraken_classify.sh all
 Keys and files then come from the map, in its order, so a run that is paired but has only its first
 mate listed is read exactly as the Genestrip run reads it.
 
+**The per-read output is filtered as it is produced.** The tool writes into a FIFO and an `awk` reads
+it, keeping the three fields the evaluation uses and only the lines whose taxon is not 0. Without
+that the output would be 552 GB per tool: the five saliva runs hold 4.1 billion reads and the
+simulated files measure 134 bytes per read. Filtered it is a few gigabytes, since only some two per
+cent of these reads are classified against a viral database at all. The test is on the taxon rather
+than on the `C`/`U` status, which is the same thing in both formats; KrakenUniq would also do it
+itself with `--only-classified-output`, but Kraken 2 parses that option and then ignores it, so one
+filter serves both.
+
+Dropping the unclassified lines would flatter the tools if the average were taken over what the
+evaluation sees, so it is not: `SpecificityReport` divides the sum of scores by the size of the
+subset the unrefined run collected, which makes a read the tool never reported count as the zero it
+is. The column `obs genus only reported` says how many of the subset each tool did report, so the
+gap stays visible.
+
 `SpecificityReport` scores whatever it finds under `results/kraken` for the samples of the run and
 writes `<db>_<tool>_<key>_specificity.csv` beside its own. **The subset there is Genestrip's, not the
 tool's** — that is the whole point, since both have to be scored on one and the same set of reads.

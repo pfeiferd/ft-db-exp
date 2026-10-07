@@ -91,7 +91,7 @@ public class SpecificityReport {
             ps.println("fastq key;sample;reads;classified unrefined;classified refined"
                     + ";obs genus only;obs genus only share"
                     + ";ungated precision unrefined;ungated precision refined"
-                    + ";rho u;rho f;est prec g u;est prec g f;");
+                    + ";rho u;rho f;est prec g u;est prec g f;obs genus only reported;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
                 AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
@@ -122,7 +122,34 @@ public class SpecificityReport {
      */
     private static void writeRow(PrintStream ps, String fastqKey, AccuracyTally u, AccuracyTally f,
                                  Map<String, double[]> calibration) {
-        double pu = u.getObsGenusOnlyUngatedPrecision();
+        writeRow(ps, fastqKey, u, f, calibration, null, null);
+    }
+
+    /**
+     * The same row with the two values an external classifier needs supplied from outside.
+     * <p>
+     * {@code puOverride} replaces the ungated precision the tally would report, and it has to:
+     * the classification is filtered to the reads the tool classified at all, so a read of the
+     * subset the tool left unclassified never reaches the tally. Averaging over what the tally saw
+     * would then be an average over the reads the tool happened to resolve. The caller therefore
+     * divides the same sum of scores by the size of the subset the unrefined run collected, which
+     * makes a read the tool did not report count as the zero it is.
+     * <p>
+     * {@code reported} is how many reads of that subset the tool did report, so that the gap stays
+     * visible in the CSV instead of disappearing into the average.
+     *
+     * @param ps          the stream to write to
+     * @param fastqKey    the key of the sample
+     * @param u           the tally of the unrefined run, or of the external classifier
+     * @param f           the tally of the refined run, or {@code null} if there is none
+     * @param calibration the rho values, keyed by fastq key
+     * @param puOverride  the ungated precision to print, or {@code null} to take the tally's
+     * @param reported    the reads of the subset the classifier reported, or {@code null}
+     */
+    private static void writeRow(PrintStream ps, String fastqKey, AccuracyTally u, AccuracyTally f,
+                                 Map<String, double[]> calibration, Double puOverride,
+                                 Long reported) {
+        double pu = puOverride != null ? puOverride : u.getObsGenusOnlyUngatedPrecision();
         double pf = f == null ? Double.NaN : f.getObsGenusOnlyUngatedPrecision();
         ps.print(fastqKey);
         ps.print(';');
@@ -168,6 +195,8 @@ public class SpecificityReport {
         ps.print(';');
         ps.print(rho == null || Double.isNaN(rho[1]) || f == null ? ""
                 : format(rho[1] * pf));
+        ps.print(';');
+        ps.print(reported == null ? "" : String.valueOf(reported));
         ps.println(';');
     }
 
@@ -229,9 +258,23 @@ public class SpecificityReport {
                 ps.println("fastq key;sample;reads;classified unrefined;classified refined"
                         + ";obs genus only;obs genus only share"
                         + ";ungated precision unrefined;ungated precision refined"
-                        + ";rho u;rho f;est prec g u;est prec g f;");
+                        + ";rho u;rho f;est prec g u;est prec g f;obs genus only reported;");
                 for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
-                    writeRow(ps, e.getKey(), e.getValue(), null, calibration);
+                    AccuracyTally t = e.getValue();
+                    AccuracyTally ref = unrefined.get(e.getKey());
+                    long reported = t.getObsGenusOnlyTotal();
+                    long subset = ref == null ? reported : ref.getObsGenusOnlyTotal();
+                    // The sum of scores the tool earned, divided by the whole subset rather than by
+                    // the part of it the tool reported. See the writeRow overload for why.
+                    double sum = reported == 0 ? 0 : t.getObsGenusOnlyUngatedPrecision() * reported;
+                    Double pu = subset == 0 ? Double.valueOf(Double.NaN)
+                            : Double.valueOf(sum / subset);
+                    if (reported < subset) {
+                        System.out.printf("  %s/%s: %s reported %,d of the %,d reads of the subset;"
+                                + " the rest counts as zero.%n", tool, e.getKey(), tool, reported,
+                                subset);
+                    }
+                    writeRow(ps, e.getKey(), t, null, calibration, pu, Long.valueOf(reported));
                 }
             }
             System.out.println("Wrote " + file);
