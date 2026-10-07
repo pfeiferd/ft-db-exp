@@ -14,5 +14,16 @@
 # The file itself is declared in common/fasta/downloads.txt and is shared with the other projects
 # that need it, so it is downloaded once rather than per project.
 #
+# DISABLED ON 2026-10-07 on Daniel's instruction, so that `cv' accounts for no host that the
+# KrakenUniq and Kraken 2 databases of Table 9 cannot account for too. Re-enable by removing the
+# `#' below; the entry then takes effect on the next `db'/`ftdb' generation and on nothing before it.
+#
+# Measured before disabling it, so that the next reader need not repeat it: a `match' run of the
+# current `cv' over 10 million reads of SRR5571991 puts *zero* reads at root. The host entry
+# therefore diverts no read at all, and removing it does not close the 0.28 to 0.42 percentage point
+# gap between `cv' and `cv_ku' on the saliva runs. What does account for that gap is `maxDust=500'
+# from ../../config.properties: it drops 102,354 distinct 31-mers from these 19,018 viral genomes,
+# and 0.462 % of the saliva reads carry one of them.
+#
 # taxid  file
-9606 GCA_000001405.29_GRCh38.p14_genomic.fna.gz
+#9606 GCA_000001405.29_GRCh38.p14_genomic.fna.gz
