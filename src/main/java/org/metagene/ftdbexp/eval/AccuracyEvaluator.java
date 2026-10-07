@@ -433,8 +433,7 @@ public class AccuracyEvaluator {
             boolean genusOnly = false;
             boolean obsGenusOnly = false;
             if (baseline != null) {
-                String descriptor = new String(readDescriptor, 0, readDescriptorSize,
-                        StandardCharsets.UTF_8);
+                String descriptor = subsetKey(readDescriptor, readDescriptorSize);
                 if (collectBaseline) {
                     // R_g: correct down to the genus but no further, the refinement's only
                     // opportunity. Governed by the positives, i.e. by sigma(r), because prec_g is a
@@ -517,8 +516,7 @@ public class AccuracyEvaluator {
                                           boolean collectBaseline) {
         double ungatedScore = classNode != null ? candidates.weightFor(classNode) : 0;
         boolean obsGenusOnly;
-        String descriptor = new String(readDescriptor, 0, readDescriptorSize,
-                StandardCharsets.UTF_8);
+        String descriptor = subsetKey(readDescriptor, readDescriptorSize);
         if (collectBaseline) {
             obsGenusOnly = isGenusOnlyNode(classNode);
             if (obsGenusOnly) {
@@ -585,6 +583,37 @@ public class AccuracyEvaluator {
      *                {@code null} if they share no ranked ancestor at all
      * @return whether the agreement stops inside the genus-only window
      */
+    /**
+     * The key a read is remembered under in a {@link GenusOnlyBaseline}, which is its identifier up
+     * to the first whitespace.
+     * <p>
+     * The matcher's read descriptor is the whole fastq header after the {@code '@'}, and an SRA
+     * header carries more than the name: {@code @SRR5571985.1 1 length=101}. Kraken reports the
+     * name alone, because that is where it cuts the header, so a key formed from the full
+     * descriptor matches nothing of an external classifier's output. Cutting here rather than in
+     * the external pass alone is what makes the two sides agree, since the collecting run and the
+     * consulting run must form the key by the same rule.
+     * <p>
+     * The simulated read sets never showed this. InSilicoSeq and NanoSim write a header without
+     * whitespace, so descriptor and name were the same string and the subsets filled as expected.
+     * The real saliva runs are where it surfaced, with every subset coming out empty.
+     *
+     * @param readDescriptor     the read's descriptor as the matcher reports it
+     * @param readDescriptorSize its length in bytes
+     * @return the identifier up to the first whitespace
+     */
+    private static String subsetKey(byte[] readDescriptor, int readDescriptorSize) {
+        int end = 0;
+        while (end < readDescriptorSize) {
+            byte b = readDescriptor[end];
+            if (b == ' ' || b == '\t') {
+                break;
+            }
+            end++;
+        }
+        return new String(readDescriptor, 0, end, StandardCharsets.UTF_8);
+    }
+
     private static boolean isGenusOnlyRank(Rank lcaRank) {
         return isAtLeast(lcaRank, Rank.GENUS) && !isAtLeast(lcaRank, Rank.SPECIES);
     }
