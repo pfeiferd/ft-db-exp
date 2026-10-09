@@ -99,6 +99,14 @@ strepto_saliva_specificity.csv
 nocardia_mngs_specificity.csv
 tick-borne_ticks_specificity.csv
 "
+# Not read by any \csvreader: the manuscript quotes single figures out of these two by hand, namely
+# the reads that `tb' assigns within the genus Borreliella in tick 6 and how the refinement
+# redistributes them. Section 3.2.2 and the conclusions both rest on them, so they belong in the
+# archive like any table source.
+PAPER_QUOTED="
+match_tick-borne_tick6.csv
+ftmatch_tick-borne_tick6.csv
+"
 
 paperonly=
 case "${1:-}" in
@@ -113,7 +121,7 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 
 : > "$tmp/want"; : > "$tmp/missing"
-for f in $PAPER_TEX $PAPER_FIGURES $PAPER_CSV; do
+for f in $PAPER_TEX $PAPER_FIGURES $PAPER_CSV $PAPER_QUOTED; do
   if [ -f "results/$f" ]; then echo "$f" >> "$tmp/want"; else echo "$f" >> "$tmp/missing"; fi
 done
 npaper=$(sort -u "$tmp/want" | wc -l | tr -d ' ')
@@ -157,7 +165,7 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
 PY
 fi
 
-listed=$(for f in $PAPER_TEX $PAPER_FIGURES $PAPER_CSV; do echo "$f"; done | wc -l | tr -d ' ')
+listed=$(for f in $PAPER_TEX $PAPER_FIGURES $PAPER_CSV $PAPER_QUOTED; do echo "$f"; done | wc -l | tr -d ' ')
 held=$(ls -1 results | wc -l | tr -d ' ')
 echo "Wrote $out: $n of the $held entries of results/, $(wc -c < "$out" | tr -d ' ') bytes."
 echo "  $npaper of the $listed files the paper reads$([ -z "$paperonly" ] && echo ", plus the inputs of paper_stats.sh")."
