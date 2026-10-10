@@ -38,7 +38,7 @@
 # so this script regenerates it right away rather than leaving that to chance.
 #
 # Usage:
-#   sh ./bin/clear_projects.sh viral viral-k24 viral-s4 viral-k24-s4
+#   sh ./bin/clear_projects.sh viral viral-k24 viral-k24-s4
 #   DRY_RUN=1 sh ./bin/clear_projects.sh viral        list what would happen, do nothing
 #
 set -e

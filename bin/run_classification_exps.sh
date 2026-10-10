@@ -313,8 +313,8 @@ case "$what" in
                 env FQMAP="${SALIVA_MAP:-saliva_real.txt}" sh ./bin/kraken_classify.sh all ;;
   # A twin of `cv', on the same four read sets and with the same measures. Two of them exist and
   # both come through here, named by TWIN_DB: `viral-k24' from bin/k24_exps.sh, which shortens the
-  # k-mer to Kraken 2's seed weight, and `viral-s4' from bin/sampling_exps.sh, which enters one
-  # k-mer in four so that the database comes out the size Kraken 2's is. Each twin is created by its
+  # k-mer to Kraken 2's seed weight, and `viral-k24-s4' from `K=24 bin/sampling_exps.sh', which
+  # enters one 24-mer in four besides so that the database comes out the size Kraken 2's is. Each twin is created by its
   # own projects script, which also links the read maps under the twin's name, so the reads here are
   # the very files `viral' was scored on. ERROR_SALIVA is set and restored around the saliva-matched
   # set for the reason given above. `k24' is kept as the name this target had until 2026-10-03.

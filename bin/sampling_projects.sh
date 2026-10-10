@@ -56,7 +56,7 @@ if [ "$s" -lt 2 ]; then
 fi
 
 # The k-mer length, and the part of the twin's name that says so. Empty leaves the default of 31 and
-# the name without a `-k' part, which is what the reported `viral-s4' is.
+# the name without a `-k' part, i.e. `viral-s4', which no table reports since 2026-10-10.
 k=${K:-}
 ksuffix=""
 if [ -n "$k" ]; then

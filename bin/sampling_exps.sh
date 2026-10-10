@@ -20,7 +20,8 @@
 #
 # Three steps, as in bin/k24_exps.sh, which describes the mechanics they share:
 #
-#   1. bin/sampling_projects.sh writes the twin `viral-s4'.
+#   1. bin/sampling_projects.sh writes the twin `viral-s4', or `viral-k24-s4' under K=24, which is
+#      the one the paper reports.
 #   2. run_exps.sh builds and times it and reports over its contents. CSV_SUFFIX keeps the disk sizes
 #      and timings in CSVs of their own. The genomes are extracted afterwards, for the twin's own
 #      accession-to-taxon table.

@@ -1,12 +1,11 @@
 # The human genome, so that the LCA update sees it.
 #
-# `strepto' is applied to human sputum, endotracheal aspirate and BAL (data/fastq/strepto_lri_real.txt),
-# where human DNA is the bulk of the sample even after the saponin-based depletion the source study
-# performs -- that protocol reduces host DNA, it does not remove it. Genestrip's LCA update only
-# pushes a k-mer above a bacterial taxon if it knows of another organism carrying it, and the
-# category `bacteria' of categories.txt does not include the host. Without this entry every k-mer a
-# streptococcus shares with the human genome stays stored under that streptococcus and turns human
-# reads into hits -- which in a respiratory specimen is the most abundant kind of read there is.
+# `strepto' is applied to the human saliva runs (data/fastq/saliva_real.txt), where human DNA is the
+# bulk of the sample. Genestrip's LCA update only pushes a k-mer above a bacterial taxon if it knows
+# of another organism carrying it, and the category `bacteria' of categories.txt does not include the
+# host. Without this entry every k-mer a streptococcus shares with the human genome stays stored
+# under that streptococcus and turns human reads into hits -- which in a clinical or oral specimen is
+# the most abundant kind of read there is.
 #
 # 9606 must NOT appear in taxids.txt: the taxid here declares whose genome the file is, so that the
 # LCA update can account for it, not that the database should store its k-mers. Listing it there too
