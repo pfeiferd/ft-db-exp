@@ -23,13 +23,6 @@
 # Writes results/perf_<scenario>_<key>_<goal>.log per measured run and results/matchperf.csv, which
 # Table "matchperf" of the paper reads.
 #
-# DB_SUFFIX runs the same four scenarios against differently named databases and keeps their results
-# apart: with DB_SUFFIX=-sa the scenarios classify against `viral-sa', `tick-borne-sa' and
-# `strepto-sa', and write perf_<scenario>sa_... logs and matchperf-sa.csv. That is how the k-mer store
-# comparison of bin/store_compare.sh measures the binary-search store without disturbing the
-# measurement of the default one. The scenario letters stay the same, so the two CSVs line up row by
-# row.
-#
 # GS_XMX caps the JVM heap of every measured run, e.g. GS_XMX=6G. It matters for the RAM column:
 # cgmemtime reports the high-water resident set, which for a 56G limit is the heap G1 decided to
 # commit and not what the run needs. The ftmatch log of scenario (a) shows 6208 MB committed against
@@ -59,10 +52,6 @@ mkdir -p "$res_path"
 
 what=${1:-all}
 
-# Appended to every project name below, empty by default. The log and CSV names take it too, with the
-# dash dropped, so a suffixed run writes perf_asa_... beside perf_a_... rather than over it.
-db_suffix=${DB_SUFFIX:-}
-key_suffix=$(echo "$db_suffix" | tr -d '-')
 
 # Number of reads sampled to establish the mean read length. Illumina reads are fixed length so any
 # sample will do; Nanopore lengths vary, and 100k reads settle the mean well within the precision
@@ -198,10 +187,10 @@ clear_previous_results() {
     return 0
   fi
   for _cp_sc in $1; do
-    rm -f "${res_path}"/perf_${_cp_sc}${key_suffix}_*.log
+    rm -f "${res_path}"/perf_${_cp_sc}_*.log
   done
-  for _cp_spec in "a:viral${db_suffix}:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne${db_suffix}:eightticks.txt" \
-                  "c:tick-borne${db_suffix}:eightticks.txt" "d:strepto${db_suffix}:${SALIVA_MAP:-saliva_real.txt}"; do
+  for _cp_spec in "a:viral:${SALIVA_MAP:-saliva_real.txt}" "b:tick-borne:eightticks.txt" \
+                  "c:tick-borne:eightticks.txt" "d:strepto:${SALIVA_MAP:-saliva_real.txt}"; do
     case " $1 " in *" ${_cp_spec%%:*} "*) ;; *) continue ;; esac
     _cp_spec=${_cp_spec#*:}
     _cp_db=${_cp_spec%%:*}
@@ -229,16 +218,16 @@ case "$what" in
 esac
 
 case "$what" in
-  a|all) run_per_file "viral${db_suffix}" "${SALIVA_MAP:-saliva_real.txt}" "a${key_suffix}" ;;
+  a|all) run_per_file viral "${SALIVA_MAP:-saliva_real.txt}" a ;;
 esac
 case "$what" in
-  b|all) run_per_file "tick-borne${db_suffix}" eightticks.txt "b${key_suffix}" ;;
+  b|all) run_per_file tick-borne eightticks.txt b ;;
 esac
 case "$what" in
-  c|all) run_pair "tick-borne${db_suffix}" eightticks.txt "c${key_suffix}_joint" ;;
+  c|all) run_pair tick-borne eightticks.txt c_joint ;;
 esac
 case "$what" in
-  d|all) run_per_file "strepto${db_suffix}" "${SALIVA_MAP:-saliva_real.txt}" "d${key_suffix}" ;;
+  d|all) run_per_file strepto "${SALIVA_MAP:-saliva_real.txt}" d ;;
 esac
 case "$what" in
   a|b|c|d|store|all|csv) ;;
@@ -253,17 +242,10 @@ esac
 # also say what the filter itself is worth. `viral' is left out: scenario (a) already shows what its
 # lookups are worth, and `strepto' covers the same reads against a database that classifies far more
 # of them.
-#
-# Skipped for a DB_SUFFIX run: the twins exist to measure one store at a time, while this compares
-# both in one JVM and needs no twin at all.
 case "$what" in
   store|all)
-    if [ -n "$db_suffix" ]; then
-      echo "############ store comparison skipped for the ${db_suffix} twins ############"
-    else
-      FILTER=both sh ./bin/store_bench.sh strepto
-      ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne
-    fi
+    FILTER=both sh ./bin/store_bench.sh strepto
+    ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne
     ;;
 esac
 
@@ -287,13 +269,11 @@ esac
 # The read counts are taken from the evaluation's own CSVs rather than recounted here: they are
 # exact, already written, and counting a 139 GB fastq again to reproduce them would cost an hour.
 
-python3 - "$res_path" "$fastqdir" "$bp_sample_reads" "$key_suffix" "$db_suffix" <<'PY'
+python3 - "$res_path" "$fastqdir" "$bp_sample_reads" <<'PY'
 import csv
 import glob, os, re, subprocess, sys
 
 res, fastqdir, bp_sample = sys.argv[1], sys.argv[2], int(sys.argv[3])
-# The scenario letters stay a, b, c, d in the table; the logs of a suffixed run carry the suffix.
-key_suffix, db_suffix = sys.argv[4], sys.argv[5]
 
 def keys_of(res, scenario):
     pat = re.compile(r'^perf_' + re.escape(scenario) + r'_(.+)_match\.log$')
@@ -395,7 +375,7 @@ def per_file(scenario, label):
 def joint(label):
     got = {}
     for goal, col in (('match', 0), ('ftmatch', 1)):
-        g = measurement(os.path.join(res, 'perf_c%s_joint_%s.log' % (key_suffix, goal)))
+        g = measurement(os.path.join(res, 'perf_c_joint_%s.log' % goal))
         if g:
             got[col] = g
     if not got:
@@ -413,12 +393,12 @@ def joint(label):
 
 # Short labels: the scenario column repeats on every row, so it has to stay narrow. What each of
 # them is belongs in the caption, where it is stated once.
-per_file('a' + key_suffix, '(a)')
-per_file('b' + key_suffix, '(b)')
+per_file('a', '(a)')
+per_file('b', '(b)')
 joint('(c)')
-per_file('d' + key_suffix, '(d)')
+per_file('d', '(d)')
 
-out = os.path.join(res, 'matchperf%s.csv' % db_suffix)
+out = os.path.join(res, 'matchperf.csv')
 # A header alone is worse than no file at all: the paper's \perfrows prints its "---" fallback only
 # when the file is absent, so an empty one would typeset a table with no rows and no marker. Refuse
 # to write it, and leave whatever is there -- a run that measured nothing must not erase one that did.

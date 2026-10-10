@@ -23,10 +23,9 @@
 #      config.properties generated from the original's with `kMerSize=24', and the fastq maps linked
 #      under the twin's name so that it is scored on the very reads `viral' was scored on.
 #   2. run_exps.sh builds and times it, and computes the reports over its contents -- dbinfo,
-#      branchhistocsv, dbquality, ftquality. Those are the point here, unlike for the `-sa' twins of
-#      store_compare.sh, where they would recompute figures that must come out identical. CSV_SUFFIX
-#      keeps the disk sizes and the timings in CSVs of their own instead of overwriting the main
-#      run's. The genomes are extracted afterwards, because the accuracy runs resolve their ground
+#      branchhistocsv, dbquality, ftquality -- which are the point here, since the twin's contents
+#      really do differ from the original's. CSV_SUFFIX keeps the disk sizes and the timings in CSVs
+#      of their own instead of overwriting the main run's. The genomes are extracted afterwards, because the accuracy runs resolve their ground
 #      truth against the twin's own accession-to-taxon table.
 #   3. run_classification_exps.sh scores the four read sets and times the classification.
 #

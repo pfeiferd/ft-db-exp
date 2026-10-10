@@ -288,7 +288,7 @@ fi
 skip=""
 
 ########################################################################################
-step "the controls of cv: k = 24, one k-mer in four, and both" || skip=1
+step "the controls of cv: k = 24, and k = 24 with one k-mer in four" || skip=1
 if [ -z "${skip:-}" ]; then
   # A second, complete evaluation strand for `cv' alone: the same genomes and taxonomy built at
   # k = 24 instead of 31, scored on the same four read sets. k is the one knob that moves the share
@@ -300,20 +300,18 @@ if [ -z "${skip:-}" ]; then
   # by step 7 and the maps are linked from it. Before the performance scenarios, which delete and
   # re-time the `match' results of `viral' and have nothing to do with the twin.
   #
-  # The second twin enters only one k-mer in four. That is the other half of why Kraken 2's
-  # database is smaller: not the seed weight but the store, 9.25 bytes per entry against 5.71, and
-  # a rate of about four is what closes the gap. It says what the rate costs on the reads.
+  # The second twin sets both keys: k = 24 and one k-mer in four. Each halving acts on a different
+  # term of the database size -- the seed weight on how many k-mers are distinct, the sampling on how
+  # many of them are entered -- so only the combination reaches Kraken 2's size, and it is the one
+  # variant whose error tolerance and whose entry count are both comparable with Kraken 2's. The
+  # twin with the sampling alone was dropped on 2026-10-10: the paper reports `cv_k24' and
+  # `cv_k24_s4' and never the intermediate, so building it was hours spent on numbers nothing reads.
+  # `sh ./bin/sampling_exps.sh all' without K still builds it if it is ever wanted again.
   #
-  # The third sets both keys. Each halving acts on a different term of the size -- the seed weight
-  # on how many k-mers are distinct, the sampling on how many of them are entered -- so only the
-  # combination reaches Kraken 2's size, and it is also the only one of the three whose error
-  # tolerance and whose entry count are both comparable with Kraken 2's.
-  #
-  # Every twin's figures go to CSV files of their own -- db_gen_perf-k24.csv, db_disk_sizes-s4.csv,
-  # viral-k24-s4_* and so on -- so nothing of the main run is overwritten, and a twin is skipped by
-  # every table unless the paper asks for it by name.
+  # Every twin's figures go to CSV files of their own -- db_gen_perf-k24.csv, viral-k24-s4_* and so
+  # on -- so nothing of the main run is overwritten, and a twin is skipped by every table unless the
+  # paper asks for it by name.
   run sh ./bin/k24_exps.sh all
-  run sh ./bin/sampling_exps.sh all
   run env K=24 sh ./bin/sampling_exps.sh all
 fi
 skip=""

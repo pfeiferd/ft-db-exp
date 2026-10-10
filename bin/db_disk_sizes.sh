@@ -20,14 +20,13 @@ mkdir -p results
 
 res_path=${RESULTS_DIR:-./results}
 # CSV_SUFFIX keeps a second batch of the same projects apart from the first, which is what the
-# store comparison of bin/store_compare.sh needs: same projects, another k-mer store, its own CSV.
+# twins of bin/k24_exps.sh and bin/sampling_exps.sh need: their own CSV beside the main run's.
 csv=${res_path}/db_disk_sizes${CSV_SUFFIX:-}.csv
 
 if [ $# -gt 0 ]; then
     projects="$@"
 else
-    # vineyard is left out with run_exps.sh, which no longer builds it; see the note there.
-    projects="viral tick-borne strepto nocardia protozoa parasites"   # vineyard
+    projects="viral tick-borne strepto nocardia protozoa parasites"
 fi
 
 # Echoes the path of the database artifact of project $1 for the goal $2 ("db" or

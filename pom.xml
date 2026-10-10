@@ -363,41 +363,6 @@
 							</arguments>
 						</configuration>
 					</execution>
-					<execution>
-						<id>orthopox3</id>
-						<goals>
-							<goal>exec</goal>
-						</goals>
-						<configuration>
-							<executable>java</executable>
-							<includeProjectDependencies>true</includeProjectDependencies>
-							<includePluginDependencies>true</includePluginDependencies>
-							<arguments>
-								<argument>-Xmx${gs.xmx}</argument>
-								<argument>-classpath</argument>
-								<classpath />
-								<argument>org.metagene.genestrip.finertree.FinerTreeMain</argument>
-								<argument>${gs.project.name}</argument>
-								<argument>${gs.project.goal}</argument>
-								<argument>-C</argument>
-								<argument>threads=${gs.threads}</argument>
-								<argument>-C</argument>
-								<argument>svgDistanceIndent=true</argument>
-								<argument>-C</argument>
-								<argument>svgMarkLongestPath=true</argument>
-								<argument>-C</argument>
-								<argument>svgShowDistancePortion=true</argument>
-								<argument>-C</argument>
-								<argument>svgShowDistance=true</argument>
-								<argument>-C</argument>
-								<argument>svgKmerNodeIndentFactor=1000</argument>
-								<argument>-C</argument>
-								<argument>svgTooLargeDistance=0.8</argument>
-								<argument>-C</argument>
-								<argument>svgDistanceIndentBelowRank=acellular root</argument>
-							</arguments>
-						</configuration>
-					</execution>
 				</executions>
 			</plugin>
 		</plugins>

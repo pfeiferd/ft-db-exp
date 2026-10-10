@@ -32,7 +32,7 @@ mkdir -p results
 
 res_path=${RESULTS_DIR:-./results}
 # CSV_SUFFIX keeps a second batch of the same projects apart from the first, which is what the
-# store comparison of bin/store_compare.sh needs: same projects, another k-mer store, its own CSV.
+# twins of bin/k24_exps.sh and bin/sampling_exps.sh need: their own CSV beside the main run's.
 csv=${res_path}/db_gen_perf${CSV_SUFFIX:-}.csv
 sizes=${res_path}/db_disk_sizes${CSV_SUFFIX:-}.csv
 
@@ -40,8 +40,7 @@ if [ $# -gt 0 ]; then
     projects="$@"
 else
     # In the order the paper's table lists them.
-    # vineyard is left out with run_exps.sh, which no longer builds it; see the note there.
-    projects="viral tick-borne strepto nocardia protozoa parasites"   # vineyard
+    projects="viral tick-borne strepto nocardia protozoa parasites"
 fi
 
 # Echoes the short name the paper uses for project $1, or the project name itself.
@@ -49,7 +48,6 @@ label_of() {
     case "$1" in
         viral)      echo "cv" ;;
         viral-k24)  echo "cv_k24" ;;
-        viral-s4)   echo "cv_s4" ;;
         viral-k24-s4) echo "cv_k24_s4" ;;
         tick-borne) echo "tb" ;;
         *)          echo "$1" ;;
@@ -138,10 +136,10 @@ for p in $projects; do
     # A refinement measured on top of an existing k-mer index is not the refinement's cost. The goal
     # `kmerindexbloom' builds that index; it runs as part of `ftdb' and nowhere else, and it is the
     # larger half of the work -- 99 % of tick-borne's 21,308 s and 86 % of strepto's 36,572 s in the
-    # batch of 2026-09. clear_refinement.sh keeps the serialised index on purpose, so an `ftdb' built
-    # after it measures the update alone and the percentage this script prints understates the
-    # refinement severalfold. Only the genestrip log says which goals actually ran, so it is consulted
-    # here; the row is written either way, with this warning beside it.
+    # batch of 2026-09. A refined database deleted without its serialised index leaves an `ftdb' that
+    # measures the update alone, and the percentage this script prints then understates the refinement
+    # severalfold. Only the genestrip log says which goals actually ran, so it is consulted here; the
+    # row is written either way, with this warning beside it.
     gs_log=${res_path}/logs/ftdb_gen_${p}.genestrip.log
     if [ -f "$gs_log" ] && [ -n "$ft_wall" ] && ! grep -q "Making kmerindexbloom took" "$gs_log"; then
         echo "  warning: ${p}'s refinement was measured with the k-mer index already built" >&2

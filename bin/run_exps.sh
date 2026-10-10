@@ -31,18 +31,14 @@ if [ $# -gt 0 ]; then
   projects="$*"
   restricted=1
 else
-  # `vineyard' is commented out rather than deleted: the paper dropped it on 2026-09-18 as more of
-  # the same, so building it and refining it is compute spent on numbers nothing reads. Put the name
-  # back here to have it built again -- the project itself is untouched.
-  projects="viral tick-borne strepto nocardia protozoa parasites"   # vineyard
+  projects="viral tick-borne strepto nocardia protozoa parasites"
   restricted=""
 fi
 
 # DB_ONLY stops after the databases themselves, i.e. after `db', `ftdb' and their two info goals. It
-# exists for the `-sa' twins of bin/store_compare.sh: they hold the same k-mers under the same
-# taxonomy as the originals and differ in the k-mer store alone, so every report over the store's
-# contents -- branchhistocsv, dbquality, ftquality and the rank statistics -- would spend hours
-# recomputing figures that must come out identical. The disk sizes and the generation timings are
+# is for a variant that differs from an existing database in nothing a report over the store's
+# contents would see -- branchhistocsv, dbquality, ftquality and the rank statistics would then spend
+# hours recomputing figures that must come out identical. The disk sizes and the generation timings are
 # still gathered, since those are what the comparison is about.
 db_only=${DB_ONLY:-}
 
@@ -62,10 +58,6 @@ raw_log_path=./logs
 # For figures in "Methods" section. These are about the Orthopox example rather than about any of the
 # databases below, so a restricted run leaves them alone.
 if [ -z "$restricted" ]; then
-mvn exec:exec@orthopox3 -Dname=orthopox -Dgoal=svgtaxtree
-mvn exec:exec@orthopox3 -Dname=orthopox -Dgoal=ftsvgtaxtree
-mv data/projects/orthopox/csv/orthopox_svgtaxtree.svg ${res_path}/orthopox3_svgtaxtree.svg
-mv data/projects/orthopox/csv/orthopox_ftsvgtaxtree.svg ${res_path}/orthopox3_ftsvgtaxtree.svg
 mvn exec:exec@db -Dname=orthopox -Dgoal=dbinfo
 mvn exec:exec@db -Dname=orthopox -Dgoal=ftdbinfo
 mvn exec:exec@db -Dname=orthopox -Dgoal=intersectcsv
@@ -74,7 +66,6 @@ mvn exec:exec@db -Dname=orthopox -Dgoal=svgtaxtree
 mvn exec:exec@db -Dname=orthopox -Dgoal=ftsvgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=svgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=ftsvgtaxtree
-mvn exec:exec@db -Dname=borrelia -Dgoal=ftsvgtaxtree
 fi
 
 # Times the generation of one database and records it, but only if that database is not there yet.
