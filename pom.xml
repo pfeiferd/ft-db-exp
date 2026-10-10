@@ -6,7 +6,7 @@
 
 
 	<properties>
-		<genestrip.version>3.0</genestrip.version>
+		<genestrip.version>4.0</genestrip.version>
 		<gs.project.name>${name}</gs.project.name>
 		<gs.project.goal>${goal}</gs.project.goal>
 		<gs.project.fqmap>${fqmap}</gs.project.fqmap>
