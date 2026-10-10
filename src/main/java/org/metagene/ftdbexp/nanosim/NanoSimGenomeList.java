@@ -8,6 +8,7 @@ import org.metagene.genestrip.GSConfigKey;
 import org.metagene.genestrip.GSGoalKey;
 import org.metagene.genestrip.GSMaker;
 import org.metagene.genestrip.GSProject;
+import org.metagene.genestrip.finertree.FTProject;
 import org.metagene.genestrip.goals.refseq.ExtractRefSeqCSVGoal;
 
 import java.io.File;
@@ -73,7 +74,10 @@ public class NanoSimGenomeList {
      * @throws IOException if the goal cannot be run or the list cannot be written
      */
     public int write(String db, File fastaDir, File outFile) throws IOException {
-        GSProject project = new GSProject(new GSCommon(baseDir), db, null, null, null, null, null,
+        // An FTProject and not a GSProject: a project's config.properties may hold ft. keys, and only
+        // an FTProject knows them. A GSProject would call such a key unknown, which ends the run
+        // where strictConfigCheck is set.
+        GSProject project = new FTProject(new GSCommon(baseDir), db, null, null, null, null, null,
                 null, null, null, null, false);
         project.initConfigParam(GSConfigKey.THREADS, -1);
 
