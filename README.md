@@ -1,4 +1,5 @@
-**Genestrip-FT-DB-Exp** - Experiments concerning [Genestrip-FT](https://github.com/pfeiferd/genestrip)
+**Genestrip-FT-DB-Exp** - Experiments concerning
+[Genestrip-FT](https://github.com/pfeiferd/genestrip)
 ===============================================
 
 This project produces the quality and performance results of the Genestrip-FT paper, i.e. the paper
@@ -13,9 +14,9 @@ rests on a starting position other tools share.
 
 ## License
 
-[Genestrip-FT-DB-Exp is free for any kind of use.](./LICENSE)
-However, the associated software, [Genestrip](https://github.com/pfeiferd/genestrip), has a
-[more restrictive License](https://github.com/pfeiferd/genestrip#license).
+[Genestrip-FT-DB-Exp is free for any kind of use.](./LICENSE) However, the associated software,
+[Genestrip](https://github.com/pfeiferd/genestrip), has a [more restrictive
+License](https://github.com/pfeiferd/genestrip#license).
 
 ## Building
 
@@ -33,16 +34,17 @@ when a goal fails on a configuration key it should know: `data/config.properties
 
 ## Requirements
 
-A large disk -- the databases, the RefSeq downloads and the simulated fastq files add up to well over
-a terabyte -- and **enough RAM to build the databases**: the peak of one generation run ranges from
-9 GB for `viral` to 46 GB for `nocardia` (`db_ram_mb` of `results/db_gen_perf.csv`), the cgroup around
-it up to 57 GB. `pom.xml` caps the heap at `gs.xmx=56G`; the experiments ran on a 64 GB machine.
-Matching holds only the *k*-mer store, so the classification experiments are far less demanding.
+A large disk -- the databases, the RefSeq downloads and the simulated fastq files add up to well
+over a terabyte -- and **enough RAM to build the databases**: the peak of one generation run ranges
+from 9 GB for `viral` to 46 GB for `nocardia` (`db_ram_mb` of `results/db_gen_perf.csv`), the cgroup
+around it up to 57 GB. `pom.xml` caps the heap at `gs.xmx=56G`; the experiments ran on a 64 GB
+machine. Matching holds only the *k*-mer store, so the classification experiments are far less
+demanding.
 
 The experiments were run against RefSeq Release 233. A later release brings slightly different
 results.
 
-## 0. Everything at once
+## Everything at once
 
 The sections below are the steps in the order they have to run, and that order is also encoded in a
 script:
@@ -56,13 +58,13 @@ sh ./bin/run_all_exps.sh --only 4     # a single step
 ```
 
 Re-running is safe: every step skips work it has already done. Wall time is days. It installs
-nothing -- section 1 is a prerequisite and needs `sudo`.
+nothing -- the installation is a prerequisite and needs `sudo`.
 
 | Variable | Effect |
 | --- | --- |
 | `FRESH_DBS=1` | Delete the databases first, so that their generation is actually measured. Without it an existing database and its `db_gen_*.log` are kept, since a goal that did nothing must not overwrite a real measurement. |
 | `FETCH_SALIVA=1` | Fetch the five human saliva runs (about 330 GB) first. Off by default. |
-| `KEEP_TICK_SIMS=1` | Never delete a simulated tick fastq. By default those whose abundance table was not preserved are deleted, since only re-simulating produces it -- see section 3. |
+| `KEEP_TICK_SIMS=1` | Never delete a simulated tick fastq. By default those whose abundance table was not preserved are deleted, since only re-simulating produces it -- see "Simulated reads". |
 | `SKIP_BUILD=1` | Do not run `mvn install` first. |
 | `PAPER_RESULTS` | An existing folder to copy the results to at the end. Unset by default and with no default path: this project does not know where a consumer keeps its inputs. |
 
@@ -70,7 +72,7 @@ Two things it does that are easy to miss by hand. It builds the Java first, beca
 labels and columns live in `src/main/java`. And it runs the saliva-matched read set *before* the
 real-read step, because that is what produces the calibration the real runs consume.
 
-## 1. Installation
+## Installation
 
 ```sh
 sh ./bin/install_tools.sh
@@ -82,20 +84,20 @@ Installs cgmemtime (wall time and peak RAM), InSilicoSeq, NanoSim with the binar
 lands below `./tools` except a few distribution packages. Idempotent. The real sequencing runs need
 nothing from here -- they arrive as gzipped fastq over HTTPS, so sra-toolkit is not installed.
 
-NanoSim departs from the first paper's conda recipe, whose `requirements.txt` pins versions targeting
-Python 3.7 that do not build against a current interpreter. Should it break on a numpy or
+NanoSim departs from the first paper's conda recipe, whose `requirements.txt` pins versions
+targeting Python 3.7 that do not build against a current interpreter. Should it break on a numpy or
 scikit-learn API change, run it in that conda environment on another machine rather than patching
 around it.
 
-## 2. Databases
+## Databases
 
 ```sh
 sh ./bin/run_exps.sh
 ```
 
 Downloads the RefSeq genomes, builds the unrefined and the refined database of every project under
-`data/projects`, measures the generation performance, computes the intrinsic quality measures -- node
-precision, subtree precision, restricted subtree precision -- and the tree figures, all into
+`data/projects`, measures the generation performance, computes the intrinsic quality measures --
+node precision, subtree precision, restricted subtree precision -- and the tree figures, all into
 `./results`.
 
 `strepto`, `tick-borne`, `parasites` and `protozoa` list the human genome in their `additional.txt`,
@@ -110,7 +112,7 @@ be given a host genome and neither masks the way the dust filter does. The measu
 in the commented block of `data/projects/viral/additional.txt`. For an application rather than a
 comparison both belong on.
 
-## 3. Simulated reads
+## Simulated reads
 
 ```sh
 sh ./bin/make_fastqs.sh                           # both parts
@@ -134,8 +136,8 @@ ERROR_MNGS=1 sh ./bin/make_fastqs.sh nocardia     # 70 bp at 2.05 %, matched to 
 No stock InSilicoSeq model reproduces either instrument, so the `basic` model is used at those
 parameters. Each regime writes its own fastq map, and each has to be its own invocation: `make_iss`
 picks the first non-empty regime variable, so `ERROR_SALIVA=1 … all` would write the saliva-matched
-set where the plain Illumina one belongs. `ERROR_NANOPORE=1` (10 %, 125 bp) and `ERROR_NANOPORE_LONG=1`
-(10 %, 3,926 bp) also exist and are not reported.
+set where the plain Illumina one belongs. `ERROR_NANOPORE=1` (10 %, 125 bp) and
+`ERROR_NANOPORE_LONG=1` (10 %, 3,926 bp) also exist and are not reported.
 
 For `tick-borne`, NanoSim trains an error model on the real Nanopore reads of a tick sample and
 applies it to the genomes of the twelve tick-borne genera, one simulated fastq per real one for all
@@ -154,14 +156,15 @@ unreachable, `ticks_real.txt` lists two alternatives.
 Each tick simulation leaves three files in `results` that cannot be recovered afterwards, since
 NanoSim writes every sample into one working directory that is cleared between samples:
 `tick-borne_<sample>_quantification.tsv` (the abundance table, derived by aligning the *real* reads
-against the genome list), `tick-borne_<sample>_error_rate.tsv` (the per-base error from the alignment,
-not from the quality strings -- these runs carry placeholders) and `tick-borne_nanosim_genomes.tsv`.
+against the genome list), `tick-borne_<sample>_error_rate.tsv` (the per-base error from the
+alignment, not from the quality strings -- these runs carry placeholders) and
+`tick-borne_nanosim_genomes.tsv`.
 
-**A sample whose `_sim.fastq` is already there is not simulated again**, so no re-running produces its
-abundance table. Delete `data/fastq/<sample>_sim.fastq` to force it -- which is what step 5 of
+**A sample whose `_sim.fastq` is already there is not simulated again**, so no re-running produces
+its abundance table. Delete `data/fastq/<sample>_sim.fastq` to force it -- which is what step 5 of
 `run_all_exps.sh` does, for exactly those samples whose table is missing.
 
-## 4. Real reads, without ground truth
+## Real reads, without ground truth
 
 Three collections: the five human saliva runs, matched against `cv` and against `strepto`; the eight
 tick samples, matched against `tb`; and the fourteen clinical metagenomes of ENA study PRJEB34974,
@@ -175,29 +178,31 @@ mvn exec:exec@fastqdl -Dname=nocardia -Dfqmap=nocardia_mngs.txt    # the Nocardi
 sh ./bin/run_classification_exps.sh real  # the evaluation
 ```
 
-The tick reads are already in place after step 3. One mate per saliva run is fetched and analysed, as
-in the first paper: 605 to 981 million read pairs each, about 330 GB of gzip for the five. The first
-paper used the three `SRR` runs and left the two `ERR` ones of the same study out; all five are
-fetched here, so the saliva tables carry five rows. `prefetch`/`fasterq-dump` are not used -- on these
-runs they need some 615 GB transiently to arrive at 139 GB and neither step is resumable.
+The tick reads are already in place from the simulation above. One mate per saliva run is fetched
+and analysed, as in the first paper: 605 to 981 million read pairs each, about 330 GB of gzip for
+the five. The first paper used the three `SRR` runs and left the two `ERR` ones of the same study
+out; all five are fetched here, so the saliva tables carry five rows. `prefetch`/`fasterq-dump` are
+not used -- on these runs they need some 615 GB transiently to arrive at 139 GB and neither step is
+resumable.
 
 The run writes `results/<db>_<key>_specificity.csv`, one row per fastq key: `fastq key`, `sample`,
 `reads`, `classified unrefined`, `classified refined`, `obs genus only`, `obs genus only share`,
-`ungated precision unrefined`, `ungated precision refined`, `rho u`, `rho f`, `est prec g u`,
-`est prec g f`.
+`ungated precision unrefined`, `ungated precision refined`, `rho u`, `rho f`, `est prec g u`, `est
+prec g f`.
 
-**It needs a simulated run first.** No ground truth exists to gate with, so the two factors come from
-the `rho` columns of a simulated run's `_summary.csv`, named by the last argument of `run_real`:
-`iss_saliva` for the saliva runs of `cv` and of `strepto`, `nanosim` for the ticks, `iss_mngs` for the
-Nocardia metagenomes. Run `real` before that summary exists and the four right-hand columns come out
-empty -- or, worse, are filled from a stale copy still lying in `results`. A calibration of exactly
-one row is applied to every sample regardless of its key, which is how one saliva-like read set stands
-in for all five runs; more than one row means the rows are per sample and only a key match will do,
-which is how each tick borrows the calibration of its own sample.
+**It needs a simulated run first.** No ground truth exists to gate with, so the two factors come
+from the `rho` columns of a simulated run's `_summary.csv`, named by the last argument of
+`run_real`: `iss_saliva` for the saliva runs of `cv` and of `strepto`, `nanosim` for the ticks,
+`iss_mngs` for the Nocardia metagenomes. Run `real` before that summary exists and the four
+right-hand columns come out empty -- or, worse, are filled from a stale copy still lying in
+`results`. A calibration of exactly one row is applied to every sample regardless of its key, which
+is how one saliva-like read set stands in for all five runs; more than one row means the rows are
+per sample and only a key match will do, which is how each tick borrows the calibration of its own
+sample.
 
 The difference between the two ungated precisions is **not** a bound on the gain. It becomes an
-estimate of it only through those factors: each `est prec g` column carries one level from what can be
-observed to what it stands for.
+estimate of it only through those factors: each `est prec g` column carries one level from what can
+be observed to what it stands for.
 
 ### The Kraken tools on the real saliva runs
 
@@ -207,17 +212,17 @@ sh ./bin/run_classification_exps.sh real       # evaluates, picking the TSVs up 
 ```
 
 `bin/kraken_build.sh` builds over the very fasta files `cv` is built from. Masking is off
-(`--no-masking`), as in the first study on Genestrip, and KrakenUniq is given `--kmer-len 31` to match
-Genestrip's *k* while Kraken 2 keeps its defaults -- *k* = 35 over minimizers of 31 with 7 positions
-spaced out, i.e. a seed of weight 24. `bin/kraken_classify.sh` classifies, with `FQMAP=<map>`
-switching it from the four simulated sets to the runs a map names.
+(`--no-masking`), as in the first study on Genestrip, and KrakenUniq is given `--kmer-len 31` to
+match Genestrip's *k* while Kraken 2 keeps its defaults -- *k* = 35 over minimizers of 31 with 7
+positions spaced out, i.e. a seed of weight 24. `bin/kraken_classify.sh` classifies, with
+`FQMAP=<map>` switching it from the four simulated sets to the runs a map names.
 
-**The per-read output is filtered as it is produced**: the tool writes into a FIFO and an `awk` keeps
-three fields of the lines whose taxon is not 0. Unfiltered it would be 552 GB per tool. KrakenUniq
-would do it itself with `--only-classified-output`, but Kraken 2 parses that option and then ignores
-it, so one filter serves both. It costs the measure nothing -- a read left unclassified is not one
-left at a genus -- and only `reads` needs repair, which `SpecificityReport` takes from the Genestrip
-run.
+**The per-read output is filtered as it is produced**: the tool writes into a FIFO and an `awk`
+keeps three fields of the lines whose taxon is not 0. Unfiltered it would be 552 GB per tool.
+KrakenUniq would do it itself with `--only-classified-output`, but Kraken 2 parses that option and
+then ignores it, so one filter serves both. It costs the measure nothing -- a read left unclassified
+is not one left at a genus -- and only `reads` needs repair, which `SpecificityReport` takes from
+the Genestrip run.
 
 `SpecificityReport` scores whatever it finds under `results/kraken` and writes
 `<db>_<tool>_<key>_specificity.csv` beside its own, each tool on its own subset, the same rule
@@ -225,7 +230,7 @@ run.
 `specificity` run redoes those rows alone once the TSVs are in place. The calibration is the tool's
 own; its `rho f` is empty, so the refined cells stay empty too.
 
-## 5. Classification quality experiments
+## Classification quality experiments
 
 ```sh
 sh ./bin/run_classification_exps.sh
@@ -238,18 +243,18 @@ measure that can tell a refined database from an unrefined one at all -- and `un
 whose ground truth could not be recovered from their name.
 
 Its last seven columns serve the ground-truth-free estimate and come in two blocks that must not be
-crossed. `genus only`, `genus only score`, `genus only precision species cand`,
-`genus only species share` and `genus only zero scoring` are over the **gated** subset
-*R<sub>g</sub>*, the reads the unrefined database placed correctly as far as a genus and no further --
-which follows from the read's true species and so cannot be formed on a real sample. `obs genus only`
-and `obs genus only ungated precision` are over the **observable** subset *R'<sub>g</sub>*, the reads
-left at a genus right or wrong, and the latter is the one measure that never consults the ground
-truth. The gated average divides by `genus only`, the ungated one by `obs genus only`: different
-subsets, and the easiest thing in the file to get wrong.
+crossed. `genus only`, `genus only score`, `genus only precision species cand`, `genus only species
+share` and `genus only zero scoring` are over the **gated** subset *R<sub>g</sub>*, the reads the
+unrefined database placed correctly as far as a genus and no further -- which follows from the
+read's true species and so cannot be formed on a real sample. `obs genus only` and `obs genus only
+ungated precision` are over the **observable** subset *R'<sub>g</sub>*, the reads left at a genus
+right or wrong, and the latter is the one measure that never consults the ground truth. The gated
+average divides by `genus only`, the ungated one by `obs genus only`: different subsets, and the
+easiest thing in the file to get wrong.
 
 The calibration the paper transfers to a real sample is a **pair** of factors on the levels, not one
-factor on the gain: `rho u` carries the unrefined ungated precision to the gated one it stands for and
-`rho f` does the same after the refinement. Both are computed in `_summary.csv`, where the two
+factor on the gain: `rho u` carries the unrefined ungated precision to the gated one it stands for
+and `rho f` does the same after the refinement. Both are computed in `_summary.csv`, where the two
 variants sit in one row. Ratios of levels rather than of gains, because they then stay within [0, 1]
 and because a real sample can be given an estimated precision before and after rather than only an
 estimated gain.
@@ -274,10 +279,10 @@ Every file carries the raw `fastq key` beside the printed label, and reports joi
 that renaming a label cannot silently break a join.
 
 The performance part also preserves the match goals' own output as
-`results/<goal>_<logkey>_<key>.csv`, which says per taxon how many reads were assigned to it. The log
-key is load-bearing: the simulated and the real tick runs use the same keys `tick1 .. tick8` from two
-different maps. These ride on the performance measurement, so **no cgmemtime means no per-taxon
-results**: `run_perf` returns early without it.
+`results/<goal>_<logkey>_<key>.csv`, which says per taxon how many reads were assigned to it. The
+log key is load-bearing: the simulated and the real tick runs use the same keys `tick1 .. tick8`
+from two different maps. These ride on the performance measurement, so **no cgmemtime means no
+per-taxon results**: `run_perf` returns early without it.
 
 ### The k = 24 control of cv
 
@@ -295,31 +300,31 @@ K=27 sh ./bin/k24_exps.sh all     # viral-k27 instead
 ```
 
 `bin/k24_projects.sh` writes the twin: symlinks to the original's `taxids.txt`, `additional.txt` and
-`categories.txt`, a `config.properties` from the original's with `kMerSize=24` appended, and the fastq
-maps linked under the twin's own name -- which is what makes the two rows comparable, since the twin
-is then scored on the very read files `viral` was scored on. `CSV_SUFFIX=-k24` keeps the timings and
-disk sizes in CSVs of their own. About 36 minutes and 5.4 GB; it simulates no reads.
+`categories.txt`, a `config.properties` from the original's with `kMerSize=24` appended, and the
+fastq maps linked under the twin's own name -- which is what makes the two rows comparable, since
+the twin is then scored on the very read files `viral` was scored on. `CSV_SUFFIX=-k24` keeps the
+timings and disk sizes in CSVs of their own. About 36 minutes and 5.4 GB; it simulates no reads.
 
 ### The sampled control of cv
 
 The second twin takes the store down along with the seed weight. Kraken 2 keeps a 4-byte cell per
-minimizer and enters only minimizers, a density of 1/3 at its defaults; Genestrip enters every *k*-mer
-in a 64-bit word, 50 bits of it in use at *k* = 24, plus a Bloom filter of 10 bits per entry. Fewer
-bits per entry and fewer entries, both by about a factor of two, is why a Genestrip database of
-Kraken 2's size needs a sampling rate of about four.
+minimizer and enters only minimizers, a density of 1/3 at its defaults; Genestrip enters every
+*k*-mer in a 64-bit word, 50 bits of it in use at *k* = 24, plus a Bloom filter of 10 bits per
+entry. Fewer bits per entry and fewer entries, both by about a factor of two, is why a Genestrip
+database of Kraken 2's size needs a sampling rate of about four.
 
 ```sh
 K=24 sh ./bin/sampling_exps.sh all        # the twin, its database, and the four read sets
 K=24 sh ./bin/sampling_exps.sh projects   # only the twin project, seconds
 ```
 
-`cv_k24_s4` comes to 689 MB on disk against the 674 MB of Kraken 2's own hash table and taxonomy over
-these genomes, and it is the one variant whose seed weight and whose entry count are both comparable
-with Kraken 2's. The sampling selects by the *k*-mer and not by its position, which keeps the tax ids
-right: a *k*-mer is entered in every genome it occurs in or in none. A read therefore keeps about one
-*k*-mer in four at random positions. `bin/sampling_projects.sh` writes the twin from the original
-project, never from the `-k24` twin. Without `K` it builds `viral-s4` at *k* = 31 and `S=5` sets
-another rate, but no table reads either.
+`cv_k24_s4` comes to 689 MB on disk against the 674 MB of Kraken 2's own hash table and taxonomy
+over these genomes, and it is the one variant whose seed weight and whose entry count are both
+comparable with Kraken 2's. The sampling selects by the *k*-mer and not by its position, which keeps
+the tax ids right: a *k*-mer is entered in every genome it occurs in or in none. A read therefore
+keeps about one *k*-mer in four at random positions. `bin/sampling_projects.sh` writes the twin from
+the original project, never from the `-k24` twin. Without `K` it builds `viral-s4` at *k* = 31 and
+`S=5` sets another rate, but no table reads either.
 
 ### The two *k*-mer stores
 
@@ -332,18 +337,18 @@ FILTER=both sh ./bin/store_bench.sh strepto           # with and without the fil
 ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne  # all eight tick runs
 ```
 
-It needs no second database: it loads the project's refined one, copies it into a sorted array in the
-same JVM and classifies the same reads through both, one consumer thread throughout so that the
+It needs no second database: it loads the project's refined one, copies it into a sorted array in
+the same JVM and classifies the same reads through both, one consumer thread throughout so that the
 lookups and not the fastq reader are the limit. It writes `results/storebench_<db>.csv`, one row per
 store. `FILTER` takes `on`, `off` or `both`, since the Bloom filter answers most *k*-mers of a real
 read set and a run with it on measures something else than one without it.
 
-`perf_scenarios.sh all`, step 12, ends with exactly the two calls the appendix table needs;
-`perf_scenarios.sh store` runs just those. Mind that the sorted array indexes its values with a short
-and so holds 65,535 taxa -- enough for these databases, and a fill beyond that is refused rather than
-truncated.
+`perf_scenarios.sh all`, which `run_all_exps.sh` runs, ends with exactly the two calls the appendix
+table needs; `perf_scenarios.sh store` runs just those. Mind that the sorted array indexes its
+values with a short and so holds 65,535 taxa -- enough for these databases, and a fill beyond that
+is refused rather than truncated.
 
-## 6. Machine description
+## Machine description
 
 Run **on the machine that executed the experiments**, ideally right after a full run:
 
@@ -358,45 +363,46 @@ while the LaTeX file comes from `lscpu`, `/proc`, `lsblk` and `java`. Anything u
 paragraph means the script has not run on the right machine yet. The JVM reported is the one on
 `PATH`, so run it from the same shell as the experiments.
 
-`\sysWorkers` is `\sysThreads - 1`, because `pom.xml` sets `gs.threads` to `-1`, which Genestrip reads
-as one thread per processor less one; `AccuracyEvaluator` sets the same value in code, so every
-experiment runs with the same thread count. `-Dgs.threads=19` pins it, and the macro then has to be
-set by hand.
+`\sysWorkers` is `\sysThreads - 1`, because `pom.xml` sets `gs.threads` to `-1`, which Genestrip
+reads as one thread per processor less one; `AccuracyEvaluator` sets the same value in code, so
+every experiment runs with the same thread count. `-Dgs.threads=19` pins it, and the macro then has
+to be set by hand.
 
 ## Results
 
-Everything is written to `./results`, to be consumed as it is: a paper includes the CSV, SVG and LaTeX
-fragments by name from a results folder of its own. `run_all_exps.sh` copies them there as its last
-step when `PAPER_RESULTS` names the folder.
+Everything is written to `./results`, to be consumed as it is: a paper includes the CSV, SVG and
+LaTeX fragments by name from a results folder of its own. `run_all_exps.sh` copies them there as its
+last step when `PAPER_RESULTS` names the folder.
 
 **Copying by hand means one more command.** `dbstats.tex` holds every figure the text states as a
-macro and is derived from the CSVs rather than written by a goal, and an rsync does not regenerate it:
+macro and is derived from the CSVs rather than written by a goal, and an rsync does not regenerate
+it:
 
 ```sh
 sh ./bin/paper_stats.sh /path/to/the/paper/results
 ```
 
-Otherwise its tables keep the numbers of the previous batch while the CSVs beside them are new, which
-is exactly the mismatch that script exists to prevent. `matchperf.csv` needs nothing extra: step 12
-writes it into `./results` before the copy.
+Otherwise its tables keep the numbers of the previous batch while the CSVs beside them are new,
+which is exactly the mismatch that script exists to prevent. `matchperf.csv` needs nothing extra:
+`run_all_exps.sh` writes it into `./results` before the copy.
 
 | File | Written by | Section |
 | --- | --- | --- |
-| `<db>_dbinfo.csv`, `<db>_ftdbinfo.csv`, `<db>_dbquality.csv`, `<db>_ftquality.csv` | `run_exps.sh` | 2 |
-| `<db>_kmerrankstatscsv.csv`, `<db>_branchhistorankcsv.csv` | `run_exps.sh` | 2 |
-| `db_gen_<db>.log`, `ftdb_gen_<db>.log` | `run_exps.sh` | 2 |
-| `db_gen_perf.csv`, `db_disk_sizes.csv` | `db_gen_perf.sh`, `db_disk_sizes.sh`, from `run_exps.sh` | 2 |
-| `<db>_simparams.csv`, `tick-borne_<sample>_quantification.tsv`, `_error_rate.tsv`, `tick-borne_nanosim_genomes.tsv` | `make_fastqs.sh` | 3 |
-| `<db>_<key>_accuracy.csv`, `_summary.csv`, `_quality.csv`, `_simdata.csv` | `run_classification_exps.sh` | 5 |
-| `<db>_<key>_specificity.csv` | `run_classification_exps.sh` | 4 |
-| `<db>_<tool>_<key>_specificity.csv`, `_quality.csv`, `_summary.csv` | `run_classification_exps.sh kraken`, then `real` / `accuracy` | 4 |
-| `match_<logkey>.log`, `ftmatch_<logkey>.log`, `<goal>_<logkey>_<key>.csv` | `run_classification_exps.sh` | 5 |
-| `perf_<scenario>_<key>_<goal>.log`, `matchperf.csv` | `perf_scenarios.sh` | 5 |
-| `viral-k24_*`, `db_gen_perf-k24.csv`, `db_disk_sizes-k24.csv` | `k24_exps.sh` | 5 |
-| `viral-k24-s4_*`, `db_gen_perf-k24-s4.csv`, `db_disk_sizes-k24-s4.csv` | `K=24 sampling_exps.sh` | 5 |
-| `storebench_<db>.csv`, `storebench_<db>.log` | `store_bench.sh` | 5 |
+| `<db>_dbinfo.csv`, `<db>_ftdbinfo.csv`, `<db>_dbquality.csv`, `<db>_ftquality.csv` | `run_exps.sh` | Databases |
+| `<db>_kmerrankstatscsv.csv`, `<db>_branchhistorankcsv.csv` | `run_exps.sh` | Databases |
+| `db_gen_<db>.log`, `ftdb_gen_<db>.log` | `run_exps.sh` | Databases |
+| `db_gen_perf.csv`, `db_disk_sizes.csv` | `db_gen_perf.sh`, `db_disk_sizes.sh`, from `run_exps.sh` | Databases |
+| `<db>_simparams.csv`, `tick-borne_<sample>_quantification.tsv`, `_error_rate.tsv`, `tick-borne_nanosim_genomes.tsv` | `make_fastqs.sh` | Simulated reads |
+| `<db>_<key>_accuracy.csv`, `_summary.csv`, `_quality.csv`, `_simdata.csv` | `run_classification_exps.sh` | Classification quality |
+| `<db>_<key>_specificity.csv` | `run_classification_exps.sh` | Real reads |
+| `<db>_<tool>_<key>_specificity.csv`, `_quality.csv`, `_summary.csv` | `run_classification_exps.sh kraken`, then `real` / `accuracy` | Real reads |
+| `match_<logkey>.log`, `ftmatch_<logkey>.log`, `<goal>_<logkey>_<key>.csv` | `run_classification_exps.sh` | Classification quality |
+| `perf_<scenario>_<key>_<goal>.log`, `matchperf.csv` | `perf_scenarios.sh` | Classification quality |
+| `viral-k24_*`, `db_gen_perf-k24.csv`, `db_disk_sizes-k24.csv` | `k24_exps.sh` | Classification quality |
+| `viral-k24-s4_*`, `db_gen_perf-k24-s4.csv`, `db_disk_sizes-k24-s4.csv` | `K=24 sampling_exps.sh` | Classification quality |
+| `storebench_<db>.csv`, `storebench_<db>.log` | `store_bench.sh` | Classification quality |
 | `dbstats.tex` | `paper_stats.sh` | above |
-| `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | 6 |
+| `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | Machine description |
 
 **Only the files the paper reads**, as a zip:
 
@@ -421,10 +427,10 @@ DRY_RUN=1 sh ./bin/clear_projects.sh viral
 ```
 
 `clean_all.sh` removes the generated databases of every project; the downloaded RefSeq and Genbank
-data survives, since re-downloading it takes far longer than rebuilding from it. It is the right tool
-when results have to come from one code state, and far too much after a change to a single project:
-it takes the simulated reads with it, and new reads would make the rebuilt numbers incomparable with
-the tables that were not rebuilt.
+data survives, since re-downloading it takes far longer than rebuilding from it. It is the right
+tool when results have to come from one code state, and far too much after a change to a single
+project: it takes the simulated reads with it, and new reads would make the rebuilt numbers
+incomparable with the tables that were not rebuilt.
 
 `clear_projects.sh` clears `csv/`, `log/`, `krakenout/` and -- what `ftclear` leaves alone -- `db/`,
 plus the collected `results/<project>_*`, and keeps the extracted genomes, the simulated fastq files
