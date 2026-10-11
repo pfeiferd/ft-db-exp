@@ -1,30 +1,28 @@
 #!/bin/sh
 #
 # The sampled control of `cv': a complete evaluation strand for Genestrip, unrefined and refined, on
-# the same genomes, the same taxonomy and the same four read sets as `viral', entering only one
-# k-mer in n instead of every one of them.
+# the same genomes, taxonomy and four read sets as `viral', entering only one k-mer in n.
 #
-# Why. Kraken 2's database is smaller than Genestrip's for two independent reasons, and only one of
-# them is the seed weight that bin/k24_exps.sh isolates. The other is the store: Kraken 2 keeps a
-# 4-byte cell per minimizer, 17 bits of truncated hash and 15 bits of taxon index, and enters only
-# the minimizers, which at its defaults k = 35 and l = 31 is a window of five and so a density of
-# 2/(5+1) = 1/3. Genestrip enters every k-mer in a 64-bit word that holds the k-mer exactly, plus a
-# 10-bit-per-entry Bloom filter in front. Measured on `cv' that is 9.25 bytes per entry in memory
-# against 5.71 for Kraken 2.
+# Why. Kraken 2's database is smaller than Genestrip's for two independent reasons, and only one is
+# the seed weight that bin/k24_exps.sh isolates. The other is the store: Kraken 2 keeps a 4-byte cell
+# per minimizer, 17 bits of truncated hash and 15 bits of taxon index, and enters only minimizers,
+# which at its defaults is a window of five and so a density of 1/3. Genestrip enters every k-mer in
+# a 64-bit word that holds it exactly, plus a 10-bit-per-entry Bloom filter in front. Fewer bits per
+# entry and fewer entries, both by about a factor of two, is why a Genestrip database of Kraken 2's
+# size needs a sampling rate of about four.
 #
-# So a Genestrip database of Kraken 2's size needs a sampling rate of about four, and this strand
-# says what that costs where it has to be paid, namely on the reads. The sampling selects by the
-# k-mer rather than by its position, so a read keeps about one k-mer in n at random positions; on
-# clean reads that is harmless, on error-rich ones the surviving error-free k-mers are thinned by the
-# same factor. That is the number this strand produces.
+# This strand says what that costs where it has to be paid, on the reads. The sampling selects by the
+# k-mer and not by its position, so a read keeps about one k-mer in n at random positions: harmless
+# on clean reads, and on error-rich ones the surviving error-free k-mers are thinned by the same
+# factor.
 #
 # Three steps, as in bin/k24_exps.sh, which describes the mechanics they share:
 #
-#   1. bin/sampling_projects.sh writes the twin `viral-s4', or `viral-k24-s4' under K=24, which is
-#      the one the paper reports.
-#   2. run_exps.sh builds and times it and reports over its contents. CSV_SUFFIX keeps the disk sizes
-#      and timings in CSVs of their own. The genomes are extracted afterwards, for the twin's own
-#      accession-to-taxon table.
+#   1. bin/sampling_projects.sh writes the twin -- `viral-k24-s4' under K=24, which is the one the
+#      paper reports, or `viral-s4' without it, which no table reads.
+#   2. run_exps.sh builds and times it and reports over its contents; CSV_SUFFIX keeps the disk sizes
+#      and timings out of the main run's CSVs. The genomes are extracted afterwards, for the twin's
+#      own accession-to-taxon table.
 #   3. run_classification_exps.sh scores the four read sets and times the classification.
 #
 # The twin is smaller and faster to build than the original, since a quarter of the k-mers go in.

@@ -3,24 +3,19 @@
 # Classifies the four simulated read sets of `viral' with Kraken 2 and KrakenUniq, so that their
 # answers can be scored with the measures of the paper and put beside Genestrip's own.
 #
-# The read sets are the ones Table "classquality" of the paper reports for `cv': the error-free set,
-# the two stock Illumina models "MiSeq" and "HiSeq", and the saliva-matched one. They carry their
-# ground truth in the read name, `>ACCESSION|kraken:taxid|TAXID_...', which is what makes a per-read
-# comparison possible at all -- the same names Genestrip is scored against.
-#
-# Both mates of a set are classified, unlike the real read sets of this project where only the first
-# one is read. The mapping files of the simulated sets list both under one key, so the accuracy run
-# scores Genestrip over both, and a comparison has to cover the same reads.
+# The read sets are the four Table "classquality" reports for `cv'. They carry their ground truth in
+# the read name, `>ACCESSION|kraken:taxid|TAXID_...', the same names Genestrip is scored against.
+# Both mates are classified, unlike the real read sets where only the first is read: the simulated
+# maps list both under one key, so Genestrip is scored over both and a comparison has to cover the
+# same reads.
 #
 # Kraken 2 is called with `--minimum-hit-groups 1' and `--confidence 0'. Its own default asks for two
-# hit groups, while Genestrip classifies a read from a single k-mer (`minKMersForClass' defaults to
-# 1) and KrakenUniq does the same, so the default would compare two different thresholds rather than
-# two classifiers. The minimizers stay as they are: a k-mer length of 35 over minimizers of 31 is
-# what Kraken 2 is, and building it to hold every 31-mer would measure a tool nobody uses.
+# hit groups, while Genestrip classifies a read from a single k-mer (`minKMersForClass' defaults to 1)
+# and KrakenUniq does the same, so the default would compare thresholds rather than classifiers. The
+# minimizers stay as they are.
 #
-# What comes out is one tab-separated file per tool and read set under results/kraken, in each tool's
-# own output format. Both start their lines with C or U, the read name and the assigned tax id, which
-# is all the scoring needs.
+# Out comes one tab-separated file per tool and read set under results/kraken, each in its tool's own
+# format; both start their lines with C or U, the read name and the assigned tax id.
 #
 # Usage:
 #   sh ./bin/kraken_classify.sh            # both tools, all four read sets
@@ -113,17 +108,12 @@ run_tool() {
     _rt_mate=0
     for _rt_fq in $_rt_fqs; do
       _rt_mate=$((_rt_mate + 1))
-      # The tool writes into a FIFO and a filter reads it, so the per-read output never lands on
-      # disk in full. Of a real saliva run only some two per cent of the reads are classified at
-      # all, and the five runs together hold 4.1 billion -- at the 134 bytes per read the simulated
-      # files measure, the unfiltered output would be 552 GB per tool. Keeping the classified lines
-      # and three fields of them brings that to a few gigabytes.
-      #
-      # The test is on the taxon of the line and not on its C/U status, which is the same thing in
-      # both output formats and reads more directly. KrakenUniq would also do it itself with
-      # `--only-classified-output'; Kraken 2 accepts that option and then ignores it -- its script
-      # parses it in kraken2:68 and never puts it among the flags it passes on -- so one filter for
-      # both beats a flag that silently works for one of them.
+      # The tool writes into a FIFO and a filter reads it, so the full per-read output never lands on
+      # disk: the five saliva runs hold 4.1 billion reads at 134 bytes each, i.e. 552 GB per tool
+      # unfiltered, of which some two per cent are classified at all. The test is on the taxon rather
+      # than on C/U, the same thing in both formats. KrakenUniq would filter itself with
+      # `--only-classified-output'; Kraken 2 parses that option (kraken2:68) and never passes it on,
+      # so one filter serves both.
       _rt_pipe="${_rt_out}.fifo"
       rm -f "$_rt_pipe"
       mkfifo "$_rt_pipe"

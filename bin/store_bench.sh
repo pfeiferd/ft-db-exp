@@ -14,32 +14,23 @@
 #   THREADS=-1 sh ./bin/store_bench.sh strepto         # one consumer per processor less one
 #   THREADS=2 sh ./bin/store_bench.sh strepto          # two consumers, three threads in all
 #
-# DB picks the database file, by default the project's refined one. MAP overrides the fastq map the
-# input is taken from. GS_XMX caps the heap of the measured JVM; both stores are held at once,
-# with one filter each, so it needs about 18 bytes per k-mer of the database plus some 2.5 bytes
-# for the two filters. That is 10G for `viral' with its 386 million k-mers and 14G for `strepto'
-# with 555 million; the default of 56G from the pom is plenty where the machine has it.
+# DB picks the database file, by default the project's refined one, and MAP the fastq map. GS_XMX
+# caps the heap: both stores are held at once with one filter each, so it needs about 18 bytes per
+# k-mer plus some 2.5 for the filters -- 10G for `viral', 14G for `strepto'. `strepto' says more
+# about the lookups, classifying seven to ten percent of the saliva reads where `viral' classifies
+# two; the memory figures do not care which database is measured.
 #
-# `strepto' says more about the lookups than `viral' does: on the saliva runs it classifies seven
-# to ten percent of the reads where `viral' classifies two, so more of the time is spent in the
-# store. The memory figures do not care which database is measured.
+# THREADS sets the CONSUMER threads and is one by default, so a run has two in all: the producer that
+# reads and parses, and one consumer that looks the k-mers up. That is what the appendix uses -- with
+# one consumer per processor the producer is the limit and a faster lookup hardly shows. It also
+# makes a run several times longer, which is the price of measuring the store and not the reader.
 #
-# THREADS sets the CONSUMER threads and is one by default, so that a run has two threads in all:
-# the producer that reads, inflates and parses the file, and one consumer that looks the k-mers up.
-# That is what the paper's appendix uses throughout. With one consumer per processor the producer is
-# the limit of the run and a faster lookup hardly shows, while one consumer puts the limit on the
-# lookups. It also makes a run several times longer than the pipeline default would, which is the
-# price of measuring the store rather than the reader.
+# Each file is classified twice per store and only the second pass counts, so that neither store is
+# measured on a cold file with an uncompiled matching loop. WARMUP=0 turns that off.
 #
-# Each file is classified twice per store and only the second pass counts. The first warms the JIT
-# and the page cache, and it does so for either store alike: without it the store that is measured
-# first reads a cold file and compiles the matching loop, while the one measured second gets both for
-# free. WARMUP=0 turns that off and halves the time a run takes.
-#
-# FILTER takes `on' (the default), `off' or `both'. The Bloom filter in front of a store answers most
-# k-mers of a real read set, which then never reach the store, so a run with it on measures the
-# pipeline and one with it off measures the layout. `both' does the two in one go and so also says
-# what the filter itself is worth, at twice the time.
+# FILTER takes `on' (the default), `off' or `both'. The Bloom filter answers most k-mers of a real
+# read set before the store is reached, so a run with it on measures the pipeline and one with it off
+# the layout. `both' does the two in one go, at twice the time.
 #
 # Writes results/storebench_<project>.csv with one row per store and results/storebench_<project>.log.
 set -e

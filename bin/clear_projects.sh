@@ -1,19 +1,16 @@
 #!/bin/sh
 #
-# Clears the generated state of the named projects alone, so that a configuration change really
-# takes effect, and keeps everything whose regeneration would cost hours or change the inputs.
+# Clears the generated state of the named projects alone, so that a configuration change really takes
+# effect, and keeps everything whose regeneration would cost hours or change the inputs.
 #
-# Why this exists beside clean_all.sh: that script is for "results must come from one code state"
-# and it takes the whole experiment with it -- every project, the simulated reads, and all of
-# results/ including results/kraken. After a change to one project family that is far too much.
-# Re-simulating the reads would also change them, and then the new numbers could no longer be held
-# against the tables that were not rebuilt.
+# Why beside clean_all.sh: that script is for "results must come from one code state" and takes the
+# whole experiment with it, the simulated reads included -- and re-simulating changes them, after
+# which the new numbers cannot be held against the tables that were not rebuilt.
 #
 # WHY DELETING IS NECESSARY AT ALL. Genestrip's goals are make-like: a goal whose output file is
-# already there reports itself made and does nothing. A changed config.properties does not
-# invalidate anything on disk. In particular `clear'/`ftclear' removes only krakenout/, csv/ and
-# log/ (GSMaker.java: the CLEAR goal's file list) and leaves db/ alone, so a database built under
-# the old configuration is silently reused. That is what this script removes.
+# there reports itself made and does nothing, and a changed config.properties invalidates nothing on
+# disk. `clear'/`ftclear' removes only krakenout/, csv/ and log/ and leaves db/ alone, so a database
+# built under the old configuration is silently reused.
 #
 # WHAT IT DELETES, per project:
 #   csv/ log/ krakenout/   through the goal graph, with `ftclear'
@@ -21,21 +18,15 @@
 #   results/<p>_* etc.     the collected copies, so that a step which silently did not re-run shows
 #                          up as a missing file instead of as a stale number in the paper
 #
-# WHAT IT KEEPS, and why:
-#   data/projects/<p>/fasta   the extracted per-accession genomes. A setting like maxDust changes
-#                             what is *stored* from them, never which genomes are selected, and the
-#                             simulated reads were drawn from exactly these files -- re-extracting
-#                             would cost hours and risk a different read set.
-#   data/fastq                every simulated and downloaded fastq, for the same reason.
-#   results/kraken            the per-read output of KrakenUniq and Kraken 2. Re-classifying the
-#                             real runs is the single most expensive step of the whole experiment,
-#                             and nothing about a Genestrip-side change invalidates it.
-#   every other project       untouched.
+# WHAT IT KEEPS: the extracted per-accession genomes under data/projects/<p>/fasta and everything in
+# data/fastq, because a setting like maxDust changes what is stored from them and not which genomes
+# are selected, and the simulated reads were drawn from exactly these files; results/kraken, because
+# re-classifying the real runs is the most expensive step of the whole experiment and no
+# Genestrip-side change invalidates it; and every other project.
 #
-# `ftclear' takes csv/ with it, and that holds <db>_extractrefseqcsv.csv, the accession-to-taxon
-# table the ground truth is resolved against. The goals rebuild it, but a classification run that
-# starts without it dies hours in with "No extracted genomes to resolve the ground truth against",
-# so this script regenerates it right away rather than leaving that to chance.
+# `ftclear' takes csv/ with it, and that holds <db>_extractrefseqcsv.csv, the accession-to-taxon table
+# the ground truth is resolved against. A classification run that starts without it dies hours in
+# with "No extracted genomes to resolve the ground truth against", so this regenerates it right away.
 #
 # Usage:
 #   sh ./bin/clear_projects.sh viral viral-k24 viral-k24-s4

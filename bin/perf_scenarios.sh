@@ -24,12 +24,10 @@
 # Table "matchperf" of the paper reads.
 #
 # GS_XMX caps the JVM heap of every measured run, e.g. GS_XMX=6G. It matters for the RAM column:
-# cgmemtime reports the high-water resident set, which for a 56G limit is the heap G1 decided to
-# commit and not what the run needs. The ftmatch log of scenario (a) shows 6208 MB committed against
-# 3491 MB used, so the column says more about the garbage collector than about the database. A cap
-# just above what a run needs makes the number mean the database again. It also costs: a tighter
-# heap collects more often, so wall time and throughput of such a run are not comparable with the
-# figures measured at the default.
+# cgmemtime reports the high-water resident set, which at a 56G limit is the heap G1 decided to
+# commit and not what the run needs -- scenario (a)'s ftmatch log shows 6208 MB committed against
+# 3491 MB used. A tighter heap also collects more often, so wall time measured under a cap is not
+# comparable with the figures taken at the default.
 #
 # THE MEASUREMENT IS THE POINT, so this script refuses to guess. A run whose log is missing or
 # unparseable leaves its cell empty rather than being averaged over the runs that did work.
@@ -172,14 +170,11 @@ run_per_file() {
 #
 # Genestrip does not remake a file goal whose output is on disk: it reports the goal as made, exits
 # after a second, and cgmemtime then times a JVM start -- 0.9 s and 180 MB, which reads like a
-# measurement and is none. That is exactly what the tick runs of 2026-09-19 recorded. So the two
-# goals' results go first, for every key of every map this script measures, together with this
-# script's own logs, so that no figure of an earlier batch survives into the next CSV.
+# measurement and is none. So the two goals' results go first, for every key of every map measured
+# here, together with this script's own logs.
 #
-# Deliberately narrow: only `match' and `ftmatch' of the projects and keys below. The databases, the
-# fastq files and every other goal's results are left alone -- they are days of work and are not
-# what stands in the way here. KEEP_RESULTS=1 skips this, for a re-run that only wants the logs of
-# runs it is about to do anyway.
+# Deliberately narrow: only `match' and `ftmatch' of the projects and keys below, never the
+# databases or the fastq files. KEEP_RESULTS=1 skips it.
 clear_previous_results() {
   if [ -n "${KEEP_RESULTS:-}" ]; then
     echo "KEEP_RESULTS is set - leaving previous match results in place."
@@ -237,11 +232,10 @@ esac
 # The k-mer store comparison of the paper's appendix, which is a measurement of the same kind and
 # belongs to the same table-filling run. It takes the real read sets, `strepto' the smallest saliva run
 # and `tick-borne' all eight tick runs, and classifies each of them twice per store, once with the
-# Bloom filter of the match and once without it. With the filter on, most k-mers of a real read set
-# never reach the store and the layout hardly shows; with it off, every k-mer does. The two together
-# also say what the filter itself is worth. `viral' is left out: scenario (a) already shows what its
-# lookups are worth, and `strepto' covers the same reads against a database that classifies far more
-# of them.
+# Bloom filter of the match and once without it: with the filter on most k-mers never reach the
+# store and the layout hardly shows, with it off every k-mer does, and the two together say what the
+# filter is worth. `viral' is left out -- `strepto' covers the same reads against a database that
+# classifies far more of them.
 case "$what" in
   store|all)
     FILTER=both sh ./bin/store_bench.sh strepto

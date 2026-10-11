@@ -68,18 +68,13 @@ mvn exec:exec@db -Dname=orthopox2 -Dgoal=svgtaxtree
 mvn exec:exec@db -Dname=orthopox2 -Dgoal=ftsvgtaxtree
 fi
 
-# Times the generation of one database and records it, but only if that database is not there yet.
-# Genestrip treats an existing database as already made, so re-running the goal does nothing at all:
-# the measurement would then capture Maven's startup and nothing else -- around a second of wall
-# time and a couple of hundred MB of RAM -- and, worse, it would overwrite a log that does hold a
-# real measurement. Re-running this script after a completed run must therefore leave the logs
-# alone. Delete the database to measure its generation again.
+# Times the generation of one database, but only if that database is not there yet: Genestrip treats
+# an existing one as made, so the measurement would capture Maven's startup and overwrite a log that
+# holds a real one. Delete the database to measure its generation again.
 #
-# Writes the log $1 to $2 with the intermediate renderings of the progress bar dropped, keeping the
-# last one of each line. The bar is on by default and repaints every second, so a run of several
-# hours would otherwise leave megabytes of overwritten frames in a file that is meant to be read.
-# Only the shortened copy goes to the results, while the raw one stays behind in ${raw_log_path} in
-# case a run has to be examined as it really came out.
+# Writes the log $1 to $2 with the progress bar's intermediate frames dropped, keeping the last of
+# each line -- the bar repaints every second, so hours of run leave megabytes of them. Only the
+# shortened copy goes to the results; the raw one stays in ${raw_log_path}.
 strip_progress_bar() {
   [ -f "$1" ] || return 0
   sed 's/.*\r//' "$1" > "$2"
@@ -91,8 +86,8 @@ strip_progress_bar() {
 # before these logs were kept at all. Once the command is done, $2 is shortened into $3, which is
 # the copy that ends up among the results.
 #
-# The status returned is the command's own, not the pipeline's, which would otherwise be tee's and
-# would leave a failed run undetected under `set -e'.
+# The status returned is the command's own and not the pipeline's, which would be tee's and would
+# leave a failed run undetected under `set -e'.
 #
 # $1 = file for stdout, $2 = raw file for stderr, $3 = shortened copy of it, $4... = the command
 run_logged() {
@@ -174,16 +169,9 @@ for db in viral tick-borne protozoa; do
   fi
 done
 
-# The branching-degree histogram, per node, for every database and on the same footing as the
-# others. It is a report over the k-mer store and the index, exactly as `dbinfo' is a report over the
-# store and `dbquality' one over the update -- KMerBranchHistoGoal takes the loaded database and the
-# k-mer index Bloom filter and nothing else. It says how much of a node's k-mer mass sits at a low
-# branching degree, which is the mass a refined node can claim, and a database whose headroom turns
-# out to be a few per cent explains its own flat result.
-#
-# Every database gets it and none is treated as a special case. There was once a `prescreen' step
-# that read this CSV and printed a verdict on whether a database was worth refining; it decided
-# nothing that the results do not show for themselves and has been removed.
+# The branching-degree histogram, per node: how much of a node's k-mer mass sits at a low branching
+# degree, which is the mass a refined node can claim. A report over the store and the index, as
+# `dbinfo' is over the store and `dbquality' over the update. Every database gets it.
 for db in $projects;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=branchhistocsv
@@ -191,13 +179,9 @@ for db in $projects;
 
 # Intrinsic quality of DBs.
 #
-# A database that uses file nodes is measured here like any other. DBQualityCountsGoal used to
-# refuse one outright ("This goal does not support file nodes"), because it recognised a leaf by
-# testing for rank DATA while the fasta reader resolved records to the FILE node below it.
-# isLeafNode() now defines a leaf as the deepest artificial node on its branch, which is what both
-# halves of the goal actually mean, and the two agree again. Nothing changes for the databases
-# below: with no file or id nodes the deepest artificial node *is* the data node. Worth keeping in
-# mind before adding a per-assembly database to `projects', which is the case that first needed it.
+# A database that uses file nodes is measured here like any other: DBQualityCountsGoal's
+# isLeafNode() defines a leaf as the deepest artificial node on its branch, which for the databases
+# below *is* the data node. Worth knowing before adding a per-assembly database to `projects'.
 for db in $projects;
   do
     mvn exec:exec@db -Dname=$db -Dgoal=dbquality

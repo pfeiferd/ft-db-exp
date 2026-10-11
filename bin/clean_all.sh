@@ -9,28 +9,20 @@
 #   sh ./bin/clean_all.sh              delete
 #   DRY_RUN=1 sh ./bin/clean_all.sh    list what would be deleted, delete nothing
 #
-# WHAT SURVIVES, and why it is safe. `cleanall' cleans a goal and then its dependencies, but only
-# those that permit it: Goal.transitiveClean() consults isAllowTransitiveClean(), which reads the
-# transClean flag of the goal key. Every download goal is declared with that flag false --
-# commonsetup, setup, taxdownload, refseqcat, checksummap, refseqfna, assemblydownload,
-# fastasgenbankdl, adddownloads, fastqdownload, fastadownload, dbdownload -- so the RefSeq and
+# WHAT SURVIVES, by construction. `cleanall' cleans a goal and its dependencies, but only those whose
+# goal key permits it, and every download goal is declared with that flag false -- so the RefSeq and
 # GenBank sequence, the taxonomy dump, the assembly summary and every downloaded fastq are out of
-# reach of this script by construction rather than by our care.
+# reach. `cleantotal' is the target that ignores the flag and would take the downloads with it; this
+# script does not use it, and neither should anything else here.
 #
-# `cleantotal' is the target that ignores that flag and would take the downloads with it. This
-# script does not use it, and neither should anything else here: re-downloading the RefSeq bacteria
-# division to save a few gigabytes is not a trade worth making.
+# WHAT THE GOALS DO NOT REACH, which is why this script does more than call them: the simulated reads
+# are written by InSilicoSeq and NanoSim, not by goals, and results/ is filled by a shell copy. Both
+# are derived and both go stale when a database's genome selection changes.
 #
-# WHAT THE GOALS DO NOT REACH, which is why this script does more than call them. The simulated
-# reads are written by InSilicoSeq and NanoSim, which are external tools rather than Genestrip
-# goals, so nothing in the goal graph cleans them; and results/ is filled by a shell copy. Both are
-# derived, both go stale when a database's genome selection changes, and both are removed here.
-#
-# The per-accession FASTAs under data/projects/<db>/fasta are removed explicitly for the same
-# reason. They are not downloads -- `extractrefseqfasta' derives them from data/common/refseq -- and
-# they encode which genomes the per-species cap admitted. make_fastqs.sh skips its extraction when
-# that directory is non-empty, so leaving it behind means the next run simulates reads from a
-# genome selection the rebuilt database no longer holds. That is the trap this line exists to shut.
+# The per-accession FASTAs under data/projects/<db>/fasta go for the same reason. They are derived
+# from data/common/refseq and encode which genomes the per-species cap admitted, and make_fastqs.sh
+# skips its extraction when that directory is non-empty -- so leaving them means the next run
+# simulates reads from a genome selection the rebuilt database no longer holds.
 set -e
 
 scriptdir=$(dirname "$0")

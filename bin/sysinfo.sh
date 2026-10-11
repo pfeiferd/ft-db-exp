@@ -300,15 +300,10 @@ run "rpm java packages"           sh -c "rpm -qa | grep -Ei 'jdk|jre|java'"
 
 # --------------------------------------------------------- LaTeX extract ---
 #
-# The report above is for the record; what the paper actually states about the
-# machine is a handful of numbers. They are collected here into LaTeX macros so
-# that no one has to copy them by hand -- see the "Performance" section of the
-# Genestrip-FT paper, which mirrors the hardware description of the first one.
-#
-# Values are queried from the system directly rather than parsed back out of
-# the report, which keeps this independent of the report's formatting. Anything
-# that cannot be determined becomes \sysUnknown, which typesets as a bold "??"
-# and is therefore impossible to miss in the PDF.
+# The report above is for the record; what the paper states about the machine is
+# a handful of numbers, collected here into LaTeX macros. They are queried from
+# the system directly rather than parsed back out of the report, and anything
+# that cannot be determined becomes \sysUnknown, which typesets as a bold "??".
 
 section "LATEX EXTRACT FOR THE PAPER"
 

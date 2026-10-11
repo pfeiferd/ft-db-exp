@@ -6,7 +6,7 @@
 #                refined database, and the classifications are scored against the reads' known
 #                ground truth. The measures are the ones of Section "Classification quality" in
 #                the Genestrip-FT paper: the boolean positive counts at the genus and the species
-#                rank, plus the candidate-weighted species count, which credits a classification in
+#                rank, plus the resolution-based species count, which credits a classification in
 #                proportion to how far it narrows the species down. The latter is the one that can
 #                tell a refined database from an unrefined one at all.
 #
@@ -83,20 +83,16 @@ run_iss() {
 }
 
 # The read sets the paper reports: the two Illumina models and the error-free one.
-# See make_fastqs.sh for what each of them is for, and why the Nanopore ones are not included.
 #
-# Every regime variable run_iss reads is cleared here, not just the ones this function sets, and for
-# the same reason make_fastqs.sh clears them: run_iss takes the first non-empty one, so one left over
-# in the environment redirects these calls without saying so. The saliva case is the one that bites.
-# `ERROR_SALIVA=1 run_classification_exps.sh all' would score the saliva-matched reads under the
-# report key iss_saliva where the plain Illumina run belongs, leaving no viral_iss_summary.csv at
-# all -- and `all' goes on to call run_real for the saliva samples, which reads exactly that report
-# key as its calibration, so the damage would surface as a calibration silently taken from the wrong
-# read set rather than as a failure. Run the saliva regime on its own:
+# EVERY regime variable run_iss reads is cleared here, not just the ones set below, for the reason
+# make_fastqs.sh clears them: run_iss takes the first non-empty one, so one left over in the
+# environment redirects these calls without saying so. `ERROR_SALIVA=1 ... all' would score the
+# saliva-matched reads under the key iss_saliva where the plain Illumina run belongs, and `all' then
+# calls run_real, which reads that very key as its calibration -- so the damage surfaces as a
+# calibration silently taken from the wrong read set, not as a failure. Ask for the saliva regime on
+# its own, and *before* the `real' part, since it produces the calibration `real' consumes:
 #
 #   ERROR_SALIVA=1 sh ./bin/run_classification_exps.sh viral
-#
-# and run it *before* the `real' part, since that is what produces the calibration `real' consumes.
 run_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
   saved_nanopore=${ERROR_NANOPORE:-}
@@ -113,12 +109,10 @@ run_iss_all_regimes() {
   ERROR_SALIVA=$saved_saliva
 }
 
-# The experiments on real reads, which have no ground truth: `cv' against the five human saliva runs
-# of the first paper and `tb' against its tick samples. Neither precision nor recall is defined here,
-# so this runs the `specificity' entry point instead of `accuracy': it reports how far each database
-# variant narrows the species down on the reads the unrefined one left at a genus. The difference
-# between the two is not a bound on the precision gain; it becomes an estimate of it only through the
-# calibration factors rho_u and rho_f of a simulated run -- see SpecificityReport.
+# The experiments on real reads, which have no ground truth, so neither precision nor recall is
+# defined and the `specificity' entry point runs instead of `accuracy': how far does each variant
+# narrow the species down on the reads left at a genus. The difference between the two is not a bound
+# on the gain; it becomes an estimate only through the factors rho_u and rho_f of a simulated run.
 #
 # $1 = database project name, $2 = fastq mapping file, $3 = report key,
 # $4 = report key of the simulated run supplying the calibration rho (optional). For the ticks that
@@ -187,15 +181,12 @@ run_ticks() {
   mvn exec:exec@accuracy -Dname=tick-borne -Dfqmap=ticks_sim.txt -Dreportkey=nanosim -Dsimulator=NANOSIM
 }
 
-# Wall time and maximum RAM of classifying the same fastq files, once against the unrefined and
-# once against the refined database. This is measured separately from the accuracy runs above and
-# not derived from them, for two reasons: those run both variants inside a single JVM, so their
-# cost cannot be separated, and they score every read against its ground truth on top, which is
-# evaluation work rather than classification work.
-#
-# Each variant therefore runs on its own through the plain goals `match' and `ftmatch', in its own
-# JVM, under cgmemtime. The goal is cleaned first: Genestrip skips a goal whose result files are
-# already in place, which would otherwise be measured as a runtime of nearly zero.
+# Wall time and maximum RAM of classifying the same files, per variant. Measured separately from the
+# accuracy runs and not derived from them: those run both variants in one JVM, so their cost cannot
+# be separated, and they score every read against its ground truth on top. Each variant therefore
+# runs on its own through the plain goals `match' and `ftmatch', in its own JVM, under cgmemtime. The
+# goal is cleaned first -- a goal whose result files are in place is skipped and would be measured as
+# a runtime of nearly zero.
 #
 # $1 = database project name, $2 = fastq mapping file, $3 = key for the log file name (optional,
 # defaults to the database name). The key exists because a database is timed on more than one read
@@ -239,22 +230,17 @@ run_perf() {
   done
 }
 
-# Copies the per-taxon match results of the run just measured into <results>.
+# Copies the per-taxon match results of the run just measured into <results>: the goal's own output,
+# one CSV per fastq key saying per taxon how many reads were assigned to it, which is the only
+# per-taxon view of a run that survives it.
 #
-# These are the goal's own output -- one CSV per fastq key, giving per taxon how many reads were
-# assigned to it -- and they are the only per-taxon view of a run that survives it. The reports
-# beside them aggregate: <db>_<key>_summary.csv states how large the genus-only subset |R'_g| is,
-# these say *which* taxa it consists of, which is what an analysis of why that subset differs
-# between a simulation and the real sample it models has to work from.
+# Here inside the loop and not by a sweep at the end. Genestrip names them after the fastq key, and
+# the simulated and the real tick runs use the same keys tick1 .. tick8 from two different maps, so
+# the second run overwrites the first's files -- and the `clean' above deletes them outright. The log
+# key keeps them apart, as it does the performance logs.
 #
-# They must be copied here, inside the loop, rather than by a sweep at the end. Genestrip names them
-# after the fastq key, and the simulated and the real tick runs use the same keys tick1 .. tick8 from
-# two different maps (ticks_sim.txt and eightticks.txt), so the second run overwrites the first's
-# files in the project folder -- and the `clean' target above deletes them outright. The log key,
-# which already keeps the two runs' performance logs apart, keeps their CSVs apart the same way.
-#
-# Note that this rides on the performance measurement: run_perf returns early when cgmemtime is
-# unavailable, and then the match goals never run and there is nothing to copy.
+# This rides on the performance measurement: run_perf returns early without cgmemtime, and then the
+# match goals never run and there is nothing to copy.
 #
 # $1 = database project name, $2 = goal name, $3 = log key distinguishing this run
 publish_match_results() {

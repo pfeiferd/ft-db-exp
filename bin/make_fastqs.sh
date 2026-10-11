@@ -1,65 +1,36 @@
 #!/bin/sh
 #
 # Generates the simulated fastq files with known ground truth that the classification experiments
-# are based on, following the approach of the first Genestrip paper:
+# rest on. For `viral', `protozoa', `strepto' and `nocardia' InSilicoSeq applies its error models to
+# exactly the genomes the database was built from, extracted by the goal `extractrefseqfasta'. For
+# `tick-borne' NanoSim trains on the real Nanopore reads of a tick sample and applies that model to
+# the genomes of the twelve tick-borne genera.
 #
-#   viral        InSilicoSeq applies its Illumina "MiSeq" and "HiSeq" error models to exactly
-#   protozoa     those genomes the database was built from, extracted by the goal
-#   strepto      `extractrefseqfasta' (see make_iss below).
-#   nocardia     the same. Its real reads are BGISEQ 50-100 bp single-end, so the simulated set is
-#                what a calibration can be taken from; without it the estimate columns of the
-#                real-read table stay empty. The two stock models will not do: SpecificityReport
-#                applies a summary of ONE row to every sample and matches by key otherwise, and
-#                `nocardia_iss_summary.csv' holds two rows whose keys are models, not runs. A
-#                calibration for that cohort needs a single set at its parameters, the way
-#                ERROR_SALIVA makes one for the saliva runs.
-#   tick-borne   NanoSim trains an error model on the real Nanopore reads of a tick sample and
-#                applies it to the RefSeq genomes of the twelve tick-borne genera.
+# Every part skips whatever is already present, so re-running is safe.
 #
-# Every part skips whatever is already present, so the script can be re-run safely. Each can be run
-# on its own:
-#
-#   sh ./bin/make_fastqs.sh viral
-#   sh ./bin/make_fastqs.sh protozoa
-#   sh ./bin/make_fastqs.sh strepto
-#   sh ./bin/make_fastqs.sh nocardia
-#   sh ./bin/make_fastqs.sh tick-borne
-#   N_READS=10k sh ./bin/make_fastqs.sh viral      # quick smoke test instead of a full run
-#   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # error-free reads, see below
-#   ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa      # Nanopore-level per-base error
-#   NANOPORE_ERROR_PCT=15 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa   # ... at 15 %
-#   NANOPORE_READ_LENGTH=1000 ERROR_NANOPORE=1 sh ./bin/make_fastqs.sh protozoa  # ... 1 kb reads
-#   ERROR_NANOPORE_LONG=1 sh ./bin/make_fastqs.sh protozoa # ... at 3,926 bp, 200k reads
-#   ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral   # matched to the real human saliva runs, see below
-#   ERROR_MNGS=1 sh ./bin/make_fastqs.sh nocardia  # matched to the real BGISEQ mNGS runs, see below
-#   PERFECT_READ_LENGTH=125 ERROR_FREE=1 sh ./bin/make_fastqs.sh viral   # ... at InSilicoSeq's own length
+# Usage:
+#   sh ./bin/make_fastqs.sh [all|viral|protozoa|strepto|nocardia|tick-borne]
+#   N_READS=10k sh ./bin/make_fastqs.sh viral      # smoke test instead of a full run
+#   ERROR_FREE=1 sh ./bin/make_fastqs.sh protozoa  # "perfect" mode at 301 bp, the MiSeq length,
+#                                                  # so the two differ in the error alone
+#   ERROR_SALIVA=1 sh ./bin/make_fastqs.sh viral   # matched to the real saliva runs, see below
+#   ERROR_MNGS=1 sh ./bin/make_fastqs.sh nocardia  # matched to the real BGISEQ runs, see below
+#   ERROR_NANOPORE=1 / ERROR_NANOPORE_LONG=1       # 10 % at 125 bp / at 3,926 bp; not reported
+#   SKIP_FETCH=1                                   # do not fetch the real tick reads
 #
 # A single project follows the error-regime variables; `all' ignores them and generates the two
 # Illumina sets and the error-free one of every InSilicoSeq project, which is what the paper reports.
+# The saliva and mNGS regimes are not part of `all' and have to be asked for: without them the
+# estimate columns of the real-read table stay empty, because SpecificityReport needs a calibration
+# of ONE row at the parameters of the runs it is applied to. The two Nanopore regimes are kept for a
+# quick look at a high error rate or a long read length; the paper does not report them, since
+# InSilicoSeq's `basic' model only substitutes bases whereas real Nanopore error is indel-heavy.
 #
-# The two Nanopore regimes are kept but are NOT part of `all'. InSilicoSeq's `basic' model only
-# substitutes bases, whereas real Nanopore error is indel-heavy, so they never did more than
-# approximate long-read data -- NanoSim, trained on real Nanopore reads, is what the paper uses for
-# that. They remain available for a quick check of how the classification behaves at a high error
-# rate or a long read length, where training a NanoSim model would be disproportionate.
-#
-# ERROR_FREE uses InSilicoSeq's "perfect" mode at 301 bp, the length of the "MiSeq" model, so that
-# the two differ in the sequencing error alone. See the comment at the call for why the length and
-# not only the error matters. ERROR_FREE fragments the genomes into reads of realistic
-# length but introduces no sequencing errors at all. The resulting figures are an upper bound: they
-# show what the refinement achieves when nothing but the taxonomy limits the classification, which
-# separates the effect of the refinement from the effect of read errors.
-#
-# Raw tick data:
-#   The real Nanopore runs NanoSim trains on come from the tick surveillance study the first paper
-#   builds on (SRA study PRJNA790938). They are declared by URL in the Genestrip fastq map
-#   data/fastq/ticks_real.txt, and Genestrip's own goal `fastqdownload' fetches them into data/fastq
-#   as tick1.fastq.gz .. tick8.fastq.gz:
+# The real tick runs come from SRA study PRJNA790938, declared by URL in data/fastq/ticks_real.txt.
+# The tick-borne part fetches whatever is missing through Genestrip's own `fastqdownload', so there
+# is nothing to do by hand:
 #
 #     mvn exec:exec@fastqdl -Dname=tick-borne -Dfqmap=ticks_real.txt
-#
-#   The tick-borne part below runs that for whatever is missing, so there is nothing to do by hand.
-#   Set SKIP_FETCH=1 to suppress it, e.g. when the reads were copied over from another machine.
 #
 set -e
 
@@ -67,23 +38,16 @@ set -e
 PHRED33='!"#$%&'"'"'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\]^_`abcdefghij'
 
 # Records what a generated read set actually is, into <results>/<db>_simparams.csv, which the
-# accuracy report joins against its own counts to produce the CSV that Table "simdata" of the paper
-# reads. Only this script can supply these three numbers: they are properties of the simulation, and
-# by the time the evaluation runs the settings that produced them are gone.
+# accuracy report joins against its own counts for Table "simdata". Only this script can supply
+# these numbers: by the time the evaluation runs the settings that produced them are gone.
 #
-# The read length and the read count are measured from the generated file rather than taken from the
-# request, because the two differ -- InSilicoSeq silently skips records shorter than the read length,
-# so a run can fall far short of what was asked for.
+# Length and count are measured from the generated file and not taken from the request, because
+# InSilicoSeq silently skips records shorter than the read length and a run can fall short. The
+# per-base error is measured from the quality strings unless a rate is passed in -- the override is
+# for NanoSim, whose quality strings are placeholders.
 #
-# The per-base error is measured from the quality strings unless a rate is passed in. That override
-# exists for NanoSim, whose quality strings are placeholders and whose honest figure comes from the
-# alignment its training performed; see the tick-borne part below.
-#
-# The read count is per FILE, and for a paired set that is half the reads: InSilicoSeq's --n_reads
-# is the total across both mates, and Genestrip counts each mate as a read, so a request of 1M
-# yields 500k records in R1 and a `total' of 1M in the evaluation. Only R1 is measured -- reading
-# both would double the work to learn the same read length -- so $5 says how many mates the set has
-# and the count is scaled by it. NanoSim's output is single-end and passes 1.
+# The count is per FILE: --n_reads is the total across both mates and Genestrip counts each mate, so
+# a request of 1M yields 500k records in R1. Only R1 is measured, hence the mate count in $5.
 #
 # $1 = database, $2 = fastq key, $3 = generated fastq (may be .gz), $4 = per-base error % or empty,
 # $5 = number of mates (default 1)
@@ -141,23 +105,16 @@ record_simparams() {
   echo "  recorded: ${_rs_len} bp, ${_rs_error} % per-base error, ${_rs_n} reads"
 }
 
-# Copies what NanoSim learned about one sample into <results>, so that the simulation can afterwards
-# be held against the real run it was trained on. Everything here is a *training* output, not a
-# measurement of the simulated reads, and none of it can be reconstructed once the working directory
-# is cleaned:
+# Copies what NanoSim learned about one sample into <results>. These are *training* outputs and
+# none of them can be reconstructed once the working directory is cleaned:
 #
-#   _quantification.tsv  the abundance table -- per reference genome, the share of the simulated
-#                        reads it supplies. Derived by aligning the real reads against the genome
-#                        list, so it states the real sample's composition as projected onto the
-#                        twelve genera, which is what a simulated-against-real comparison of the
-#                        genus-only subset |R'_g| turns on.
-#   _error_rate.tsv      the alignment-derived per-base error, already summarised into
-#                        <db>_simparams.csv but kept whole here: that summary is one number, and the
-#                        file breaks it into mismatches, insertions and deletions.
+#   _quantification.tsv  the abundance table, per reference genome the share of the simulated reads
+#                        it supplies, derived by aligning the real reads against the genome list
+#   _error_rate.tsv      the alignment-derived per-base error, broken into mismatches, insertions
+#                        and deletions (the one summary number goes into <db>_simparams.csv)
 #
-# Both are preserved next to the fastq files by the caller, which is what lets this run on a SKIP
-# too: a re-run that regenerates nothing still republishes them. Only the copy into <results> is
-# this function's business.
+# The caller preserves both next to the fastq files, so a re-run that regenerates nothing still
+# republishes them.
 #
 # $1 = sample name
 publish_ns_inputs() {
@@ -191,15 +148,10 @@ cpus=${CPUS:-$(nproc 2>/dev/null || echo 4)}
 
 # $1 = database project name
 #
-# The reads are drawn from exactly the genomes the database was built from, which the goal
-# `extractrefseqfasta' writes out one FASTA per region. That goal applies the same selection as the
-# database fill -- the same completeness setting, the same caps per taxon -- so every read has a
-# counterpart in the database.
-#
-# Drawing them from the whole RefSeq category instead, as this script did before, meant that most
-# reads came from organisms the database never covered: for a project requesting ten genera out of
-# the category `protozoa', about seven of eight reads were unusable, and they had to be excluded
-# from the evaluation as out of scope. Extracting first keeps the full million reads in play.
+# The reads are drawn from exactly the genomes the database was built from, one FASTA per region as
+# the goal `extractrefseqfasta' writes them. That goal applies the same selection as the fill, so
+# every read has a counterpart in the database. Drawing from the whole RefSeq category instead left
+# most reads out of scope -- seven of eight for ten genera out of `protozoa'.
 make_iss() {
   db=$1
 
@@ -210,14 +162,10 @@ make_iss() {
   fi
 
   fastadir="${basedir}/data/projects/${db}/fasta"
-  # The goal writes two things that are needed later and that live in different folders: the
-  # per-accession FASTAs under fasta/, which the reads are drawn from, and the accession-to-taxon
-  # table csv/<db>_extractrefseqcsv.csv, which AccuracyEvaluator resolves the ground truth against.
-  # Both have to be present, so both are tested. Guarding on the FASTAs alone was wrong in exactly
-  # the case run_all_exps.sh produces with FRESH_DBS=1: step 3 runs clean_all.sh, whose `ftclear'
-  # deletes the project's csv/ folder (GSMaker's `clear' goal clears krakenout, csv and log) while
-  # leaving fasta/ untouched. The guard then saw a full fasta/ and skipped the goal, the table was
-  # never rewritten, and the classification steps died hours later with
+  # The goal writes two things in different folders: the per-accession FASTAs under fasta/, which
+  # the reads are drawn from, and csv/<db>_extractrefseqcsv.csv, which AccuracyEvaluator resolves the
+  # ground truth against. BOTH have to be tested. `ftclear' deletes csv/ and leaves fasta/ alone, so
+  # a guard on the FASTAs alone skips the goal and the classification dies hours later with
   #   IllegalArgumentException: No extracted genomes to resolve the ground truth against.
   extractcsv="${basedir}/data/projects/${db}/csv/${db}_extractrefseqcsv.csv"
   if [ -z "$(ls -A "$fastadir" 2>/dev/null)" ] || [ ! -s "$extractcsv" ]; then
@@ -256,36 +204,21 @@ make_iss() {
   # than any of the short-read sets.
   nanopore_long_read_length=${NANOPORE_LONG_READ_LENGTH:-3926}
   nanopore_long_n_reads=${NANOPORE_LONG_N_READS:-200k}
-  # The saliva regime exists so that the ground-truth-free estimate of the paper can be calibrated
-  # at the parameters of the data it is applied to, rather than extrapolated to them. The three runs
-  # of the first Genestrip paper -- SRR5571991, SRR5571990, SRR5571985 -- are Illumina HiSeq 2000,
-  # paired, 101 bp per mate, and their quality strings give a mean per-base error of 2.07 %.
-  #
-  # Neither stock InSilicoSeq model reproduces that. Its "HiSeq" model emits 126 bp at 0.1952 % --
-  # an order of magnitude cleaner than the real HiSeq data it is named after -- and its "MiSeq"
-  # model 301 bp at 0.7274 %. The `basic' model is used instead, which substitutes a base with
-  # probability 10^(-q/10) and so takes both the error rate and the read length as parameters.
-  #
-  # Substitutions only, and that limitation is mild here: Illumina error is overwhelmingly
-  # substitution, unlike the indel-heavy Nanopore error the same mechanism approximates above. What
-  # this set does NOT reproduce is the position-dependent quality profile of a real run, where the
-  # error concentrates towards the read end; it spreads the same total error uniformly instead.
-  #
-  # The phred value the rate is converted to is an integer, so 2.07 % lands on phred 17 and the
-  # reads come out at 1.9953 %. That is the figure the table reports, since it is measured from the
-  # generated reads rather than from this setting -- the 4 % relative shortfall is not worth a
-  # fractional-phred patch, being far inside the spread the calibration is meant to bridge.
+  # So that the ground-truth-free estimate is calibrated at the parameters of the data it is applied
+  # to rather than extrapolated to them. The saliva runs are Illumina HiSeq 2000, 101 bp per mate, at
+  # a mean per-base error of 2.07 % by their quality strings. No stock model reproduces that --
+  # "HiSeq" emits 126 bp at 0.1952 %, "MiSeq" 301 bp at 0.7274 % -- so the `basic' model is used,
+  # which takes both the rate and the length. Substitutions only, which is mild for Illumina. The
+  # phred value is an integer, so 2.07 % lands on phred 17 and the reads come out at 1.9953 %; the
+  # table reports what is measured from them, not this setting.
   saliva_error=${SALIVA_ERROR_PCT:-2.07}
   saliva_read_length=${SALIVA_READ_LENGTH:-101}
 
-  # The same regime for the other real cohort that needs one, the fourteen BGISEQ-500 runs of
-  # PRJEB34974 behind `nocardia'. They are single-end and trimmed, so the length varies -- 36 bp at
-  # the mode and 66.6, 74.9 and 70.8 bp on average in ERR3606885, ERR3606886 and ERR3606888 -- and
-  # their quality strings give 2.31 %, 1.84 % and 1.99 % mean per-base error. A single set at 70 bp
-  # and 2.05 % stands for the cohort, the way the saliva set stands for its three runs. Neither
-  # stock model comes close: "HiSeq" is 126 bp at 0.20 % and "MiSeq" 301 bp at 0.73 %, and a
-  # two-row summary would not be applied at all, since SpecificityReport matches more than one
-  # calibration row by fastq key and these keys are run accessions.
+  # The same for the other cohort that needs one, the fourteen BGISEQ-500 runs of PRJEB34974 behind
+  # `nocardia'. Single-end and trimmed, so the length varies -- 66.6 to 74.9 bp on average -- at 1.84
+  # to 2.31 % per-base error. One set at 70 bp and 2.05 % stands for the cohort, as the saliva set
+  # does for its runs. A two-row summary would not be applied at all: SpecificityReport matches more
+  # than one calibration row by fastq key, and these keys are run accessions.
   mngs_error=${MNGS_ERROR_PCT:-2.05}
   mngs_read_length=${MNGS_READ_LENGTH:-70}
   mkdir -p "$workdir"
@@ -438,22 +371,13 @@ make_iss() {
   echo "Wrote ${mapfile}"
 }
 
-# All three error regimes of a database, which the paper reports side by side:
+# The reported regimes of a database: error-free, which bounds what the refinement can achieve when
+# nothing but the taxonomy limits the classification, and the Illumina models at 301 and 126 bp.
 #
-#   error-free   bounds what the refinement can achieve when nothing but the taxonomy limits the
-#                classification
-#   MiSeq/HiSeq  the Illumina error models, at 301 bp and 126 bp per mate respectively
-#   Nanopore     long reads at a uniform per-base error, both in the range the first Genestrip
-#                paper reports for Nanopore devices, which tests whether the effect survives a far
-#                higher error rate and a far greater read length at once
-#
-# Every regime variable make_iss reads has to be cleared here, not just the ones this function sets.
-# make_iss picks its regime from the first of them that is non-empty, so one left over in the
-# environment silently redirects the calls below: `ERROR_SALIVA=1 make_fastqs.sh all' would write the
-# saliva-matched set where the plain Illumina one belongs, under a mapping file of a different name,
-# and the run would look like it had succeeded. The saliva regime is a calibration set for the real
-# saliva runs rather than one of the three reported here, so `all' must never produce it by accident
-# -- ask for it on its own, with ERROR_SALIVA=1 make_fastqs.sh viral.
+# EVERY regime variable make_iss reads has to be cleared here, not just the ones set below. make_iss
+# picks the first non-empty one, so one left over in the environment silently redirects these calls:
+# `ERROR_SALIVA=1 make_fastqs.sh all' would write the saliva-matched set where the plain Illumina one
+# belongs, under a map of a different name, and the run would look like it had succeeded.
 make_iss_all_regimes() {
   saved_error_free=${ERROR_FREE:-}
   saved_nanopore=${ERROR_NANOPORE:-}
@@ -653,21 +577,12 @@ make_ticks() {
       [ -n "$ns_error" ] || echo "  WARNING: no error rate parsed from ${sample}_sim_error_rate.tsv" >&2
     fi
     record_simparams "$db" "$sample" "$out" "$ns_error" 1
-    # Everything else NanoSim leaves behind, removed per sample rather than at the end: it writes
-    # every sample under the same `simulated_sample0' prefix, so without this the next tick's run
-    # sits on top of the previous one's debris and the folder never reveals what belongs to what.
-    #
-    #   _unaligned_reads      the ~8 % of reads NanoSim invents to match the aligned/unaligned ratio
-    #                         it measured while training. They are drawn from a flat error table and
-    #                         from no genome at all, so they carry no taxon in their name and no
-    #                         ground truth can be recovered from them -- which is exactly why only
-    #                         the aligned file above is kept. There is no option to skip generating
-    #                         them; metagenome mode has no such switch.
-    #   _aligned_error_profile  a per-read log of the errors that were applied. Diagnostic only, and
-    #                         very large -- a single earlier run left 2.0 GB of it here.
-    #   _unaligned_reads<N>   per-process subfiles. NanoSim merges and deletes these itself, so any
-    #                         that survive mean the simulation was interrupted; removing them keeps
-    #                         a half-finished run from looking like a finished one.
+    # Everything else NanoSim leaves behind, removed per sample because it writes every sample under
+    # the same `simulated_sample0' prefix. `_unaligned_reads' are the ~8 % it invents from no genome
+    # at all, so they carry no taxon and no ground truth -- which is why only the aligned file is
+    # kept, and metagenome mode has no switch to skip them. `_aligned_error_profile' is diagnostic
+    # and very large (2.0 GB in one run). `_unaligned_reads<N>' are per-process subfiles NanoSim
+    # merges itself, so survivors mean an interrupted run.
     rm -f "${nswork}"/training* "${nswork}/reference_metagenome.fasta" \
           "${nswork}"/simulated_sample0_*
     publish_ns_inputs "$sample"

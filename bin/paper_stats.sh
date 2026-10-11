@@ -20,22 +20,16 @@
 #                      came from -- DATA, REFINED, FILE, ID -- are not taxonomic and are excluded,
 #                      as are rows with no rank of their own.
 #
-#   subtree precision  the `subtree precision' column of <db>_dbquality.csv and <db>_ftquality.csv.
-#                      NOT `weighted avg precision', which sits right beside it and is a different
-#                      quantity: that one is the quotient of the summed counts, this one averages
-#                      the per-k-mer precision p(a) over the k-mers of the subtree. Only the latter
-#                      is the sp(m) that the paper defines. The difference is not cosmetic -- for
-#                      the viral root it is 0.05 against 0.92 -- because a ratio of sums is
-#                      dominated by the few k-mers sitting at nodes with hundreds of data taxa
-#                      underneath them.
+#   subtree precision  the `subtree precision' column of <db>_dbquality.csv and <db>_ftquality.csv --
+#                      NOT `weighted avg precision' beside it, which is the quotient of the summed
+#                      counts rather than the average of the per-k-mer precision p(a), and for the
+#                      viral root reads 0.92 against 0.05.
 #
-#   restricted sp      the same average taken over the k-mers stored *above* the data taxa only.
-#                      After the leaf transformation a k-mer at a data taxon has |D| = 1 and hence
-#                      p(a) = 1 by construction, and such k-mers are the bulk of a database -- 99 %
-#                      of parasites, 62 % of tick-borne -- so they dominate sp and can never be
-#                      improved. Genestrip reports it as `restricted subtree precision', computed in
-#                      the same pass as sp itself, so numerator and denominator agree by
-#                      construction. It is taken from there and never recomputed here.
+#   restricted sp      the same average over the k-mers stored *above* the data taxa only. A k-mer at
+#                      a data taxon has p(a) = 1 by construction and such k-mers are the bulk of a
+#                      database -- 99 % of parasites, 62 % of tick-borne -- so they dominate sp and
+#                      can never be improved. Taken from the `restricted subtree precision' column,
+#                      computed in the same pass as sp, and never recomputed here.
 #
 set -e
 

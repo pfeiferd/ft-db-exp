@@ -3,28 +3,23 @@
 # Creates (or refreshes) the `-s<n>' twin of a project: the same genomes under the same taxonomy,
 # with only one k-mer in n entered into the database.
 #
-# What the twin is for. Kraken 2 does not store a k-mer at all. It stores a 32-bit cell per
-# minimizer, 17 bits of truncated MurmurHash3 and 15 bits of taxon index, and it enters only the
-# minimizers -- one ℓ-mer per k-mer window, which for its defaults k = 35 and l = 31 is a window of
-# five and therefore a density of 2/(5+1) = 1/3. Genestrip enters every k-mer and stores it exactly:
-# a 64-bit word holding 2k-r bits of the k-mer, 18 bits of value index and the mark bit, plus a
-# 10-bit-per-entry Bloom filter in front of it. Measured on `cv' that is 8.72 bytes per entry on disk
-# against 5.71 for Kraken 2, i.e. a factor of 1.53 that no sampling rate can change.
+# What the twin is for. Kraken 2 does not store a k-mer at all: it stores a 32-bit cell per
+# minimizer, 17 bits of truncated MurmurHash3 and 15 bits of taxon index, and enters only the
+# minimizers -- a density of 1/3 at its defaults k = 35 and l = 31. Genestrip enters every k-mer and
+# stores it exactly: a 64-bit word holding 2k-r bits of the k-mer, 18 bits of value index and the
+# mark bit, plus a 10-bit-per-entry Bloom filter in front. Fewer bits per entry and fewer entries,
+# both by about a factor of two, is why a database of Kraken 2's size needs a sampling rate of about
+# four, which is what `kMerSampling' sets.
 #
-# So a database of Kraken 2's size needs 1.53 / (1/3) = 4.6 times coarser sampling than Kraken 2's
-# own, which is what `kMerSampling' sets. The twin says what that costs, on the same genomes and the
-# same read sets, with everything else held fixed.
+# The mechanics are the ones of bin/k24_projects.sh: the original's inputs by symlink, a
+# config.properties generated from the original's with the one line that differs, and the fastq maps
+# linked under the twin's name so that it is scored on the very read files the original was scored
+# on. Re-running is safe and regenerates the config.
 #
-# The mechanics are the ones of bin/k24_projects.sh, which explains them: the original's inputs by
-# symlink, a config.properties generated from the original's with the one line that differs, and the
-# fastq maps linked under the twin's name so that the twin is scored on the very read files the
-# original was scored on. Re-running is safe and regenerates the config.
-#
-# Note that `kMerSampling' selects by the k-mer and not by its position -- KMerSampling.java does it
-# with a multiplicative threshold, `kmer * 0x9E3779B97F4A7C15' unsigned against `(2^64-1)/n'. That is
-# what keeps the tax ids right: a k-mer is entered in every genome it occurs in or in none of them,
-# whereas selecting by position would miss an occurrence and leave the k-mer looking more specific
-# than it is.
+# `kMerSampling' selects by the k-mer and not by its position -- KMerSampling.java thresholds
+# `kmer * 0x9E3779B97F4A7C15' unsigned against `(2^64-1)/n'. That is what keeps the tax ids right: a
+# k-mer is entered in every genome it occurs in or in none, whereas selecting by position would miss
+# an occurrence and leave the k-mer looking more specific than it is.
 #
 # Usage: sh ./bin/sampling_projects.sh [project ...]     (default: viral)
 #

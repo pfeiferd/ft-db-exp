@@ -14,9 +14,9 @@
 # genestrip-db-exp project named them, so that runs already downloaded there are picked up rather
 # than fetched again -- which at these volumes is the difference between minutes and days.
 #
-# BEWARE OF THE VOLUME, but note that it is the *download* that is large, not the working set.
-# All five runs of that table, in its own order, with the sizes the ENA reports today -- and only
-# the first mate of each is fetched, which is what the analysis reads and what halves the total:
+# BEWARE OF THE VOLUME -- though it is the *download* that is large, not the working set. All five
+# runs in the first paper's order, with the sizes the ENA reports today. Only the first mate of each
+# is fetched, which is what the analysis reads and what halves the total:
 #
 #   SRR5571985  #1   812,085,208 read pairs   164 Gbp    55.5 GB (mate 1)   112 GB (both)
 #   ERR1395613  #2   900,709,176 read pairs   180 Gbp    85.7 GB            171 GB
@@ -28,34 +28,11 @@
 #
 # All five are Illumina HiSeq 2000; the SRR runs are 101 bp per mate, the ERR runs 100 bp.
 #
-# ---------------------------------------------------------------------------------------------
-# Why this fetches from the ENA over HTTPS rather than through sra-tools
-#
-# The obvious route -- `prefetch' followed by `fasterq-dump' -- fails on these runs with
-#
-#     disk-limit exeeded!
-#     fasterq-dump quit with error code 3
-#
-# and it fails for a good reason, even on a filesystem with hundreds of gigabytes free. The SRA
-# stores reads in a compressed columnar format, so producing fastq from it means writing the data
-# out *uncompressed* first. For SRR5571991 the three stages coexist on disk:
-#
-#     .sra archive         ~55 GB      written by prefetch
-#     uncompressed fastq  ~420 GB      written by fasterq-dump   <- 198 Gbp of bases plus qualities,
-#     gzipped fastq        139 GB      what we actually want        headers and newlines
-#
-# i.e. roughly 615 GB transiently to arrive at 139 GB. fasterq-dump estimates that up front and
-# refuses rather than filling the disk halfway through a multi-hour extraction. Raising the ceiling
-# with --disk-limit/--disk-limit-tmp does not make the space appear.
-#
-# The ENA mirrors every SRA run and serves it already gzipped, split into mates, so the download is
-# the final file: 139 GB fetched, 139 GB stored, no scratch space and no conversion step. It is also
-# resumable (curl -C -) and checksummed (the ENA reports an md5 per file), which were the two
-# properties sra-tools was chosen for in the first place. This is the same approach ticks_real.txt
-# takes for the Nanopore runs, so both real datasets now arrive the same way.
-#
-# That route is therefore not offered at all, and install_tools.sh no longer installs sra-toolkit.
-# ---------------------------------------------------------------------------------------------
+# Fetched from the ENA over HTTPS and not through sra-tools: `prefetch' + `fasterq-dump' write the
+# fastq out uncompressed first, i.e. some 615 GB transiently to arrive at 139 GB for SRR5571991, and
+# fasterq-dump refuses up front rather than filling the disk ("disk-limit exeeded!"). The ENA mirrors
+# every run already gzipped and split into mates, so the download IS the final file, resumable
+# (curl -C -) and checksummed against the md5 it reports. ticks_real.txt takes the same route.
 #
 set -e
 
@@ -67,22 +44,11 @@ fastqdir="${basedir}/data/fastq"
 mkdir -p "$fastqdir"
 
 
-# The runs of Table "errorsviral" of the first Genestrip paper -- all five of them, in that table's
-# order. The original project's make_fastqs.sh fetched only the three SRR runs and left ERR1395613
-# (#2) and ERR1395610 (#4) commented out, which is why they were missing here too; but that paper
-# reports measurements for all five (see its results/viral_human_virus_errors_gs_ku_comp.csv and
-# results/viral_saliva_rel_accuracy.csv), so leaving them out would report on less data than the
-# study this one builds upon. The ENA resolves ERR accessions natively -- fetch_via_ena() asks the
-# filereport API and derives nothing from the prefix -- so they present no special difficulty.
-#
-# The default is all five. The two ERR ones are the largest -- 171 GB and 154 GB, more than the
-# other three together -- and were left out between 2026-08-22 and 2026-09-20 for disk and wall
-# time; they are back because SRR5571990 leaves too few reads at a genus for its row to say
-# anything, and five runs are what the first paper reports. A single accession is still fetched on
-# its own: sh ./bin/fetch_saliva.sh ERR1395613 ERR1395610 .
-# All five runs of the first paper's Table "errorsviral", in its order. Fetching one mate each makes
-# that affordable -- 326 GB against 654 -- and the first paper analysed one mate per run as well, so
-# the two studies stay comparable run for run.
+# All five runs of Table "errorsviral" of the first paper, in its order. That project fetched only
+# the three SRR runs although it reports measurements for all five, so leaving the two ERR ones out
+# would report on less data than the study this one builds upon. One mate each keeps it affordable
+# -- 326 GB against 654 -- and is what the first paper analysed as well. A single accession is still
+# fetched on its own: sh ./bin/fetch_saliva.sh ERR1395613 ERR1395610 .
 DEFAULT_RUNS="SRR5571985 ERR1395613 SRR5571991 ERR1395610 SRR5571990"
 
 # How many mates of each run to fetch. One, because that is what is analysed: Genestrip classifies
@@ -173,17 +139,11 @@ fetch_via_ena() {
     fi
 
     echo "=== ${acc} mate ${mate} ==="
-    # -C - resumes a partial .part rather than starting the 70 GB over; --retry rides out the
-    # transient failures a transfer of this length inevitably meets. The download goes to .part and
-    # is moved into place only once its md5 checks out, so an interrupted run never leaves a file
-    # that the presence check above would accept.
-    # A transfer of this length rarely fails outright; it stalls. curl's --retry fires on an error,
-    # not on a connection that goes quiet without closing, so such a transfer hangs and the run
-    # appears to "break" without saying anything. --speed-limit/--speed-time turn a stall into an
-    # error that --retry can act on, and the loop resumes across what retries do not cover: an
-    # exhausted retry budget, a peer that drops the connection at the same byte count every time, a
-    # proxy that times the request out. Every attempt resumes the same .part, so the cost of another
-    # attempt is the bytes still missing, never the file.
+    # -C - resumes the .part rather than starting the 70 GB over, and the file is moved into place
+    # only once its md5 checks out, so an interrupted run never leaves one the presence check above
+    # would accept. A transfer of this length rarely fails outright, it stalls -- and curl's --retry
+    # fires on an error, not on a connection that goes quiet. --speed-limit/--speed-time turn a stall
+    # into such an error, and the loop resumes across what retries do not cover.
     tries=0
     until curl -L --fail --retry 10 --retry-delay 15 --retry-connrefused ${retry_all_errors} \
           --speed-limit 1024 --speed-time 120 \

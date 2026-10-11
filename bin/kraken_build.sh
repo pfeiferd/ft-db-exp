@@ -5,28 +5,21 @@
 #
 # WHY ONLY `viral'. It is the one database of the paper another tool can be given the same scope.
 # `strepto' and `nocardia' hold a single genus each, and a minimizer-based tool cannot be built to
-# that scope in a comparable way -- which is itself a finding and belongs in the discussion, not in
-# a script. `viral' therefore carries the comparison, even though it is where the refinement gains
-# the least.
+# that scope in a comparable way.
 #
-# WHAT MAKES THE THREE COMPARABLE. All of them are built from the very same sequences: the
-# per-accession FASTA files the goal `extractrefseqfasta' wrote into data/projects/viral/fasta, whose
-# headers carry the tax id in Kraken's own form, `>ACCESSION|kraken:taxid|TAXID'. No download, no
-# other release, no second selection of genomes. The taxonomy comes from data/common as well, so all
-# three see the same tree.
+# WHAT MAKES THE THREE COMPARABLE. All are built from the very same sequences, the per-accession
+# FASTA files `extractrefseqfasta' wrote into data/projects/viral/fasta, whose headers carry the tax
+# id in Kraken's own form `>ACCESSION|kraken:taxid|TAXID'. No download, no other release, no second
+# selection of genomes, and the taxonomy comes from data/common as well. Masking is off
+# (`--no-masking'), as in the first study on Genestrip: Kraken 2 would otherwise drop low-complexity
+# stretches that Genestrip keeps, making the comparison one of masking policies.
 #
-# Masking is off (`--no-masking'), as in the first study on Genestrip. Kraken 2 would otherwise run
-# dustmasker over the library and drop low-complexity stretches that Genestrip keeps, which would
-# make the comparison one of masking policies rather than of classification.
-#
-# THE K-MER LENGTHS DIFFER, AND ON PURPOSE. Genestrip works at k = 31 and KrakenUniq is built with
-# `--kmer-len 31', while Kraken 2 keeps its own defaults: k = 35 over minimizers of 31 with 7 spaced
-# positions. Those are the settings of the public standard indexes, whose page states that it uses
-# "the defaults for k-mer length, minimizer length, and minimizer spacing", and the study the tick
-# data comes from classified against one of them. Building Kraken 2 to k = 31 would compare a tool
-# nobody runs, and building it to hold every 31-mer would take its minimizers away, which are the
-# reason to have it in the comparison at all. What is aligned instead is the classification
-# threshold, in bin/kraken_classify.sh: the number of k-mers a read must hit to be classified.
+# THE K-MER LENGTHS DIFFER, ON PURPOSE. Genestrip works at k = 31 and KrakenUniq is built with
+# `--kmer-len 31', while Kraken 2 keeps its own defaults -- k = 35 over minimizers of 31 with 7
+# spaced positions -- which are the settings of the public standard indexes and of the study the tick
+# data comes from. Building it to k = 31 would compare a tool nobody runs, and holding every 31-mer
+# would take its minimizers away. What is aligned instead is the classification threshold, in
+# bin/kraken_classify.sh.
 #
 # Usage:
 #   sh ./bin/kraken_build.sh           # both databases

@@ -2,8 +2,8 @@
 #
 # Runs every experiment behind the Genestrip-FT paper, end to end, in the one order that satisfies
 # the dependencies between them. It drives the existing scripts rather than replacing them: each
-# step below is a command that can also be run on its own, and this file's contribution is the order
-# and the handful of preconditions that are easy to get wrong when the steps are run by hand.
+# step is a command that can also be run on its own, and this file's contribution is the order and
+# the handful of preconditions that are easy to get wrong by hand.
 #
 #   sh ./bin/run_all_exps.sh              # everything, from the build to the paper's results folder
 #   sh ./bin/run_all_exps.sh --from 6     # resume at step 6 after a failure
@@ -11,28 +11,22 @@
 #   sh ./bin/run_all_exps.sh --list       # what the steps are, without running any
 #   sh ./bin/run_all_exps.sh --dry-run    # print the commands instead of running them
 #
-# Re-running is safe. Every underlying step skips work it has already done -- Genestrip treats a
-# goal whose result files exist as made, make_fastqs.sh skips a fastq file that is there, and
-# run_exps.sh refuses to re-time a database it would not actually rebuild -- so a run interrupted
-# after two days can simply be started again.
+# Re-running is safe: every underlying step skips work it has already done, so a run interrupted
+# after two days can simply be started again. Wall time is days and the disk needs well over a
+# terabyte -- see README.md.
 #
 # Environment:
-#   FRESH_DBS=1     delete the databases first, via clean_all.sh, so that step 4 measures their
-#                   generation. Without it an existing database is kept and its db_gen_*.log and
-#                   ftdb_gen_*.log are left as they are: run_exps.sh will not overwrite a real
-#                   measurement with the timing of a goal that did nothing. Set this whenever the
-#                   paper's performance table is to be recomputed from one consistent batch.
-#   FETCH_SALIVA=1  fetch the human saliva runs (about 400 GB) before the real-read step. Off by
-#                   default, since they are usually already on the machine or deliberately absent.
+#   FRESH_DBS=1       delete the databases first, via clean_all.sh, so that step 4 measures their
+#                     generation. Without it an existing database and its db_gen_*.log are kept:
+#                     run_exps.sh will not overwrite a real measurement with the timing of a goal
+#                     that did nothing.
+#   FETCH_SALIVA=1    fetch the five human saliva runs (about 330 GB) before the real-read step.
 #   KEEP_TICK_SIMS=1  never delete a simulated tick fastq -- see step 5, which by default deletes
-#                   exactly those whose NanoSim abundance table was not preserved.
-#   PAPER_RESULTS   a folder to copy the results to when the run is done, in addition to leaving
-#                   them in ./results. Unset by default: this project stands on its own and knows
-#                   nothing about where a paper or any other consumer keeps its inputs. The folder
-#                   must exist; step 14 copies into it and regenerates its LaTeX macros there.
-#   SKIP_BUILD=1    do not run `mvn install' in step 1.
-#
-# Wall time is days, not hours, and the disk needs well over a terabyte -- see README.md.
+#                     exactly those whose NanoSim abundance table was not preserved.
+#   PAPER_RESULTS     an existing folder to copy the results to when the run is done, in addition to
+#                     leaving them in ./results. Unset by default and with no default path: a
+#                     consumer's layout is not this project's to guess.
+#   SKIP_BUILD=1      do not run `mvn install' in step 1.
 #
 set -e
 
@@ -40,15 +34,12 @@ scriptdir=$(dirname "$0")
 cd "$scriptdir/.."
 basedir=$(pwd)
 
-# Empty unless asked for -- see PAPER_RESULTS above. No default path here: a consumer's layout is
-# not this project's to guess, and a guess that misses produces a warning after a run of days.
 paper_results=${PAPER_RESULTS:-}
 paper_results_said=""
 
-# States once what becomes of the results at the end of the run. The preflight calls it so that a
-# PAPER_RESULTS pointing nowhere is known in the first minute rather than after the last step, and
-# step 14 calls it again -- where it stays silent, having already said its piece. Without that the
-# same warning is printed once per invocation, three times over a run resumed twice.
+# States once what becomes of the results. The preflight calls it, so a PAPER_RESULTS pointing
+# nowhere is known in the first minute rather than after the last step; step 14 calls it again and it
+# then stays silent.
 check_paper_results() {
   if [ -n "$paper_results_said" ]; then
     return 0
@@ -192,15 +183,10 @@ skip=""
 ########################################################################################
 step "clear tick simulations whose abundance was not preserved" || skip=1
 if [ -z "${skip:-}" ]; then
-  # NanoSim's abundance table is what says how the simulated composition relates to the real sample
-  # it was trained on, and make_fastqs.sh preserves it only when it actually simulates. A sample
-  # whose _sim.fastq is already there is skipped, and no amount of re-running produces the table for
-  # it -- the simulation has to happen again.
-  #
-  # So exactly those samples are cleared, and only those: a sample whose abundance is already beside
-  # its reads is left alone. That keeps this from being a blanket "delete the simulations" step. It
-  # costs a NanoSim training run per deleted sample, which is hours, and after one complete run it
-  # is a no-op. KEEP_TICK_SIMS=1 suppresses it entirely, at the price of an incomplete analysis.
+  # make_fastqs.sh preserves NanoSim's abundance table only when it actually simulates, and a sample
+  # whose _sim.fastq is already there is skipped -- so no amount of re-running produces the table for
+  # it. Exactly those samples are cleared and only those, at a NanoSim training run each.
+  # KEEP_TICK_SIMS=1 suppresses it, at the price of an incomplete analysis.
   if [ -n "${KEEP_TICK_SIMS:-}" ]; then
     echo "KEEP_TICK_SIMS is set - leaving every simulated tick fastq in place."
   else
@@ -290,27 +276,17 @@ skip=""
 ########################################################################################
 step "the controls of cv: k = 24, and k = 24 with one k-mer in four" || skip=1
 if [ -z "${skip:-}" ]; then
-  # A second, complete evaluation strand for `cv' alone: the same genomes and taxonomy built at
-  # k = 24 instead of 31, scored on the same four read sets. k is the one knob that moves the share
-  # of k-mers stored above the data taxa, which is the mass a refinement can push down, so the twin
-  # says how much of the gain is a property of the database rather than of the method. It is also
-  # where Kraken 2 sits: its default spaced seed has weight 24.
+  # Two complete strands for `cv' alone, on the same genomes, taxonomy and read sets: one at k = 24,
+  # where Kraken 2's spaced seed of weight 24 sits, and one that enters one 24-mer in four besides,
+  # which is what brings the database to Kraken 2's size. Every twin's figures go to CSV files of
+  # their own, so nothing of the main run is overwritten.
   #
-  # After the classification steps, because the saliva-matched read set it is scored on is written
-  # by step 7 and the maps are linked from it. Before the performance scenarios, which delete and
-  # re-time the `match' results of `viral' and have nothing to do with the twin.
+  # Here, after the classification steps, because the saliva-matched set the twins are scored on is
+  # written by step 7 and their maps are linked from it. Before the performance scenarios, which
+  # delete and re-time the `match' results of `viral'.
   #
-  # The second twin sets both keys: k = 24 and one k-mer in four. Each halving acts on a different
-  # term of the database size -- the seed weight on how many k-mers are distinct, the sampling on how
-  # many of them are entered -- so only the combination reaches Kraken 2's size, and it is the one
-  # variant whose error tolerance and whose entry count are both comparable with Kraken 2's. The
-  # twin with the sampling alone was dropped on 2026-10-10: the paper reports `cv_k24' and
-  # `cv_k24_s4' and never the intermediate, so building it was hours spent on numbers nothing reads.
-  # `sh ./bin/sampling_exps.sh all' without K still builds it if it is ever wanted again.
-  #
-  # Every twin's figures go to CSV files of their own -- db_gen_perf-k24.csv, viral-k24-s4_* and so
-  # on -- so nothing of the main run is overwritten, and a twin is skipped by every table unless the
-  # paper asks for it by name.
+  # The twin with the sampling alone was dropped on 2026-10-10: no table reads it.
+  # `sh ./bin/sampling_exps.sh all' without K still builds it.
   run sh ./bin/k24_exps.sh all
   run env K=24 sh ./bin/sampling_exps.sh all
 fi

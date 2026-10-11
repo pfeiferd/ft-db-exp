@@ -6,17 +6,13 @@
 # archived or diffed without the rest.
 #
 # THE LIST BELOW IS FIXED ON PURPOSE. This project does not know where a paper lives and must not
-# take its path as input, so the names are kept here rather than read out of a .tex file. The list
-# was taken from the manuscript on 2026-10-08 and needs an edit whenever a table of the paper gains
-# or drops a source file. Nothing goes wrong quietly if that is forgotten: the script names every
-# entry it cannot find in results/, and an entry that is no longer read does no harm beyond a few
-# kilobytes in the archive.
+# take its path as input, so the names are kept here rather than read out of a .tex file. Taken from
+# the manuscript on 2026-10-08; it needs an edit whenever a table gains or drops a source file, and
+# nothing goes wrong quietly if that is forgotten, since every entry that cannot be found is named.
 #
-# The second group is not read by the paper at all. bin/paper_stats.sh needs it to produce
-# results/dbstats.tex, and the paper does read that. The manuscript compiles from a shipped
-# dbstats.tex alone, but it cannot be regenerated without these files, and a macro that silently
-# keeps an old value is the one failure this project has already had. Pass --paper-only to leave
-# them out.
+# The second group the paper does not read at all: bin/paper_stats.sh needs it to produce
+# results/dbstats.tex, which the paper does read and which cannot be regenerated without these
+# files. --paper-only leaves them out.
 #
 # Usage:
 #   sh ./bin/collect_paper_results.sh

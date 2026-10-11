@@ -1,37 +1,32 @@
 #!/bin/sh
 #
 # The k = 24 control of `cv': a second, complete evaluation strand for Genestrip, unrefined and
-# refined, on the same genomes, the same taxonomy and the same four read sets as `viral', differing
-# in the k-mer length alone.
+# refined, on the same genomes, taxonomy and four read sets as `viral', differing in the k-mer length
+# alone.
 #
 # Why k = 24. Kraken 2 classifies with a spaced seed of weight 24 -- 31 minimizer positions of which
-# 7 are masked -- whereas Genestrip matches exact 31-mers. The weight of a seed is the number of
-# positions that must agree, and under independently placed substitutions it is the whole story:
-# a spaced seed of weight 24 and a contiguous 24-mer match with the same probability, both against a
-# read carrying errors and against a related species. So a Genestrip database at k = 24 sits where
-# Kraken 2 sits on that trade-off, and the strand says what the trade costs and what it buys.
+# 7 are masked -- whereas Genestrip matches exact 31-mers. The weight is the number of positions that
+# must agree, and under independently placed substitutions a spaced seed of weight 24 and a
+# contiguous 24-mer match with the same probability. So a Genestrip database at k = 24 sits where
+# Kraken 2 sits on that trade-off.
 #
-# It also answers a question of the paper's own: what governs the gain of the refinement. k is the
-# one knob that moves the share of k-mers stored above the data taxa -- the mass a refinement can
-# push down -- without touching the genomes, the read sets, the measures or the code. The strand
-# therefore reports the same quantities as the main run and nothing new: the share above the data
-# taxa, sp and sp* for both variants, and the per-read precisions on the four read sets.
+# It also answers a question of the paper's own: k is the one knob that moves the share of k-mers
+# stored above the data taxa -- the mass a refinement can push down -- without touching the genomes,
+# the read sets, the measures or the code. The strand therefore reports the same quantities as the
+# main run and nothing new.
 #
 # Three steps, in this order:
 #
 #   1. bin/k24_projects.sh writes the twin `viral-k24': symlinks to the original's inputs, a
-#      config.properties generated from the original's with `kMerSize=24', and the fastq maps linked
-#      under the twin's name so that it is scored on the very reads `viral' was scored on.
-#   2. run_exps.sh builds and times it, and computes the reports over its contents -- dbinfo,
-#      branchhistocsv, dbquality, ftquality -- which are the point here, since the twin's contents
-#      really do differ from the original's. CSV_SUFFIX keeps the disk sizes and the timings in CSVs
-#      of their own instead of overwriting the main run's. The genomes are extracted afterwards, because the accuracy runs resolve their ground
-#      truth against the twin's own accession-to-taxon table.
+#      config.properties from the original's with `kMerSize=24', and the fastq maps linked under the
+#      twin's name so that it is scored on the very reads `viral' was scored on.
+#   2. run_exps.sh builds and times it and computes the reports over its contents; CSV_SUFFIX keeps
+#      the disk sizes and timings out of the main run's CSVs. The genomes are extracted afterwards,
+#      because the accuracy runs resolve their ground truth against the twin's own table.
 #   3. run_classification_exps.sh scores the four read sets and times the classification.
 #
-# Wall time is about one to two hours on the machine the paper reports, and the twin needs some
-# 8 GB of disk beside the original. The reads are not simulated again, so nothing here depends on
-# InSilicoSeq.
+# About 36 minutes of generation and 5.4 GB of disk beside the original. The reads are not simulated
+# again, so nothing here depends on InSilicoSeq.
 #
 # Usage:
 #   sh ./bin/k24_exps.sh all          # all three steps

@@ -3,25 +3,20 @@
 # Creates (or refreshes) the `-k24' twin of a project: the same genomes under the same taxonomy,
 # built at a shorter k-mer length.
 #
-# What the twin is for. Kraken 2 classifies with a spaced seed of weight 24 -- 31 minimizer
-# positions of which 7 are masked -- while Genestrip matches exact 31-mers. A seed's weight is the
-# number of positions that must agree, and it is what decides both the error tolerance and how many
-# k-mers two related species share, so a Genestrip database at k = 24 sits on the same point of that
-# trade-off as Kraken 2's default. It is the one knob that moves the share of k-mers above the data
-# taxa without touching the genomes, the read sets or the measures, which is what makes it a control
-# for the question of what governs the refinement's gain.
+# What the twin is for. Kraken 2 classifies with a spaced seed of weight 24 -- 31 minimizer positions
+# of which 7 are masked -- while Genestrip matches exact 31-mers. A seed's weight is the number of
+# positions that must agree, and it decides both the error tolerance and how many k-mers two related
+# species share, so a Genestrip database at k = 24 sits on the same point of that trade-off. It is
+# also the one knob that moves the share of k-mers above the data taxa without touching the genomes,
+# the read sets or the measures.
 #
 # Everything but the k-mer length is shared: taxids.txt, additional.txt and categories.txt are
-# symlinks to the original project, so the two cannot drift apart, and the genomes and the taxonomy
-# live in data/common either way. The fastq mapping files are symlinked as well, under the twin's
-# own name, so that the twin is evaluated on exactly the reads the original was evaluated on rather
-# than on a second simulation of them.
+# symlinks to the original, so the two cannot drift apart, and the fastq maps are symlinked under the
+# twin's own name, so that it is evaluated on exactly the reads the original was evaluated on rather
+# than on a second simulation of them. The name keeps the two apart on disk and in the results.
 #
-# The name is what keeps the two apart on disk: data/projects/viral-k24/db/viral-k24_db.zip beside
-# data/projects/viral/db/viral_db.zip, and results named after the project throughout.
-#
-# Re-running is safe and is the point: the config file is regenerated from the original's every
-# time, so a setting added to `viral' reaches `viral-k24' the next time this runs.
+# Re-running is safe and is the point: the config is regenerated from the original's every time, so a
+# setting added to `viral' reaches `viral-k24' the next time this runs.
 #
 # Usage: sh ./bin/k24_projects.sh [project ...]     (default: viral)
 #
