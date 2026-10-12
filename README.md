@@ -62,15 +62,22 @@ nothing -- the installation is a prerequisite and needs `sudo`.
 
 | Variable | Effect |
 | --- | --- |
-| `FRESH_DBS=1` | Delete the databases first, so that their generation is actually measured. Without it an existing database and its `db_gen_*.log` are kept, since a goal that did nothing must not overwrite a real measurement. |
+| `FRESH_DBS=1` | Run `clean_all.sh` first, so that everything is generated from scratch and the generation is actually measured. Without it an existing database and its `db_gen_*.log` are kept, since a goal that did nothing must not overwrite a real measurement. |
 | `FETCH_SALIVA=1` | Fetch the five human saliva runs (about 330 GB) first. Off by default. |
 | `KEEP_TICK_SIMS=1` | Never delete a simulated tick fastq. By default those whose abundance table was not preserved are deleted, since only re-simulating produces it -- see "Simulated reads". |
 | `SKIP_BUILD=1` | Do not run `mvn install` first. |
 | `PAPER_RESULTS` | An existing folder to copy the results to at the end. Unset by default and with no default path: this project does not know where a consumer keeps its inputs. |
 
 Two things it does that are easy to miss by hand. It builds the Java first, because the reports'
-labels and columns live in `src/main/java`. And it runs the saliva-matched read set *before* the
-real-read step, because that is what produces the calibration the real runs consume.
+labels and columns live in `src/main/java`. And it keeps the order the reports depend on: the
+saliva-matched read set before the real-read step, because that is what produces the calibration the
+real runs consume, and the Kraken classification before the evaluation that picks its output up.
+
+`FRESH_DBS=1 sh ./bin/run_all_exps.sh` is therefore the from-scratch run: step 3 deletes everything
+the experiments ever generated, `results/` included, so no CSV of an earlier batch can survive, and
+the last step collects what the paper reads into `paper_results.zip`. The downloads survive --
+`clean_all.sh` keeps `data/common` and every fastq a map declares by URL -- so the saliva, tick and
+*Nocardia* reads are not fetched again.
 
 ## Installation
 
@@ -206,6 +213,10 @@ be observed to what it stands for.
 
 ### The Kraken tools on the real saliva runs
 
+Step 10 of `run_all_exps.sh`, and it has to come before the evaluation of step 11: the reports pick
+the per-read output up from `results/kraken` only if it is already there. The two commands below are
+for redoing this part on its own.
+
 ```sh
 sh ./bin/run_classification_exps.sh kraken     # builds, then classifies simulated AND real
 sh ./bin/run_classification_exps.sh real       # evaluates, picking the TSVs up by itself
@@ -289,7 +300,7 @@ per-taxon results**: `run_perf` returns early without it.
 A second complete strand for `cv` alone, on the same genomes, taxonomy and read sets, at *k* = 24
 instead of 31 -- where Kraken 2's spaced seed of weight 24 sits. It is also the only knob that moves
 the share of *k*-mers stored above the data taxa, the mass a refinement can push down, without
-touching the genomes, the read sets, the measures or the code. Step 11 of `run_all_exps.sh`.
+touching the genomes, the read sets, the measures or the code. Step 12 of `run_all_exps.sh`.
 
 ```sh
 sh ./bin/k24_exps.sh all          # the twin, its database, and the four read sets against it
@@ -403,14 +414,20 @@ which is exactly the mismatch that script exists to prevent. `matchperf.csv` nee
 | `storebench_<db>.csv`, `storebench_<db>.log` | `store_bench.sh` | Classification quality |
 | `dbstats.tex` | `paper_stats.sh` | above |
 | `sysinfo.txt`, `sysinfo.tex` | `sysinfo.sh` | Machine description |
+| `../paper_results.zip`, beside `results` rather than in it | `collect_paper_results.sh` | below |
 
-**Only the files the paper reads**, as a zip:
+**Only the files the paper reads**, as a zip. This is step 16, the last of `run_all_exps.sh`, so a
+full run leaves `./paper_results.zip` behind on its own; the commands are for building it again.
 
 ```sh
 sh ./bin/collect_paper_results.sh                 # ./paper_results.zip, paths kept as results/...
 sh ./bin/collect_paper_results.sh --paper-only    # without the paper_stats.sh inputs
 OUT=handover.zip sh ./bin/collect_paper_results.sh
 ```
+
+It is also the closing check of a full run: every name on its list that is not in `results/` is
+reported, so a step that silently produced nothing shows up here instead of as an empty table in the
+manuscript.
 
 `results` accumulates everything the experiments ever produced and barely a fifth of it reaches the
 manuscript. The list of names is fixed inside the script, deliberately: this project does not know

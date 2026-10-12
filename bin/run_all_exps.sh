@@ -38,7 +38,7 @@ paper_results=${PAPER_RESULTS:-}
 paper_results_said=""
 
 # States once what becomes of the results. The preflight calls it, so a PAPER_RESULTS pointing
-# nowhere is known in the first minute rather than after the last step; step 14 calls it again and it
+# nowhere is known in the first minute rather than after the last step; step 15 calls it again and it
 # then stays silent.
 check_paper_results() {
   if [ -n "$paper_results_said" ]; then
@@ -48,7 +48,7 @@ check_paper_results() {
   if [ -z "$paper_results" ]; then
     echo "OK    results stay in ${basedir}/results (PAPER_RESULTS is unset)"
   elif [ -d "$paper_results" ]; then
-    echo "OK    step 14 copies them to ${paper_results}"
+    echo "OK    step 15 copies them to ${paper_results}"
   else
     echo "WARNING: PAPER_RESULTS=${paper_results} does not exist - the results will stay in" >&2
     echo "         ${basedir}/results. Create the folder, or copy them by hand afterwards." >&2
@@ -124,9 +124,9 @@ skip=""
 ########################################################################################
 step "preflight" || skip=1
 if [ -z "${skip:-}" ]; then
-  # cgmemtime is checked here rather than discovered in step 4 or 10, because it gates more than the
+  # cgmemtime is checked here rather than discovered in step 4 or 11, because it gates more than the
   # performance figures: run_perf returns early without it, and the per-taxon match results that
-  # step 10 preserves are produced by the goals it measures. No cgmemtime, no per-taxon CSVs.
+  # step 11 preserves are produced by the goals it measures. No cgmemtime, no per-taxon CSVs.
   if [ ! -x ./tools/cgmemtime/cgmemtime ]; then
     echo "WARNING: ./tools/cgmemtime/cgmemtime is missing - run ./bin/install_tools.sh." >&2
     echo "         Without it the performance figures and the per-taxon match results are lost." >&2
@@ -138,12 +138,12 @@ if [ -z "${skip:-}" ]; then
     echo "OK    cgmemtime"
   fi
   # The real-read step fails on a missing map rather than skipping it, so say so now instead of
-  # after however many hours step 10 takes to get there.
+  # after however many hours step 11 takes to get there.
   for map in "${SALIVA_MAP:-saliva_real.txt}" eightticks.txt nocardia_mngs.txt; do
     if [ -f "data/fastq/${map}" ]; then
       echo "OK    data/fastq/${map}"
     else
-      echo "WARNING: data/fastq/${map} is missing - the real-read runs of step 10 will fail." >&2
+      echo "WARNING: data/fastq/${map} is missing - the real-read runs of step 11 will fail." >&2
     fi
   done
   echo "OK    results go to ${basedir}/results"
@@ -253,13 +253,26 @@ skip=""
 ########################################################################################
 step "classification: the calibration sets" || skip=1
 if [ -z "${skip:-}" ]; then
-  # Before step 10, not after. This run writes results/<db>_iss_saliva_summary.csv, and the real
-  # saliva runs of step 10 read exactly that file for their calibration -- `run_real <db> ... saliva
+  # Before step 11, not after. This run writes results/<db>_iss_saliva_summary.csv, and the real
+  # saliva runs of step 11 read exactly that file for their calibration -- `run_real <db> ... saliva
   # iss_saliva'. Run in the other order, the estimate columns of the real-read table come from
   # whatever stale copy happened to be lying in results/, or from nothing at all.
   run sh ./bin/run_classification_exps.sh saliva
   # And the mNGS-matched set of `nocardia', for the same reason and before the same step.
   run sh ./bin/run_classification_exps.sh mngs
+fi
+skip=""
+
+########################################################################################
+step "Kraken 2 and KrakenUniq: build and classify" || skip=1
+if [ -z "${skip:-}" ]; then
+  # Before the next step, not after. This builds the two databases over the very fasta files `cv' is
+  # built from and classifies the four simulated sets and the real saliva runs with them, leaving the
+  # per-read output under results/kraken. The reports of the next step pick that output up by
+  # themselves -- RefinementAccuracyReport the simulated sets, SpecificityReport the real runs -- and
+  # only if it is already there. In the other order the paper's cv_ku and cv_k2 rows stay empty and
+  # print their `---' fallback, which is what happened to every from-scratch run until 2026-10-12.
+  run sh ./bin/run_classification_exps.sh kraken
 fi
 skip=""
 
@@ -340,6 +353,18 @@ if [ -z "${skip:-}" ]; then
     run sh ./bin/paper_stats.sh "$paper_results"
     echo "Copied to ${paper_results} and regenerated its LaTeX macros."
   fi
+fi
+skip=""
+
+########################################################################################
+step "collect what the paper reads into a zip" || skip=1
+if [ -z "${skip:-}" ]; then
+  # Last, because it takes dbstats.tex and sysinfo.tex with it and both are written by the step
+  # before. It is also this run's closing check: the script names every file of its list that it
+  # cannot find in results/, so a step that silently produced nothing shows up here as a missing
+  # entry rather than as an empty table in the manuscript. It exits 0 either way and never fails the
+  # run.
+  run sh ./bin/collect_paper_results.sh
 fi
 skip=""
 
