@@ -117,13 +117,10 @@ public class RefinementAccuracyReport {
         // The unrefined run fills the baseline of reads it left at their genus, the refined one is
         // then measured on exactly those. Hence the order of Variant.values() matters here.
         GenusOnlyBaseline baseline = new GenusOnlyBaseline();
-        // The ground-truth-free substitute for that subset, fixed by the same run for the same
-        // reason: both variants must be scored on one and the same set of reads.
-        GenusOnlyBaseline obsBaseline = new GenusOnlyBaseline();
         for (Variant variant : Variant.values()) {
             System.out.println("Evaluating " + variant.getLabel() + " database " + db + " on " + fqMapFile);
             byVariant.put(variant, evaluator.evaluate(db, fqMapFile, variant.getMatchGoalKey(),
-                    variant.getLoadDbGoalKey(), scope, baseline, obsBaseline,
+                    variant.getLoadDbGoalKey(), scope, baseline,
                     variant == Variant.UNREFINED, false));
         }
 
@@ -231,7 +228,7 @@ public class RefinementAccuracyReport {
             // to it without depending on how the model happens to be spelled.
             ps.println("db;fastq key;model;reads;classified;genus only;genus only share"
                     + ";prec g u;prec g f"
-                    + ";obs genus only;prec g ungated u;prec g ungated f;rho u;rho f;");
+                    + ";prec g ungated u;prec g ungated f;rho u;rho f;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
                 AccuracyTally u = byVariant.get(Variant.UNREFINED).get(fastqKey);
                 AccuracyTally f = byVariant.get(Variant.REFINED).get(fastqKey);
@@ -240,16 +237,14 @@ public class RefinementAccuracyReport {
                 }
                 double pu = u.getGenusOnlyPrecision();
                 double pf = f.getGenusOnlyPrecision();
-                double gu = u.getObsGenusOnlyUngatedPrecision();
-                double gf = f.getObsGenusOnlyUngatedPrecision();
+                double gu = u.getGenusOnlyUngatedPrecision();
+                double gf = f.getGenusOnlyUngatedPrecision();
                 // The calibration is a pair of factors on the levels, not one factor on the gain.
                 // Each turns an ungated precision into the gated one it stands for, and the two are
-                // kept apart because they answer to different effects. rho_u is the subset
-                // discrepancy |R'_g| / |R_g| times a factor that is one when no read was stopped at
-                // a foreign genus -- 0.9991 to 1.0000 on the viral sets, but 0.985 to 0.993 on the
-                // tick ones, where the ungated average is small enough that the few dozen such reads
-                // still shift it. rho_f carries that and the sibling reads a refinement rescues,
-                // which is why rho_f exceeds rho_u on every read set here.
+                // kept apart because they answer to different effects. Both share the subset, so
+                // each factor is the share of that subset's ungated weight which sits on the read's
+                // own path -- one when no read was stopped outside it. rho_f exceeds rho_u wherever
+                // a refinement puts more of the weight back on that path than it takes off.
                 //
                 // Ratios of levels rather than of gains, for two reasons. They stay within [0, 1]
                 // and so read as the shrinkage factors they are, where a ratio of two small
@@ -276,8 +271,6 @@ public class RefinementAccuracyReport {
                 ps.print(format(pu));
                 ps.print(';');
                 ps.print(format(pf));
-                ps.print(';');
-                ps.print(u.getObsGenusOnlyTotal());
                 ps.print(';');
                 ps.print(format(gu));
                 ps.print(';');
@@ -412,11 +405,11 @@ public class RefinementAccuracyReport {
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
             ps.println("db;fastq key;model;reads;classified;genus only;genus only share"
                     + ";prec g u;prec g f"
-                    + ";obs genus only;prec g ungated u;prec g ungated f;rho u;rho f;");
+                    + ";prec g ungated u;prec g ungated f;rho u;rho f;");
             for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
                 AccuracyTally t = e.getValue();
                 double p = t.getGenusOnlyPrecision();
-                double g = t.getObsGenusOnlyUngatedPrecision();
+                double g = t.getGenusOnlyUngatedPrecision();
                 ps.print(db + "_" + tool);
                 ps.print(';');
                 ps.print(e.getKey());
@@ -439,8 +432,6 @@ public class RefinementAccuracyReport {
                 ps.print(';');
                 ps.print(format(p));
                 ps.print(";;");
-                ps.print(t.getObsGenusOnlyTotal());
-                ps.print(';');
                 ps.print(format(g));
                 ps.print(";;");
                 ps.print(format(g == 0 ? Double.NaN : p / g));
@@ -641,15 +632,13 @@ public class RefinementAccuracyReport {
         // unrefined to the refined variant is the gain where a gain was possible.
         ps.print(";genus only;genus only score;genus only precision species cand"
                 + ";genus only species share;genus only zero scoring");
-        // The ungated measure, prec'_g of the paper. It differs from the gated one in *both* of its
-        // ingredients: the summand drops the test that the read's true species is still in question
-        // at the assigned node, and the subset is the observable one -- the reads the unrefined
-        // database left at a genus, right or wrong -- because R_g itself is defined through the
-        // ground truth and a real sample supplies none. Neither ingredient consults sigma(r), which
-        // is what makes these two columns obtainable from a real fastq file. They are reported
-        // alongside the gated ones so that the ratio rho_d between the two gains can be calibrated
-        // where the truth *is* known.
-        ps.println(";obs genus only;obs genus only ungated precision;");
+        // The ungated measure, prec'_g of the paper. It is the same average over the same subset as
+        // the gated one above and differs from it in the summand alone: the test that the read's
+        // true species is still in question at the assigned node is dropped. Nothing in it consults
+        // sigma(r), which is what makes the column obtainable from a real fastq file. It is reported
+        // alongside the gated one so that the factor rho_d between the two can be calibrated where
+        // the truth *is* known.
+        ps.println(";genus only ungated precision;");
     }
 
     /**
@@ -701,9 +690,7 @@ public class RefinementAccuracyReport {
         ps.print(';');
         ps.print(tally.getGenusOnlyZeroScoring());
         ps.print(';');
-        ps.print(tally.getObsGenusOnlyTotal());
-        ps.print(';');
-        ps.print(format(tally.getObsGenusOnlyUngatedPrecision()));
+        ps.print(format(tally.getGenusOnlyUngatedPrecision()));
         ps.println(';');
     }
 

@@ -200,14 +200,14 @@ with open(out, 'w', encoding='utf-8') as fh:
     # and for `strepto' eighty-three of them -- too many to print, and a mean over them is a
     # computation rather than a lookup, so it belongs here and not in the LaTeX.
     #
-    # The average is weighted by |R'_g|, the observable subset each row is itself an average over.
+    # The average is weighted by |R_g|, the genus-only subset each row is itself an average over.
     # Weighting by sample instead would let a sample with one such read count as much as one with
     # four thousand, and `strepto' has both.
     def specrows(path):
         out = []
         for r in rows(path):
             try:
-                n = int((r.get('obs genus only') or '0').strip())
+                n = int((r.get('genus only') or '0').strip())
                 reads = int((r.get('reads') or '0').strip())
                 cls = int((r.get('classified unrefined') or '0').strip())
                 pu = (r.get('ungated precision unrefined') or '').strip()
@@ -237,7 +237,7 @@ with open(out, 'w', encoding='utf-8') as fh:
         cls = sum(x[5] for x in sel)
         emit(fh, 'rg', '%s/%ssamples' % (db, tag), str(len(sel)))
         emit(fh, 'rg', '%s/%ssubset' % (db, tag), str(N))
-        # The smallest and the largest observable subset among the samples of the group. The prose
+        # The smallest and the largest genus-only subset among the samples of the group. The prose
         # states that range, and states it from here rather than from a reading of the table, so
         # that a collection gaining a sample does not leave a stale pair of numbers behind.
         emit(fh, 'rg', '%s/%ssubsetmin' % (db, tag), str(min(x[1] for x in sel)))
@@ -250,7 +250,7 @@ with open(out, 'w', encoding='utf-8') as fh:
         emit(fh, 'rg', '%s/%sgain' % (db, tag), '%.0f' % (100.0 * (pf - pu) / pu) if pu else '0')
         emit(fh, 'rg', '%s/%sopenu' % (db, tag), '%.1f' % (1.0 / pu) if pu else '0')
         emit(fh, 'rg', '%s/%sopenf' % (db, tag), '%.1f' % (1.0 / pf) if pf else '0')
-        # The gated estimates, averaged over |R'_g| exactly as the precisions above are. Emitted
+        # The gated estimates, averaged over |R_g| exactly as the precisions above are. Emitted
         # only when every sample of the group carries one, since an average over part of a group
         # would be read as an average over all of it.
         n_emitted = 10

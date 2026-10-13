@@ -193,7 +193,7 @@ not used -- on these runs they need some 615 GB transiently to arrive at 139 GB 
 resumable.
 
 The run writes `results/<db>_<key>_specificity.csv`, one row per fastq key: `fastq key`, `sample`,
-`reads`, `classified unrefined`, `classified refined`, `obs genus only`, `obs genus only share`,
+`reads`, `classified unrefined`, `classified refined`, `genus only`, `genus only share`,
 `ungated precision unrefined`, `ungated precision refined`, `rho u`, `rho f`, `est prec g u`, `est
 prec g f`.
 
@@ -253,17 +253,18 @@ boolean positive counts at the genus and species rank, the resolution-based spec
 measure that can tell a refined database from an unrefined one at all -- and `unresolved`, the reads
 whose ground truth could not be recovered from their name.
 
-Its last seven columns serve the ground-truth-free estimate and come in two blocks that must not be
-crossed. `genus only`, `genus only score`, `genus only precision species cand`, `genus only species
-share` and `genus only zero scoring` are over the **gated** subset *R<sub>g</sub>*, the reads the
-unrefined database placed on an ancestor of their species, at or below their genus -- which follows
-from the read's true species and so cannot be formed on a real sample. `obs genus only` and `obs
-genus only ungated precision` are over the **observable** subset *R'<sub>g</sub>*, the reads left in
-that window right or wrong, and the latter is the one measure that never consults the ground truth.
-Since 2026-10-13 the first is the second restricted by the correctness test, so *R<sub>g</sub>* is
-contained in *R'<sub>g</sub>* and the two subsets stand to each other as the two scores do. The gated
-average still divides by `genus only` and the ungated one by `obs genus only`, which is the easiest
-thing in the file to get wrong.
+Its last six columns serve the ground-truth-free estimate. They are all over one subset
+*R<sub>g</sub>*, named by `genus only`: the reads the unrefined database left at or below a genus and
+above any species, read off the assignment alone. `genus only score`, `genus only precision species
+cand`, `genus only species share` and `genus only zero scoring` are the **gated** measures over it,
+which consult the read's true species and so cannot be formed on a real sample; `genus only ungated
+precision` is the **ungated** one, the single measure that never consults the ground truth. Both
+precisions divide by `genus only`, so their ratio is a statement about the gate alone.
+
+Until 2026-10-13 the subset carried a correctness condition -- the assignment had to be an ancestor
+of the read's true species -- and the ungated measure had an observable subset of its own. That
+denominator took in the reads a refinement moves off the right path and left out the ones it rescues
+from a foreign branch, so it booked the refinement's losses and not its wins.
 
 The calibration the paper transfers to a real sample is a **pair** of factors on the levels, not one
 factor on the gain: `rho u` carries the unrefined ungated precision to the gated one it stands for

@@ -96,9 +96,7 @@ public class AccuracyEvaluator {
      *                      was built to cover
      * @param baseline        records which reads were left at their genus, so that the gain can be
      *                        related to exactly those; may be {@code null} to skip that measurement
-     * @param obsBaseline     records the observable substitute for that subset -- the reads assigned
-     *                        to a node at genus rank, which needs no ground truth
-     * @param collectBaseline whether this run fills the baselines (the unrefined one) or consults them
+     * @param collectBaseline whether this run fills the baseline (the unrefined one) or consults it
      * @param groundTruthFree whether the reads have no known ground truth, in which case only the
      *                        ungated measures are tallied and no accession map is consulted
      * @return the tallies keyed by fastq key, in the order the files were processed
@@ -106,8 +104,8 @@ public class AccuracyEvaluator {
      */
     public Map<String, AccuracyTally> evaluate(String db, String fqMapFile, GoalKey matchGoalKey,
                                                GoalKey loadDbGoalKey, SmallTaxTree scope,
-                                               GenusOnlyBaseline baseline, GenusOnlyBaseline obsBaseline,
-                                               boolean collectBaseline, boolean groundTruthFree)
+                                               GenusOnlyBaseline baseline, boolean collectBaseline,
+                                               boolean groundTruthFree)
             throws IOException {
         // Built here rather than in the constructor, because only here is it known whether the run
         // has a ground truth at all. IssReadGroundTruth refuses to exist without an extraction
@@ -173,7 +171,7 @@ public class AccuracyEvaluator {
                     // handing entries back through `pooled', this reasoning has to be redone.
                     record(localTally.get(), entry.readDescriptor, entry.readDescriptorSize,
                             entry.classNode, dbTree, candidates, effectiveScope, baseline,
-                            obsBaseline, collectBaseline, groundTruthFree);
+                            collectBaseline, groundTruthFree);
                 }
 
                 @Override
@@ -185,16 +183,14 @@ public class AccuracyEvaluator {
                         merged.add(threadTally);
                         threadTally.reset();
                     }
-                    // Both subsets are advanced in lockstep: each is filled by the unrefined run
-                    // and consulted by the refined one, so either variant is scored on the reads the
-                    // unrefined run put in that subset and not on its own.
+                    // The subset is filled by the unrefined run and consulted by the refined one,
+                    // so either variant is scored on the reads the unrefined run put in it and not
+                    // on its own.
                     if (baseline != null) {
                         if (collectBaseline) {
                             baseline.endCollecting(key);
-                            obsBaseline.endCollecting(key);
                         } else {
                             baseline.endConsulting(key);
-                            obsBaseline.endConsulting(key);
                         }
                     }
                     System.out.println(key + ": " + merged);
@@ -275,11 +271,9 @@ public class AccuracyEvaluator {
      * Should a tax id nevertheless be missing -- a taxonomy newer than the database is the way that
      * happens -- the nearest ancestor that is present is taken and the case is counted and reported.
      * <p>
-     * The genus-only subsets are the classifier's <em>own</em>: they are collected from its output
-     * by the same two rules the Genestrip runs use, {@link #isGenusOnlyNode} for the observable
-     * subset $R_g'$ and that rule plus the comparability of the assignment with the read's true
-     * species for $R_g$. That is what the columns of the
-     * paper's table say they are, namely the reads this classifier itself left no further than a
+     * The genus-only subset is the classifier's <em>own</em>: it is collected from its output by
+     * the same rule the Genestrip runs use, {@link #isGenusOnlyNode}. That is what the columns of
+     * the paper's table say it is, namely the reads this classifier itself left no further than a
      * genus, and it is the only reading under which a row can be compared with a Genestrip row at
      * another $k$. Until 2026-10-03 the subsets of the unrefined Genestrip run were consulted here
      * instead, which answered a different question -- how far another tool gets on the reads
@@ -316,12 +310,11 @@ public class AccuracyEvaluator {
         FTProject project = newProject(db, fqMapFile);
         FinerTreeMaker<FTProject> maker = new FinerTreeMaker<FTProject>(project);
         Map<String, AccuracyTally> result = new LinkedHashMap<String, AccuracyTally>();
-        // Without a shared baseline the classifier gets subsets of its own, collected here rather
-        // than taken from elsewhere. They are never consulted afterwards -- an external tool has no
-        // refined second pass -- so they exist only because record() keeps the subset membership and
+        // Without a shared baseline the classifier gets a subset of its own, collected here rather
+        // than taken from elsewhere. It is never consulted afterwards -- an external tool has no
+        // refined second pass -- so it exists only because record() keeps the subset membership and
         // the collecting in one place.
-        GenusOnlyBaseline baseline = groundTruthFree ? null : new GenusOnlyBaseline();
-        GenusOnlyBaseline obsBaseline = new GenusOnlyBaseline();
+        GenusOnlyBaseline baseline = new GenusOnlyBaseline();
         try {
             @SuppressWarnings("unchecked")
             ObjectGoal<Database, FTProject> dbGoal =
@@ -369,7 +362,7 @@ public class AccuracyEvaluator {
                             }
                         }
                         record(tally, descriptor, descriptor.length, classNode, dbTree, candidates,
-                                effectiveScope, baseline, obsBaseline, true, groundTruthFree);
+                                effectiveScope, baseline, true, groundTruthFree);
                     }
                 }
                 if (lifted > 0) {
@@ -377,9 +370,8 @@ public class AccuracyEvaluator {
                             + " assignments named a taxon the database's taxonomy does not hold;"
                             + " the nearest ancestor it holds was taken.");
                 }
-                obsBaseline.endCollecting(fastqKey);
+                baseline.endCollecting(fastqKey);
                 if (!groundTruthFree) {
-                    baseline.endCollecting(fastqKey);
                     failIfGroundTruthLost(fastqKey, tally);
                     warnIfUnresolved(fastqKey, tally);
                 }
@@ -394,10 +386,10 @@ public class AccuracyEvaluator {
     private void record(AccuracyTally tally, byte[] readDescriptor, int readDescriptorSize,
                         SmallTaxTree.SmallTaxIdNode classNode, SmallTaxTree dbTree,
                         SpeciesCandidates candidates, SmallTaxTree scope, GenusOnlyBaseline baseline,
-                        GenusOnlyBaseline obsBaseline, boolean collectBaseline, boolean groundTruthFree) {
+                        boolean collectBaseline, boolean groundTruthFree) {
         if (groundTruthFree) {
             recordWithoutGroundTruth(tally, readDescriptor, readDescriptorSize, classNode, candidates,
-                    obsBaseline, collectBaseline);
+                    baseline, collectBaseline);
             return;
         }
         TaxTree.TaxIdNode trueNode = groundTruth.resolve(readDescriptor, readDescriptorSize);
@@ -422,42 +414,32 @@ public class AccuracyEvaluator {
                     && SpeciesCandidates.areComparable(classNode, trueInDb)
                     ? ungatedScore : 0;
             boolean genusOnly = false;
-            boolean obsGenusOnly = false;
             if (baseline != null) {
                 String descriptor = subsetKey(readDescriptor, readDescriptorSize);
                 if (collectBaseline) {
-                    // R_g': the rank window read off the assignment alone, i.e. the reads the
-                    // unrefined database left at or below a genus and above any species.
-                    obsGenusOnly = isGenusOnlyNode(classNode);
-                    if (obsGenusOnly) {
-                        obsBaseline.collect(descriptor);
-                    }
-                    // R_g: those of them the unrefined database also placed on an ancestor of the
-                    // read's true species, i.e. the ones a refinement can push further down the
-                    // right path. So R_g is R_g' restricted by the very test that separates q from
-                    // the ungated q', and R_g is a subset of R_g' by construction.
+                    // R_g: the reads the unrefined database left at or below a genus and above any
+                    // species, read off the assignment alone. No correctness condition enters, and
+                    // that is deliberate. A subset formed with sigma(r) keeps the reads a refinement
+                    // moves off the right path and drops the ones it rescues from a foreign branch,
+                    // so it books the refinement's losses and not its wins. An observable
+                    // denominator also makes rho = prec_g / ungated prec_g a factor on the
+                    // numerators alone, which is the only part that carries over to a real sample.
                     //
-                    // Until 2026-10-13 the subset was isGenusOnlyRank(lcaRank) instead, i.e. the
-                    // reads whose LCA with sigma(r) lay in the window. That admitted a read placed
-                    // on a sibling species - its LCA is the genus although the node itself sits at a
-                    // species - so R_g was neither a subset nor a superset of R_g', and it held
-                    // reads that the window description does not cover. Those reads score 0 under
-                    // the unrefined variant and almost always under the refined one too, so they
-                    // depressed both precisions and inflated the relative gain.
-                    genusOnly = obsGenusOnly && trueInDb != null
-                            && SpeciesCandidates.areComparable(classNode, trueInDb);
+                    // Before 2026-10-13 the subset was isGenusOnlyRank(lcaRank), the reads whose
+                    // LCA with sigma(r) lay in the window; on that day it briefly became this
+                    // window intersected with the path test. Both read sigma(r) and are gone.
+                    genusOnly = isGenusOnlyNode(classNode);
                     if (genusOnly) {
                         baseline.collect(descriptor);
                     }
                 } else {
                     genusOnly = baseline.contains(descriptor);
-                    obsGenusOnly = obsBaseline.contains(descriptor);
                 }
             }
             // Within a Genestrip run the subset is fixed by the unrefined pass and the refined one
             // looks the flag up rather than recomputing it, so both variants are scored on identical
             // reads. An external classifier has no second pass and collects its own subset instead.
-            tally.record(classNode != null, lcaRank, score, ungatedScore, genusOnly, obsGenusOnly);
+            tally.record(classNode != null, lcaRank, score, ungatedScore, genusOnly);
         } else if (classNode != null && inScope(taxTree.getNodeByTaxId(classNode.getTaxId()), scope)) {
             // The read does not belong to the scope but was classified into it: a false positive.
             tally.recordOutOfScopeClassification();
@@ -505,25 +487,25 @@ public class AccuracyEvaluator {
      * @param tally           the tally to update
      * @param entry           the matcher's result for the read
      * @param candidates      the candidate species counter for the variant's taxonomy
-     * @param obsBaseline     the observable genus-only subset, filled by the unrefined run
+     * @param baseline        the genus-only subset, filled by the unrefined run
      * @param collectBaseline whether this run fills that subset or consults it
      */
     private void recordWithoutGroundTruth(AccuracyTally tally, byte[] readDescriptor, int readDescriptorSize,
                                           SmallTaxTree.SmallTaxIdNode classNode,
-                                          SpeciesCandidates candidates, GenusOnlyBaseline obsBaseline,
+                                          SpeciesCandidates candidates, GenusOnlyBaseline baseline,
                                           boolean collectBaseline) {
         double ungatedScore = classNode != null ? candidates.weightFor(classNode) : 0;
-        boolean obsGenusOnly;
+        boolean genusOnly;
         String descriptor = subsetKey(readDescriptor, readDescriptorSize);
         if (collectBaseline) {
-            obsGenusOnly = isGenusOnlyNode(classNode);
-            if (obsGenusOnly) {
-                obsBaseline.collect(descriptor);
+            genusOnly = isGenusOnlyNode(classNode);
+            if (genusOnly) {
+                baseline.collect(descriptor);
             }
         } else {
-            obsGenusOnly = obsBaseline.contains(descriptor);
+            genusOnly = baseline.contains(descriptor);
         }
-        tally.recordWithoutGroundTruth(classNode != null, ungatedScore, obsGenusOnly);
+        tally.recordWithoutGroundTruth(classNode != null, ungatedScore, genusOnly);
     }
 
     /**
@@ -567,21 +549,6 @@ public class AccuracyEvaluator {
     }
 
     /**
-     * Returns whether the rank two taxa agree at leaves the read in the window a refinement can act
-     * on: at or below a genus, but still above the species. This is the membership test of the
-     * genus-only subset $R_g$, and it is applied to the rank of the lowest common ancestor of the
-     * read's true taxon and its assignment, so the subset is governed by the ground truth.
-     * <p>
-     * The window is a range of ranks rather than the genus alone because a taxonomy places further
-     * ranks inside it -- see {@link #isGenusOnlyNode} for why that matters and by how much. Unranked
-     * ancestors need no handling here: {@link #lowestRankedCommonAncestor} has already resolved them
-     * upwards, so the two subsets are formed by one and the same rule.
-     *
-     * @param lcaRank the rank the read's true taxon and its assignment agree at, may be
-     *                {@code null} if they share no ranked ancestor at all
-     * @return whether the agreement stops inside the genus-only window
-     */
-    /**
      * The key a read is remembered under in a {@link GenusOnlyBaseline}, which is its identifier up
      * to the first whitespace.
      * <p>
@@ -616,8 +583,9 @@ public class AccuracyEvaluator {
      * Whether the rank the read's true taxon and its assignment agree at lies at or below a genus and
      * above any species.
      * <p>
-     * Nothing calls this any more. It was the rule for $R_g$ until 2026-10-13, when the subset became
-     * the observable one restricted by the correctness test; see the comment at that place.
+     * Nothing calls this any more. It was the rule for $R_g$ until 2026-10-13, when the subset
+     * became the one {@link #isGenusOnlyNode} describes and stopped reading the ground truth; see
+     * the comment at that place.
      */
     private static boolean isGenusOnlyRank(Rank lcaRank) {
         return isAtLeast(lcaRank, Rank.GENUS) && !isAtLeast(lcaRank, Rank.SPECIES);
@@ -627,11 +595,13 @@ public class AccuracyEvaluator {
      * Returns whether the node a read was assigned to leaves it in the window a refinement can act
      * on: at or below a genus, but still above the species.
      * <p>
-     * A node carrying no taxonomic rank of its own is resolved to its nearest ranked ancestor first,
-     * exactly as {@link #lowestRankedCommonAncestor} does for the genus-only subset, so that the two
-     * subsets are formed by the same rule. That is what makes unranked nodes count: a read placed on
-     * an unranked node beneath a genus is a genus-level answer and a refinement moves it, while one
-     * placed beneath a species resolves to that species and is already as specific as it can be.
+     * This is the membership test of the genus-only subset $R_g$, the one subset both the gated and
+     * the ungated precision are averaged over.
+     * <p>
+     * A node carrying no taxonomic rank of its own is resolved to its nearest ranked ancestor first.
+     * That is what makes unranked nodes count: a read placed on an unranked node beneath a genus is
+     * a genus-level answer and a refinement moves it, while one placed beneath a species resolves to
+     * that species and is already as specific as it can be.
      * <p>
      * Testing the node's own rank against the genus alone would be too narrow twice over.
      * {@link Rank} places {@link Rank#SUBGENUS} and {@link Rank#SPECIES_GROUP} between genus and

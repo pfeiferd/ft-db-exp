@@ -73,12 +73,11 @@ public class SpecificityReport {
             throws IOException {
         Map<Variant, Map<String, AccuracyTally>> byVariant =
                 new LinkedHashMap<Variant, Map<String, AccuracyTally>>();
-        GenusOnlyBaseline unused = new GenusOnlyBaseline();
-        GenusOnlyBaseline obsBaseline = new GenusOnlyBaseline();
+        GenusOnlyBaseline baseline = new GenusOnlyBaseline();
         for (Variant variant : Variant.values()) {
             System.out.println("Evaluating " + variant.getLabel() + " database " + db + " on " + fqMapFile);
             byVariant.put(variant, evaluator.evaluate(db, fqMapFile, variant.getMatchGoalKey(),
-                    variant.getLoadDbGoalKey(), (SmallTaxTree) null, unused, obsBaseline,
+                    variant.getLoadDbGoalKey(), (SmallTaxTree) null, baseline,
                     variant == Variant.UNREFINED, true));
         }
 
@@ -89,7 +88,7 @@ public class SpecificityReport {
         File file = new File(resultsDir, db + "_" + reportKey + "_specificity.csv");
         try (PrintStream ps = new PrintStream(new FileOutputStream(file), false, StandardCharsets.UTF_8.name())) {
             ps.println("fastq key;sample;reads;classified unrefined;classified refined"
-                    + ";obs genus only;obs genus only share"
+                    + ";genus only;genus only share"
                     + ";ungated precision unrefined;ungated precision refined"
                     + ";rho u;rho f;est prec g u;est prec g f;");
             for (String fastqKey : byVariant.get(Variant.UNREFINED).keySet()) {
@@ -180,8 +179,8 @@ public class SpecificityReport {
      */
     private static void writeRow(PrintStream ps, String fastqKey, AccuracyTally u,
                                  AccuracyTally f, Map<String, double[]> calibration) {
-        double pu = u.getObsGenusOnlyUngatedPrecision();
-        double pf = f == null ? Double.NaN : f.getObsGenusOnlyUngatedPrecision();
+        double pu = u.getGenusOnlyUngatedPrecision();
+        double pf = f == null ? Double.NaN : f.getGenusOnlyUngatedPrecision();
         ps.print(fastqKey);
         ps.print(';');
         ps.print(SampleNames.display(fastqKey, false));
@@ -192,13 +191,13 @@ public class SpecificityReport {
         ps.print(';');
         ps.print(f == null ? "" : String.valueOf(f.getClassified()));
         ps.print(';');
-        // The observable subset, never R_g: without sigma(r) there is no telling whether
-        // the genus a read was left at was the right one, so getGenusOnlyTotal() stays zero
-        // on this path by construction.
-        ps.print(u.getObsGenusOnlyTotal());
+        // R_g itself: the subset is read off the assignment alone and so is formed here exactly as
+        // it is on a simulated run. Only the gated precision over it is out of reach without
+        // sigma(r), which is what the calibration below estimates.
+        ps.print(u.getGenusOnlyTotal());
         ps.print(';');
         ps.print(format(u.getClassified() == 0 ? Double.NaN
-                : 100.0 * u.getObsGenusOnlyTotal() / u.getClassified()));
+                : 100.0 * u.getGenusOnlyTotal() / u.getClassified()));
         ps.print(';');
         ps.print(format(pu));
         ps.print(';');
@@ -278,7 +277,7 @@ public class SpecificityReport {
             try (PrintStream ps = new PrintStream(new FileOutputStream(file), false,
                     StandardCharsets.UTF_8.name())) {
                 ps.println("fastq key;sample;reads;classified unrefined;classified refined"
-                        + ";obs genus only;obs genus only share"
+                        + ";genus only;genus only share"
                         + ";ungated precision unrefined;ungated precision refined"
                         + ";rho u;rho f;est prec g u;est prec g f;");
                 for (Map.Entry<String, AccuracyTally> e : tallies.entrySet()) {
@@ -315,8 +314,8 @@ public class SpecificityReport {
      */
     private static void writeExternalRow(PrintStream ps, String fastqKey, AccuracyTally t,
                                          Long reads, Map<String, double[]> calibration) {
-        long subset = t.getObsGenusOnlyTotal();
-        double pu = t.getObsGenusOnlyUngatedPrecision();
+        long subset = t.getGenusOnlyTotal();
+        double pu = t.getGenusOnlyUngatedPrecision();
         double[] rho = calibration.get(fastqKey);
         if (rho == null && calibration.size() == 1) {
             rho = calibration.values().iterator().next();

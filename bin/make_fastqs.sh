@@ -535,7 +535,7 @@ make_ticks() {
     # result says what share of the simulated reads each reference genome supplies. It is therefore
     # the real sample's composition *projected onto the twelve genera* -- the only record of how the
     # simulation's makeup relates to the sample it stands for, and what an analysis comparing the
-    # simulated |R'_g| against the real one has to appeal to.
+    # simulated |R_g| against the real one has to appeal to.
     #
     # It cannot be recovered afterwards, for the same reason the error rate cannot: NanoSim writes
     # every sample under the same `training_' prefix in one shared working directory, and the

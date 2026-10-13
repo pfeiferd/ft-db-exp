@@ -29,17 +29,16 @@ public final class AccuracyTally {
     // separates the gated from the ungated measure is only which count is summed, q or q'. Keeping
     // one denominator is what makes the two comparable, and the difference between the numerators
     // is the whole of the distinction.
-    // Two subsets, because the two measures answer questions of different kinds. The gated one is a
-    // precision and is therefore taken over the positives -- the reads the unrefined database placed
-    // correctly at a genus, which is governed by sigma(r). The ungated one has to be formable on a
-    // sample that supplies no sigma(r) at all, so it is taken over the observable approximation of
-    // that subset: the reads the database placed no further than a genus, right or wrong.
     private long genusOnlyTotal;
     private double genusOnlyScore;
+    private double genusOnlyUngatedScore;
     private long genusOnlyCorrectSpecies;
     private long genusOnlyZeroScoring;
-    private long obsGenusOnlyTotal;
-    private double obsGenusOnlyUngatedScore;
+    // How many of the subset's reads had their gated score determined at all. It equals
+    // genusOnlyTotal on a run with a ground truth and is zero on one without, where q is not
+    // defined; that is what keeps the gated measures undefined there instead of letting them read
+    // as zero, i.e. as "every read wrong".
+    private long genusOnlyGated;
 
     /**
      * Records a read whose ground truth could not be resolved.
@@ -69,38 +68,34 @@ public final class AccuracyTally {
      *                     true species; see {@link SpeciesCandidates}
      */
     public void record(boolean classified, Rank lcaRank, double speciesScore) {
-        record(classified, lcaRank, speciesScore, speciesScore, false, false);
+        record(classified, lcaRank, speciesScore, speciesScore, false);
     }
 
     /**
      * Records a read, additionally noting whether it belongs to the subset of reads the unrefined
      * database left at their genus -- the only reads a refinement can improve on at all.
      * <p>
-     * Two of the parameters exist for the ground-truth-free estimate. {@code ungatedSpeciesScore} is
-     * the same reciprocal candidate count as {@code speciesScore} but <em>without</em> the test that
-     * the read's true species is still in question at the assigned node: it states how far the
+     * {@code ungatedSpeciesScore} exists for the ground-truth-free estimate. It is the same
+     * reciprocal candidate count as {@code speciesScore} but <em>without</em> the test that the
+     * read's true species is still in question at the assigned node: it states how far the
      * classification narrows the species down, not how far it narrows them down correctly, and it is
-     * therefore computable on a fastq file whose ground truth is unknown. {@code obsGenusOnly} is
-     * the corresponding substitute for the genus-only subset -- the unrefined database assigned the
-     * read to a node at genus rank, whether or not that genus is the right one.
+     * therefore computable on a fastq file whose ground truth is unknown. Both sums run over the
+     * same subset, so the gated and the ungated precision share their denominator.
      *
      * @param classified          whether the analysis assigned a taxon to the read
      * @param lcaRank             the rank the read's true and assigned taxon agree at, may be {@code null}
      * @param speciesScore        the read's candidate-weighted species score
      * @param ungatedSpeciesScore the same score without the correctness test
      * @param genusOnly           whether the read is in the genus-only subset $R_g$
-     * @param obsGenusOnly        whether it is in the observable subset the ungated measure uses
      */
     public void record(boolean classified, Rank lcaRank, double speciesScore, double ungatedSpeciesScore,
-                       boolean genusOnly, boolean obsGenusOnly) {
+                       boolean genusOnly) {
         total++;
-        if (obsGenusOnly) {
-            obsGenusOnlyTotal++;
-            obsGenusOnlyUngatedScore += ungatedSpeciesScore;
-        }
         if (genusOnly) {
             genusOnlyTotal++;
+            genusOnlyGated++;
             genusOnlyScore += speciesScore;
+            genusOnlyUngatedScore += ungatedSpeciesScore;
             if (speciesScore == 0) {
                 genusOnlyZeroScoring++;
             }
@@ -141,11 +136,11 @@ public final class AccuracyTally {
      * @param genusOnly           whether the unrefined database left the read at a genus, i.e.
      *                            whether it belongs to the genus-only subset
      */
-    public void recordWithoutGroundTruth(boolean classified, double ungatedSpeciesScore, boolean obsGenusOnly) {
+    public void recordWithoutGroundTruth(boolean classified, double ungatedSpeciesScore, boolean genusOnly) {
         total++;
-        if (obsGenusOnly) {
-            obsGenusOnlyTotal++;
-            obsGenusOnlyUngatedScore += ungatedSpeciesScore;
+        if (genusOnly) {
+            genusOnlyTotal++;
+            genusOnlyUngatedScore += ungatedSpeciesScore;
         }
         if (classified) {
             this.classified++;
@@ -276,7 +271,7 @@ public final class AccuracyTally {
      * @return the restricted precision, or {@link Double#NaN} if the subset is empty
      */
     public double getGenusOnlyPrecision() {
-        return genusOnlyTotal == 0 ? Double.NaN : genusOnlyScore / genusOnlyTotal;
+        return genusOnlyGated == 0 ? Double.NaN : genusOnlyScore / genusOnlyTotal;
     }
 
     /**
@@ -285,7 +280,7 @@ public final class AccuracyTally {
      * @return the share in {@code [0, 1]}, or {@link Double#NaN} if the subset is empty
      */
     public double getGenusOnlySpeciesShare() {
-        return genusOnlyTotal == 0 ? Double.NaN : ((double) genusOnlyCorrectSpecies) / genusOnlyTotal;
+        return genusOnlyGated == 0 ? Double.NaN : ((double) genusOnlyCorrectSpecies) / genusOnlyTotal;
     }
 
     /**
@@ -305,17 +300,8 @@ public final class AccuracyTally {
      *
      * @return the mean ungated score over the subset, or {@code NaN} if the subset is empty
      */
-    public double getObsGenusOnlyUngatedPrecision() {
-        return obsGenusOnlyTotal == 0 ? Double.NaN : obsGenusOnlyUngatedScore / obsGenusOnlyTotal;
-    }
-
-    /**
-     * Returns the size of the observable subset the ungated measure is taken over.
-     *
-     * @return the number of reads the unrefined database placed no further than a genus
-     */
-    public long getObsGenusOnlyTotal() {
-        return obsGenusOnlyTotal;
+    public double getGenusOnlyUngatedPrecision() {
+        return genusOnlyTotal == 0 ? Double.NaN : genusOnlyUngatedScore / genusOnlyTotal;
     }
 
     /**
@@ -377,9 +363,9 @@ public final class AccuracyTally {
         copy.genusOnlyTotal = genusOnlyTotal;
         copy.genusOnlyScore = genusOnlyScore;
         copy.genusOnlyCorrectSpecies = genusOnlyCorrectSpecies;
-        copy.obsGenusOnlyUngatedScore = obsGenusOnlyUngatedScore;
-        copy.obsGenusOnlyTotal = obsGenusOnlyTotal;
+        copy.genusOnlyUngatedScore = genusOnlyUngatedScore;
         copy.genusOnlyZeroScoring = genusOnlyZeroScoring;
+        copy.genusOnlyGated = genusOnlyGated;
         return copy;
     }
 
@@ -407,9 +393,9 @@ public final class AccuracyTally {
         genusOnlyTotal += other.genusOnlyTotal;
         genusOnlyScore += other.genusOnlyScore;
         genusOnlyCorrectSpecies += other.genusOnlyCorrectSpecies;
-        obsGenusOnlyUngatedScore += other.obsGenusOnlyUngatedScore;
-        obsGenusOnlyTotal += other.obsGenusOnlyTotal;
+        genusOnlyUngatedScore += other.genusOnlyUngatedScore;
         genusOnlyZeroScoring += other.genusOnlyZeroScoring;
+        genusOnlyGated += other.genusOnlyGated;
     }
 
     /**
@@ -426,9 +412,9 @@ public final class AccuracyTally {
         genusOnlyTotal = 0;
         genusOnlyScore = 0;
         genusOnlyCorrectSpecies = 0;
-        obsGenusOnlyUngatedScore = 0;
-        obsGenusOnlyTotal = 0;
+        genusOnlyUngatedScore = 0;
         genusOnlyZeroScoring = 0;
+        genusOnlyGated = 0;
     }
 
     @Override
