@@ -256,12 +256,14 @@ whose ground truth could not be recovered from their name.
 Its last seven columns serve the ground-truth-free estimate and come in two blocks that must not be
 crossed. `genus only`, `genus only score`, `genus only precision species cand`, `genus only species
 share` and `genus only zero scoring` are over the **gated** subset *R<sub>g</sub>*, the reads the
-unrefined database placed correctly as far as a genus and no further -- which follows from the
-read's true species and so cannot be formed on a real sample. `obs genus only` and `obs genus only
-ungated precision` are over the **observable** subset *R'<sub>g</sub>*, the reads left at a genus
-right or wrong, and the latter is the one measure that never consults the ground truth. The gated
-average divides by `genus only`, the ungated one by `obs genus only`: different subsets, and the
-easiest thing in the file to get wrong.
+unrefined database placed on an ancestor of their species, at or below their genus -- which follows
+from the read's true species and so cannot be formed on a real sample. `obs genus only` and `obs
+genus only ungated precision` are over the **observable** subset *R'<sub>g</sub>*, the reads left in
+that window right or wrong, and the latter is the one measure that never consults the ground truth.
+Since 2026-10-13 the first is the second restricted by the correctness test, so *R<sub>g</sub>* is
+contained in *R'<sub>g</sub>* and the two subsets stand to each other as the two scores do. The gated
+average still divides by `genus only` and the ungated one by `obs genus only`, which is the easiest
+thing in the file to get wrong.
 
 The calibration the paper transfers to a real sample is a **pair** of factors on the levels, not one
 factor on the gain: `rho u` carries the unrefined ungated precision to the gated one it stands for

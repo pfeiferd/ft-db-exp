@@ -276,8 +276,9 @@ public class AccuracyEvaluator {
      * happens -- the nearest ancestor that is present is taken and the case is counted and reported.
      * <p>
      * The genus-only subsets are the classifier's <em>own</em>: they are collected from its output
-     * by the same two rules the Genestrip runs use, {@link #isGenusOnlyRank} for $R_g$ and
-     * {@link #isGenusOnlyNode} for its observable counterpart. That is what the columns of the
+     * by the same two rules the Genestrip runs use, {@link #isGenusOnlyNode} for the observable
+     * subset $R_g'$ and that rule plus the comparability of the assignment with the read's true
+     * species for $R_g$. That is what the columns of the
      * paper's table say they are, namely the reads this classifier itself left no further than a
      * genus, and it is the only reading under which a row can be compared with a Genestrip row at
      * another $k$. Until 2026-10-03 the subsets of the unrefined Genestrip run were consulted here
@@ -425,21 +426,28 @@ public class AccuracyEvaluator {
             if (baseline != null) {
                 String descriptor = subsetKey(readDescriptor, readDescriptorSize);
                 if (collectBaseline) {
-                    // R_g: correct down to the genus but no further, the refinement's only
-                    // opportunity. Governed by the positives, i.e. by sigma(r), because prec_g is a
-                    // precision and a read placed in the wrong genus is not one a refinement can
-                    // put right.
-                    genusOnly = isGenusOnlyRank(lcaRank);
-                    if (genusOnly) {
-                        baseline.collect(descriptor);
-                    }
-                    // R_g': the same rank window read off the assignment alone. It is not a
-                    // subset of R_g and does not contain it either -- it drops the reads whose
-                    // assignment named a sibling species (their lca with sigma(r) is the genus, but
-                    // the node itself sits at a species) and admits those left at a foreign genus.
+                    // R_g': the rank window read off the assignment alone, i.e. the reads the
+                    // unrefined database left at or below a genus and above any species.
                     obsGenusOnly = isGenusOnlyNode(classNode);
                     if (obsGenusOnly) {
                         obsBaseline.collect(descriptor);
+                    }
+                    // R_g: those of them the unrefined database also placed on an ancestor of the
+                    // read's true species, i.e. the ones a refinement can push further down the
+                    // right path. So R_g is R_g' restricted by the very test that separates q from
+                    // the ungated q', and R_g is a subset of R_g' by construction.
+                    //
+                    // Until 2026-10-13 the subset was isGenusOnlyRank(lcaRank) instead, i.e. the
+                    // reads whose LCA with sigma(r) lay in the window. That admitted a read placed
+                    // on a sibling species - its LCA is the genus although the node itself sits at a
+                    // species - so R_g was neither a subset nor a superset of R_g', and it held
+                    // reads that the window description does not cover. Those reads score 0 under
+                    // the unrefined variant and almost always under the refined one too, so they
+                    // depressed both precisions and inflated the relative gain.
+                    genusOnly = obsGenusOnly && trueInDb != null
+                            && SpeciesCandidates.areComparable(classNode, trueInDb);
+                    if (genusOnly) {
+                        baseline.collect(descriptor);
                     }
                 } else {
                     genusOnly = baseline.contains(descriptor);
@@ -604,6 +612,13 @@ public class AccuracyEvaluator {
         return new String(readDescriptor, 0, end, StandardCharsets.UTF_8);
     }
 
+    /**
+     * Whether the rank the read's true taxon and its assignment agree at lies at or below a genus and
+     * above any species.
+     * <p>
+     * Nothing calls this any more. It was the rule for $R_g$ until 2026-10-13, when the subset became
+     * the observable one restricted by the correctness test; see the comment at that place.
+     */
     private static boolean isGenusOnlyRank(Rank lcaRank) {
         return isAtLeast(lcaRank, Rank.GENUS) && !isAtLeast(lcaRank, Rank.SPECIES);
     }

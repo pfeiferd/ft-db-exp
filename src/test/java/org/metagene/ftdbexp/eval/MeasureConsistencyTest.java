@@ -46,36 +46,43 @@ public class MeasureConsistencyTest {
     @Test
     public void gatedPrecisionAveragesOverItsOwnSubset() {
         AccuracyTally tally = new AccuracyTally();
-        // Three reads in R_g scoring 1/2, 1/4 and 0, and one read outside it scoring 1 -- which
-        // must not reach the restricted average even though it is the best-scoring read of all.
+        // Two reads in R_g scoring 1/2 and 1/4, and one read outside it scoring 1 -- which must not
+        // reach the restricted average even though it is the best-scoring read of all.
         tally.record(true, Rank.GENUS, 0.5, 0.5, true, true);
         tally.record(true, Rank.GENUS, 0.25, 0.25, true, true);
-        tally.record(true, Rank.GENUS, 0.0, 0.5, true, false);
         tally.record(true, Rank.SPECIES, 1.0, 1.0, false, false);
 
-        assertEquals(3, tally.getGenusOnlyTotal());
-        assertEquals((0.5 + 0.25 + 0.0) / 3, tally.getGenusOnlyPrecision(), EPS);
-        assertEquals(4, tally.getTotal());
+        assertEquals(2, tally.getGenusOnlyTotal());
+        assertEquals((0.5 + 0.25) / 2, tally.getGenusOnlyPrecision(), EPS);
+        assertEquals(3, tally.getTotal());
     }
 
     /**
      * The ungated precision is the average of $q'$ over $R_g^\circ$. It must take its denominator
      * from that subset and not from $R_g$, and must sum the ungated score and not the gated one.
+     * <p>
+     * Since 2026-10-13 the gated subset is the observable one restricted by the correctness test, so
+     * $R_g \subseteq R_g^\circ$: a read of $R_g$ carries an assignment that is an ancestor of its
+     * species and therefore lies in the rank window the observable subset is read off. The two
+     * averages differ in which reads they drop and in which score they sum, not in two unrelated
+     * populations.
      */
     @Test
     public void ungatedPrecisionAveragesOverTheObservableSubset() {
         AccuracyTally tally = new AccuracyTally();
-        // A read in R_g but not in R_g' -- a sibling species was named, so q = 0 while q' = 1/2.
-        tally.record(true, Rank.GENUS, 0.0, 0.5, true, false);
-        // A read in both.
+        // A read in both: the assignment is an ancestor of the read's species.
         tally.record(true, Rank.GENUS, 0.25, 0.25, true, true);
-        // A read in R_g' but not in R_g: stopped at a genus that is not the read's own.
+        // A read in R_g' but not in R_g: it rests in the window but off the read's own path, so the
+        // ungated score counts it and the gated one scores it zero and leaves it out.
         tally.record(true, Rank.FAMILY, 0.0, 0.5, false, true);
+        // A read in neither: already at its species.
+        tally.record(true, Rank.SPECIES, 1.0, 1.0, false, false);
 
-        assertEquals(2, tally.getGenusOnlyTotal());
+        assertEquals(1, tally.getGenusOnlyTotal());
         assertEquals(2, tally.getObsGenusOnlyTotal());
-        // Neither subset contains the other, and the two averages share no read but the middle one.
-        assertEquals((0.0 + 0.25) / 2, tally.getGenusOnlyPrecision(), EPS);
+        assertTrue("R_g must be contained in R_g'",
+                tally.getGenusOnlyTotal() <= tally.getObsGenusOnlyTotal());
+        assertEquals(0.25, tally.getGenusOnlyPrecision(), EPS);
         assertEquals((0.25 + 0.5) / 2, tally.getObsGenusOnlyUngatedPrecision(), EPS);
     }
 
