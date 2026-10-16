@@ -219,6 +219,8 @@ done
 if [ -n "$db_only" ]; then
   echo "### DB_ONLY is set - not regenerating dbstats.tex, which describes the reported databases"
 else
-  ./bin/paper_stats.sh "$res_path"
+  # Via `sh', not as an executable: the file does not carry the exec bit in git, and run_all_exps.sh
+  # and the README invoke it this way too.
+  sh ./bin/paper_stats.sh "$res_path"
 fi
 
