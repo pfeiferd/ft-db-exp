@@ -6,7 +6,8 @@
 # needed.
 #
 # Usage:
-#   FILTER=both sh ./bin/store_bench.sh strepto        # the smallest saliva run, with and without
+#   FILTER=both sh ./bin/store_bench.sh strepto        # the smallest reported saliva run, with and
+#                                                      # without the Bloom filter
 #   FILTER=on sh ./bin/store_bench.sh strepto          # only the pass with the filter; the rows of
 #                                                      # the other pass are kept from the last run
 #   ALL=1 FILTER=both sh ./bin/store_bench.sh tick-borne   # all eight tick runs
@@ -72,8 +73,14 @@ if [ -z "$input" ]; then
   fi
   [ -n "$map" ] || { echo "No default map for ${project}; name a file or set MAP=<map>." >&2; exit 1; }
   [ -f "${data}/fastq/${map}" ] || { echo "No map at ${data}/fastq/${map}." >&2; exit 1; }
+  # Read sets the paper does not report are not candidates either, so that the appendix measures a
+  # run its tables also list. Same list as the EXCLUDED_KEYS of bin/paper_stats.sh and
+  # bin/perf_scenarios.sh; keep the three in step.
+  excluded_keys="SRR5571990"
   files=""
-  for name in $(awk '!/^#/ && NF >= 2 {print $2}' "${data}/fastq/${map}"); do
+  for name in $(awk -v ex="$excluded_keys" '
+        BEGIN { n = split(ex, a, " "); for (i = 1; i <= n; i++) drop[a[i]] = 1 }
+        !/^#/ && NF >= 2 && !($1 in drop) { print $2 }' "${data}/fastq/${map}"); do
     file="${data}/fastq/${name}"
     [ -f "$file" ] || continue
     files="${files}${files:+ }${file}"

@@ -230,8 +230,8 @@ case "$what" in
 esac
 
 # The k-mer store comparison of the paper's appendix, which is a measurement of the same kind and
-# belongs to the same table-filling run. It takes the real read sets, `strepto' the smallest saliva run
-# and `tick-borne' all eight tick runs, and classifies each of them twice per store, once with the
+# belongs to the same table-filling run. It takes the real read sets, `strepto' the smallest of the
+# saliva runs the paper reports and `tick-borne' all eight tick runs, and classifies each of them twice per store, once with the
 # Bloom filter of the match and once without it: with the filter on most k-mers never reach the
 # store and the layout hardly shows, with it off every k-mer does, and the two together say what the
 # filter is worth. `viral' is left out -- `strepto' covers the same reads against a database that
