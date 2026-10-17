@@ -192,6 +192,14 @@ out; all five are fetched here, so the saliva tables carry five rows. `prefetch`
 not used -- on these runs they need some 615 GB transiently to arrive at 139 GB and neither step is
 resumable.
 
+**One saliva run is measured but not reported.** `SRR5571990` is classified like the rest and stays
+in every CSV, but `bin/paper_stats.sh` and `bin/perf_scenarios.sh` leave it out of their averages,
+each through an `EXCLUDED_KEYS` set near the top of the Python part, and the paper filters it out of
+its tables. Against `strepto` that run leaves 51 reads at a genus where the other four leave one to
+thirteen million, which no property of the sample explains; the paper therefore reports four saliva
+runs, as the first study on Genestrip reported three. Delete the two sets and the LaTeX filters to
+get it back.
+
 The run writes `results/<db>_<key>_specificity.csv`, one row per fastq key: `fastq key`, `sample`,
 `reads`, `classified unrefined`, `classified refined`, `genus only`, `genus only share`,
 `ungated precision unrefined`, `ungated precision refined`, `rho u`, `rho f`, `est prec g u`, `est

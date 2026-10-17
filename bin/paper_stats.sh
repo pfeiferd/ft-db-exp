@@ -279,9 +279,16 @@ with open(out, 'w', encoding='utf-8') as fh:
     # The average is weighted by |R_g|, the genus-only subset each row is itself an average over.
     # Weighting by sample instead would let a sample with one such read count as much as one with
     # four thousand, and `strepto' has both.
+    # Read sets the paper does not report. Kept in one place here and in bin/perf_scenarios.sh, so
+    # that the macros below and the performance table average over the same files the result tables
+    # list. The measurements themselves stay in the CSVs untouched.
+    EXCLUDED_KEYS = {'SRR5571990'}
+
     def specrows(path):
         out = []
         for r in rows(path):
+            if (r.get('fastq key') or '').strip() in EXCLUDED_KEYS:
+                continue
             try:
                 # `obs genus only' until 2026-10-13, when the two subsets became one and the
                 # column lost its prefix. Both spellings are read so that a results folder written

@@ -269,12 +269,18 @@ import glob, os, re, subprocess, sys
 
 res, fastqdir, bp_sample = sys.argv[1], sys.argv[2], int(sys.argv[3])
 
+# Read sets the paper does not report, so that an average here covers the same files the result
+# tables do. SRR5571990 is measured like the rest and its logs stay on disk; it is left out of the
+# reported saliva runs, which is decided in one place -- see the same list in bin/paper_stats.sh.
+EXCLUDED_KEYS = {'SRR5571990'}
+
+
 def keys_of(res, scenario):
     pat = re.compile(r'^perf_' + re.escape(scenario) + r'_(.+)_match\.log$')
     found = set()
     for p in glob.glob(os.path.join(res, 'perf_%s_*_match.log' % scenario)):
         m = pat.match(os.path.basename(p))
-        if m:
+        if m and m.group(1) not in EXCLUDED_KEYS:
             found.add(m.group(1))
     return sorted(found)
 
