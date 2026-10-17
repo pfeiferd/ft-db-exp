@@ -251,28 +251,33 @@ fi
 skip=""
 
 ########################################################################################
+step "Kraken 2 and KrakenUniq: build and classify" || skip=1
+if [ -z "${skip:-}" ]; then
+  # Before every step that evaluates a read set, not after. This builds the two databases over the
+  # very fasta files `cv' is built from and classifies the four simulated sets and the real saliva
+  # runs with them, leaving the per-read output under results/kraken. The reports of the following
+  # steps pick that output up by themselves -- RefinementAccuracyReport the simulated sets,
+  # SpecificityReport the real runs -- and only if it is already there. In the other order the
+  # paper's cv_ku and cv_k2 rows stay empty and print their `---' fallback.
+  #
+  # It used to sit after the calibration step below, which left exactly one gap: the saliva-like
+  # regime is evaluated there and nowhere else, so viral_{ku,k2}_iss_saliva_* were never written and
+  # the two Kraken rows for that read set kept whatever an earlier run had left behind. The other
+  # three regimes were unaffected, because they are evaluated in the step after this one.
+  run sh ./bin/run_classification_exps.sh kraken
+fi
+skip=""
+
+########################################################################################
 step "classification: the calibration sets" || skip=1
 if [ -z "${skip:-}" ]; then
-  # Before step 11, not after. This run writes results/<db>_iss_saliva_summary.csv, and the real
+  # After the Kraken step above and before step 11. It writes results/<db>_iss_saliva_summary.csv, and the real
   # saliva runs of step 11 read exactly that file for their calibration -- `run_real <db> ... saliva
   # iss_saliva'. Run in the other order, the estimate columns of the real-read table come from
   # whatever stale copy happened to be lying in results/, or from nothing at all.
   run sh ./bin/run_classification_exps.sh saliva
   # And the mNGS-matched set of `nocardia', for the same reason and before the same step.
   run sh ./bin/run_classification_exps.sh mngs
-fi
-skip=""
-
-########################################################################################
-step "Kraken 2 and KrakenUniq: build and classify" || skip=1
-if [ -z "${skip:-}" ]; then
-  # Before the next step, not after. This builds the two databases over the very fasta files `cv' is
-  # built from and classifies the four simulated sets and the real saliva runs with them, leaving the
-  # per-read output under results/kraken. The reports of the next step pick that output up by
-  # themselves -- RefinementAccuracyReport the simulated sets, SpecificityReport the real runs -- and
-  # only if it is already there. In the other order the paper's cv_ku and cv_k2 rows stay empty and
-  # print their `---' fallback, which is what happened to every from-scratch run until 2026-10-12.
-  run sh ./bin/run_classification_exps.sh kraken
 fi
 skip=""
 

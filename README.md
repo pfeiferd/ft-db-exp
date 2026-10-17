@@ -213,8 +213,10 @@ be observed to what it stands for.
 
 ### The Kraken tools on the real saliva runs
 
-Step 10 of `run_all_exps.sh`, and it has to come before the evaluation of step 11: the reports pick
-the per-read output up from `results/kraken` only if it is already there. The two commands below are
+Step 9 of `run_all_exps.sh`, and it has to come before every step that evaluates a read set, i.e.
+before steps 10 and 11: the reports pick the per-read output up from `results/kraken` only if it is
+already there. It sat after step 10 until 2026-10-17, which silently left the two Kraken rows of the
+saliva-like regime at whatever an earlier run had written. The two commands below are
 for redoing this part on its own.
 
 ```sh
