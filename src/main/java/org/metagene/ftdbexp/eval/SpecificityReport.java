@@ -3,6 +3,7 @@ package org.metagene.ftdbexp.eval;
 import org.metagene.ftdbexp.eval.RefinementAccuracyReport.Variant;
 import org.metagene.genestrip.tax.SmallTaxTree;
 
+import java.math.BigDecimal;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -423,7 +424,13 @@ public class SpecificityReport {
      * @return the formatted value, or the empty string if it is undefined
      */
     private static String format(double value) {
-        return Double.isNaN(value) || Double.isInfinite(value) ? "" : Double.toString(value);
+        if (Double.isNaN(value) || Double.isInfinite(value)) {
+            return "";
+        }
+        // Plain decimal, never Java's exponent notation. Double.toString() switches to it below
+        // 1e-3 -- a share of 0.000114 came out as "1.1375026343780373E-4" -- and siunitx then
+        // drops the exponent and typesets the mantissa, i.e. a figure 10,000 times too large.
+        return BigDecimal.valueOf(value).toPlainString();
     }
 
 }

@@ -7,6 +7,7 @@ import org.metagene.genestrip.tax.Rank;
 import org.metagene.genestrip.tax.SmallTaxTree;
 
 import java.io.BufferedReader;
+import java.math.BigDecimal;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
@@ -702,6 +703,12 @@ public class RefinementAccuracyReport {
      * @return the formatted value, or the empty string if it is undefined
      */
     private static String format(double value) {
-        return Double.isNaN(value) ? "" : Double.toString(value);
+        if (Double.isNaN(value)) {
+            return "";
+        }
+        // Plain decimal, never Java's exponent notation. Double.toString() switches to it below
+        // 1e-3 -- a share of 0.000114 came out as "1.1375026343780373E-4" -- and siunitx then
+        // drops the exponent and typesets the mantissa, i.e. a figure 10,000 times too large.
+        return BigDecimal.valueOf(value).toPlainString();
     }
 }
